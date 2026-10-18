@@ -2,18 +2,26 @@ package com.kece.exam.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kece.common.exception.BusinessException;
+import com.kece.common.response.ResultCode;
+import com.kece.exam.dto.ExamAdminOverviewVO;
 import com.kece.exam.dto.ExamStudentInfoVO;
 import com.kece.exam.dto.ExamStudentPaperQuestionVO;
 import com.kece.exam.dto.ExamStudentPaperVO;
+import com.kece.exam.dto.ExamStudentSubmissionRowVO;
 import com.kece.exam.dto.ExamVO;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -69,6 +77,94 @@ public class ExamExportService {
         String examTitle = exam.getTitle() != null ? exam.getTitle() : "期末考试";
 
         return buildWordHtml(paper, schoolName, semester, examTitle, true);
+    }
+
+    /** 批量导出全部或指定考生的 Word (.doc) 答卷压缩包 (.zip)。 */
+    public void exportBatchZip(Long examId, List<Long> studentUserIds, HttpServletResponse response) throws IOException {
+        ExamAdminOverviewVO overview = examAdminService.getAdminOverview(examId);
+        ExamVO exam = overview.getExam();
+        String schoolName = exam.getSchoolName() != null && !exam.getSchoolName().isBlank()
+                ? exam.getSchoolName()
+                : "湖北科技职业学院";
+        String semester = exam.getSemester() != null && !exam.getSemester().isBlank()
+                ? exam.getSemester()
+                : "2025 - 2026学年度第一学期期末考试";
+        String examTitle = exam.getTitle() != null ? exam.getTitle() : "期末考试";
+
+        List<ExamStudentSubmissionRowVO> students = overview.getStudents();
+        if (studentUserIds != null && !studentUserIds.isEmpty()) {
+            Set<Long> filterSet = new HashSet<>(studentUserIds);
+            students = students.stream().filter(s -> filterSet.contains(s.getUserId())).toList();
+        }
+
+        if (students == null || students.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "当前考试暂无考生作答记录，无法批量导出");
+        }
+
+        String zipFileName = "《" + examTitle + "》期末考试_全部学生试卷.zip";
+        if (studentUserIds != null && !studentUserIds.isEmpty() && overview.getStudents() != null && students.size() != overview.getStudents().size()) {
+            zipFileName = "《" + examTitle + "》期末考试_指定考生试卷(" + students.size() + "份).zip";
+        }
+        zipFileName = sanitizeFileName(zipFileName);
+
+        response.setContentType("application/zip");
+        response.setCharacterEncoding("UTF-8");
+        String encodedFilename = URLEncoder.encode(zipFileName, StandardCharsets.UTF_8).replace("+", "%20");
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + encodedFilename + "\"; filename*=UTF-8''" + encodedFilename);
+
+        try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream())) {
+            // 将空白标准 A 卷也存入压缩包根目录，方便教师对照原卷
+            try {
+                ExamStudentPaperVO templatePaper = examAdminService.getStudentPaper(examId, null);
+                String templateHtml = buildWordHtml(templatePaper, schoolName, semester, examTitle, false);
+                byte[] templateBytes = templateHtml.getBytes(StandardCharsets.UTF_8);
+                String templateName = sanitizeFileName("00_《" + examTitle + "》期末考试A卷_标准空白卷.doc");
+                ZipEntry templateEntry = new ZipEntry(templateName);
+                templateEntry.setSize(templateBytes.length);
+                zos.putNextEntry(templateEntry);
+                zos.write(templateBytes);
+                zos.closeEntry();
+            } catch (Exception ignored) {
+                // 空白卷构建异常不阻断考生答卷导出
+            }
+
+            Set<String> usedFileNames = new HashSet<>();
+            for (ExamStudentSubmissionRowVO studentRow : students) {
+                Long uid = studentRow.getUserId();
+                ExamStudentPaperVO paper = examAdminService.getStudentPaper(examId, uid);
+                ExamStudentInfoVO info = paper.getStudentInfo();
+
+                String studentName = (info != null && info.getRealName() != null && !info.getRealName().isBlank())
+                        ? info.getRealName().trim()
+                        : (studentRow.getRealName() != null && !studentRow.getRealName().isBlank() && !"—".equals(studentRow.getRealName()) ? studentRow.getRealName().trim() : studentRow.getUsername());
+                String studentNo = (info != null && info.getStudentNo() != null && !info.getStudentNo().isBlank())
+                        ? info.getStudentNo().trim()
+                        : (studentRow.getStudentNo() != null && !studentRow.getStudentNo().isBlank() && !"—".equals(studentRow.getStudentNo()) ? studentRow.getStudentNo().trim() : "UID" + uid);
+
+                String baseDocName = "《" + examTitle + "》期末考试_" + studentName + "_" + studentNo + "_答卷.doc";
+                baseDocName = sanitizeFileName(baseDocName);
+                if (usedFileNames.contains(baseDocName)) {
+                    baseDocName = sanitizeFileName("《" + examTitle + "》期末考试_" + studentName + "_" + studentNo + "_uid" + uid + "_答卷.doc");
+                }
+                usedFileNames.add(baseDocName);
+
+                String htmlContent = buildWordHtml(paper, schoolName, semester, examTitle, false);
+                byte[] bytes = htmlContent.getBytes(StandardCharsets.UTF_8);
+
+                ZipEntry entry = new ZipEntry(baseDocName);
+                entry.setSize(bytes.length);
+                zos.putNextEntry(entry);
+                zos.write(bytes);
+                zos.closeEntry();
+            }
+            zos.finish();
+            zos.flush();
+        }
+    }
+
+    private String sanitizeFileName(String name) {
+        if (name == null) return "exam_paper.doc";
+        return name.replaceAll("[\\\\/:*?\"<>|]", "_");
     }
 
     private String buildWordHtml(ExamStudentPaperVO paper, String schoolName, String semester, String examTitle, boolean isPrintMode) {

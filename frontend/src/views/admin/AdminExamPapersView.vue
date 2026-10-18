@@ -32,6 +32,7 @@ const filteredStudents = computed(() => {
 });
 
 const columns = [
+  { key: 'select', label: '选择', width: '48px', align: 'center' as const },
   { key: 'studentNo', label: '学号/准考证号', width: '130px' },
   { key: 'realName', label: '姓名', width: '100px' },
   { key: 'classInfo', label: '学院 / 班级' },
@@ -41,6 +42,65 @@ const columns = [
   { key: 'status', label: '交卷状态', width: '100px' },
   { key: 'submittedAt', label: '交卷时间', width: '150px' },
 ];
+
+const selectedUserIds = ref<number[]>([]);
+const exportingBatch = ref(false);
+
+const isAllSelected = computed(() => {
+  if (filteredStudents.value.length === 0) return false;
+  return filteredStudents.value.every((s) => selectedUserIds.value.includes(s.userId));
+});
+
+function toggleSelect(userId: number) {
+  const idx = selectedUserIds.value.indexOf(userId);
+  if (idx >= 0) {
+    selectedUserIds.value.splice(idx, 1);
+  } else {
+    selectedUserIds.value.push(userId);
+  }
+}
+
+function toggleSelectAll() {
+  if (isAllSelected.value) {
+    selectedUserIds.value = [];
+  } else {
+    selectedUserIds.value = filteredStudents.value.map((s) => s.userId);
+  }
+}
+
+async function handleBatchExportAll() {
+  if (!overview.value || overview.value.totalStudents === 0) {
+    toast.error('当前考试暂无考生作答记录，无法批量导出');
+    return;
+  }
+  exportingBatch.value = true;
+  toast.info('正在打包全场考生答卷及标准空白卷，请稍候…');
+  try {
+    await examApi.downloadBatchWord(examId.value);
+    toast.success('全场学生答卷 ZIP 打包完成并开始下载！');
+  } catch (e: any) {
+    toast.error(e?.message || '批量导出失败，请重试');
+  } finally {
+    exportingBatch.value = false;
+  }
+}
+
+async function handleBatchExportSelected() {
+  if (selectedUserIds.value.length === 0) {
+    toast.error('请先勾选需要导出的考生');
+    return;
+  }
+  exportingBatch.value = true;
+  toast.info(`正在打包选中的 ${selectedUserIds.value.length} 份考生答卷，请稍候…`);
+  try {
+    await examApi.downloadBatchWord(examId.value, selectedUserIds.value);
+    toast.success(`选中的 ${selectedUserIds.value.length} 份学生答卷导出成功！`);
+  } catch (e: any) {
+    toast.error(e?.message || '批量导出失败，请重试');
+  } finally {
+    exportingBatch.value = false;
+  }
+}
 
 async function load() {
   loading.value = true;
@@ -129,6 +189,19 @@ onMounted(load);
         </div>
 
         <div class="header-right-actions">
+          <button
+            class="btn btn-success btn-export"
+            :disabled="exportingBatch || !overview.totalStudents"
+            @click="handleBatchExportAll"
+            title="一键打包导出全场所有考生的试卷 Word (.doc) 压缩包"
+          >
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span>{{ exportingBatch ? '正在打包中…' : '批量导出学生试卷 (ZIP)' }}</span>
+          </button>
           <button class="btn btn-primary btn-export" @click="exportBlankWord">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -195,7 +268,25 @@ onMounted(load);
               placeholder="搜索姓名、学号、班级、专业或账号…"
             />
           </div>
-          <span class="count-tag">已列出 {{ filteredStudents.length }} 名考生</span>
+          <div class="batch-select-actions">
+            <button
+              class="btn btn-sm btn-ghost"
+              type="button"
+              @click="toggleSelectAll"
+            >
+              {{ isAllSelected ? '取消全选' : '全选当页' }}
+            </button>
+            <button
+              v-if="selectedUserIds.length > 0"
+              class="btn btn-sm btn-success"
+              type="button"
+              :disabled="exportingBatch"
+              @click="handleBatchExportSelected"
+            >
+              批量导出选中试卷 ({{ selectedUserIds.length }}份)
+            </button>
+            <span class="count-tag">已选 {{ selectedUserIds.length }} / 共 {{ filteredStudents.length }} 名考生</span>
+          </div>
         </div>
 
         <DataTable
@@ -205,6 +296,16 @@ onMounted(load);
           row-key="userId"
           empty-text="本场考试暂无考生作答记录"
         >
+          <template #cell-select="{ row }">
+            <input
+              type="checkbox"
+              class="student-checkbox"
+              :checked="selectedUserIds.includes(row.userId)"
+              @change="toggleSelect(row.userId)"
+              :title="'勾选考生 ' + (row.realName || row.username)"
+            />
+          </template>
+
           <template #cell-studentNo="{ row }">
             <span class="mono bold-text">{{ row.studentNo }}</span>
           </template>
@@ -480,5 +581,25 @@ onMounted(load);
 }
 .btn-paper-view {
   font-weight: 600;
+}
+.batch-select-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.student-checkbox {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  accent-color: #1971c2;
+}
+.btn-success {
+  background: #2b8a3e;
+  color: #fff;
+  border-color: #2b8a3e;
+}
+.btn-success:hover:not(:disabled) {
+  background: #237032;
+  border-color: #237032;
 }
 </style>

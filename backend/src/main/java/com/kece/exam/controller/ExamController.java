@@ -77,21 +77,35 @@ public class ExamController {
         return ApiResponse.success(examAdminService.getStudentPaper(id, null));
     }
 
-    @Operation(summary = "导出考试试卷/学生答卷文档（支持 Word .doc 与 打印 PDF 视图）")
+    @Operation(summary = "导出考试试卷/学生答卷文档（支持 Word .doc、打印 PDF 视图与批量 ZIP 压缩包）")
     @RequireRole({Role.TEACHER, Role.ADMIN})
     @GetMapping("/{id}/export")
     public void exportDocument(
             @PathVariable Long id,
             @RequestParam(defaultValue = "word") String format,
             @RequestParam(required = false) Long studentId,
+            @RequestParam(required = false) java.util.List<Long> studentIds,
             jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
         if ("pdf".equalsIgnoreCase(format)) {
             String html = examExportService.getPrintableHtml(id, studentId);
             response.setContentType("text/html;charset=UTF-8");
             response.getWriter().write(html);
+        } else if ("zip".equalsIgnoreCase(format) || "batch".equalsIgnoreCase(format) || "batch-word".equalsIgnoreCase(format)) {
+            java.util.List<Long> targets = studentIds != null ? studentIds : (studentId != null ? java.util.List.of(studentId) : null);
+            examExportService.exportBatchZip(id, targets, response);
         } else {
             examExportService.exportWord(id, studentId, response);
         }
+    }
+
+    @Operation(summary = "批量导出全部或指定考生试卷 Word 文档压缩包 (.zip)")
+    @RequireRole({Role.TEACHER, Role.ADMIN})
+    @GetMapping("/{id}/export-batch")
+    public void exportBatch(
+            @PathVariable Long id,
+            @RequestParam(required = false) java.util.List<Long> studentIds,
+            jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        examExportService.exportBatchZip(id, studentIds, response);
     }
 
     @Operation(summary = "考试详情（含题目快照）")

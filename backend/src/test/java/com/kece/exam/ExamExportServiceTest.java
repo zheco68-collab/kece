@@ -137,4 +137,84 @@ class ExamExportServiceTest {
         assertThat(html).contains("Scanner sc = new Scanner(System.in);");
         assertThat(html).doesNotContain("{\"Main.java\"");
     }
+
+    @Test
+    void testExportBatchZip() throws Exception {
+        ExamAdminService examAdminService = mock(ExamAdminService.class);
+        ExamExportService exportService = new ExamExportService(examAdminService, new com.fasterxml.jackson.databind.ObjectMapper());
+
+        ExamVO exam = new ExamVO();
+        exam.setId(1L);
+        exam.setTitle("专业综合实训");
+        exam.setMode("OI");
+        exam.setSchoolName("湖北科技职业学院");
+        exam.setSemester("2025-2026学年度第一学期期末考试");
+
+        com.kece.exam.dto.ExamStudentSubmissionRowVO row = com.kece.exam.dto.ExamStudentSubmissionRowVO.builder()
+                .userId(100L)
+                .username("zhangsan")
+                .realName("张三")
+                .studentNo("2023001")
+                .college("软件工程学院")
+                .major("软件技术")
+                .className("2301班")
+                .totalScore(85)
+                .fullScore(100)
+                .submitted(true)
+                .build();
+
+        com.kece.exam.dto.ExamAdminOverviewVO overview = com.kece.exam.dto.ExamAdminOverviewVO.builder()
+                .exam(exam)
+                .students(List.of(row))
+                .totalStudents(1)
+                .submittedCount(1)
+                .build();
+
+        when(examAdminService.getAdminOverview(1L)).thenReturn(overview);
+
+        ExamStudentPaperVO templatePaper = new ExamStudentPaperVO();
+        templatePaper.setExam(exam);
+        templatePaper.setQuestions(List.of());
+        when(examAdminService.getStudentPaper(1L, null)).thenReturn(templatePaper);
+
+        ExamStudentInfoVO studentInfo = new ExamStudentInfoVO();
+        studentInfo.setRealName("张三");
+        studentInfo.setStudentNo("2023001");
+        ExamStudentPaperVO studentPaper = new ExamStudentPaperVO();
+        studentPaper.setExam(exam);
+        studentPaper.setUserId(100L);
+        studentPaper.setStudentInfo(studentInfo);
+        studentPaper.setQuestions(List.of());
+        when(examAdminService.getStudentPaper(1L, 100L)).thenReturn(studentPaper);
+
+        jakarta.servlet.http.HttpServletResponse response = mock(jakarta.servlet.http.HttpServletResponse.class);
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        jakarta.servlet.ServletOutputStream sos = new jakarta.servlet.ServletOutputStream() {
+            @Override
+            public boolean isReady() { return true; }
+            @Override
+            public void setWriteListener(jakarta.servlet.WriteListener writeListener) {}
+            @Override
+            public void write(int b) { baos.write(b); }
+            @Override
+            public void write(byte[] b, int off, int len) { baos.write(b, off, len); }
+        };
+        when(response.getOutputStream()).thenReturn(sos);
+
+        exportService.exportBatchZip(1L, null, response);
+
+        byte[] zipBytes = baos.toByteArray();
+        assertThat(zipBytes.length).isGreaterThan(0);
+
+        java.util.List<String> entryNames = new java.util.ArrayList<>();
+        try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zipBytes))) {
+            java.util.zip.ZipEntry ze;
+            while ((ze = zis.getNextEntry()) != null) {
+                entryNames.add(ze.getName());
+            }
+        }
+
+        assertThat(entryNames).anyMatch(name -> name.contains("标准空白卷.doc"));
+        assertThat(entryNames).anyMatch(name -> name.contains("张三_2023001_答卷.doc"));
+    }
 }

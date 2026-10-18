@@ -275,4 +275,54 @@ export const examApi = {
     const url = examApi.getExportUrl(examId, 'pdf', studentId);
     window.open(url, '_blank');
   },
+  getBatchExportUrl: (examId: number, studentIds?: number[]) => {
+    let url = `/api/v1/exams/${examId}/export-batch`;
+    const params: string[] = [];
+    if (studentIds && studentIds.length > 0) {
+      params.push(`studentIds=${studentIds.join(',')}`);
+    }
+    const token = localStorage.getItem('token');
+    if (token) {
+      params.push(`token=${encodeURIComponent(token)}`);
+    }
+    if (params.length > 0) {
+      url += `?${params.join('&')}`;
+    }
+    return url;
+  },
+  downloadBatchWord: async (examId: number, studentIds?: number[]) => {
+    const url = examApi.getBatchExportUrl(examId, studentIds);
+    const token = localStorage.getItem('token');
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const resp = await fetch(url, { headers });
+    const contentType = resp.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await resp.json();
+      throw new Error(data.message || '批量导出试卷失败');
+    }
+    if (!resp.ok) {
+      throw new Error(`批量导出失败 (HTTP ${resp.status})`);
+    }
+
+    let filename = '学生试卷批量导出.zip';
+    const disp = resp.headers.get('content-disposition');
+    if (disp) {
+      const match = disp.match(/filename\*=UTF-8''([^;]+)/i) || disp.match(/filename="?([^";]+)"?/i);
+      if (match && match[1]) {
+        filename = decodeURIComponent(match[1]);
+      }
+    }
+
+    const blob = await resp.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(blobUrl);
+  },
 };

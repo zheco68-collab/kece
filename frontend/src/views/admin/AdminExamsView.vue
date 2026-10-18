@@ -53,6 +53,21 @@ function exportBlankDoc(examId: number) {
   examApi.downloadWord(examId);
 }
 
+const exportingBatchExamId = ref<number | null>(null);
+
+async function handleExportBatchDoc(examId: number, examTitle: string) {
+  exportingBatchExamId.value = examId;
+  toast.info(`正在打包考试「${examTitle}」的所有学生试卷，请稍候…`);
+  try {
+    await examApi.downloadBatchWord(examId);
+    toast.success(`考试「${examTitle}」学生试卷导出成功！`);
+  } catch (e: any) {
+    toast.error(e?.message || '批量导出试卷失败，请稍后重试');
+  } finally {
+    exportingBatchExamId.value = null;
+  }
+}
+
 async function load() {
   loading.value = true;
   loadError.value = '';
@@ -167,6 +182,15 @@ onMounted(load);
           @click="router.push(`/admin/exams/${row.id}/papers`)"
         >
           成绩与查卷
+        </button>
+        <button
+          class="btn btn-ghost btn-sm"
+          type="button"
+          :disabled="exportingBatchExamId === row.id"
+          @click="handleExportBatchDoc(row.id, row.title)"
+          title="批量打包导出本场所有考生的试卷 Word (.doc) 压缩包"
+        >
+          {{ exportingBatchExamId === row.id ? '打包中…' : '批量导出答卷' }}
         </button>
         <button
           class="btn btn-ghost btn-sm"
