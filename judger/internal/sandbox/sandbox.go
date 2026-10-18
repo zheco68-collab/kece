@@ -55,7 +55,7 @@ func (r *Runner) Compile(ctx context.Context, lang, ws string) (stderr string, o
 	defer cancel()
 
 	args := r.dockerArgs(r.CompileMemoryMb, ws, r.imageFor(lang), shell)
-	_, stderr, code, err := runDocker(timeoutCtx, args)
+	stdout, stderr, code, err := runDocker(timeoutCtx, args)
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", false, ctx.Err()
@@ -65,7 +65,11 @@ func (r *Runner) Compile(ctx context.Context, lang, ws string) (stderr string, o
 		}
 		return "", false, fmt.Errorf("docker compile: %w", err)
 	}
-	return truncate(stderr, maxStderrBytes), code == 0, nil
+	compileLog := stderr
+	if compileLog == "" {
+		compileLog = stdout
+	}
+	return truncate(compileLog, maxStderrBytes), code == 0, nil
 }
 
 // Run 以给定输入运行编译产物，返回标准输出、退出码与耗时。
@@ -319,7 +323,7 @@ func (s *Session) Compile(ctx context.Context) (stderr string, ok bool, err erro
 	defer cancel()
 
 	args := []string{"exec", s.containerID, "sh", "-c", shell}
-	_, stderr, code, err := runDocker(timeoutCtx, args)
+	stdout, stderr, code, err := runDocker(timeoutCtx, args)
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", false, ctx.Err()
@@ -329,7 +333,11 @@ func (s *Session) Compile(ctx context.Context) (stderr string, ok bool, err erro
 		}
 		return "", false, fmt.Errorf("docker exec compile: %w", err)
 	}
-	return truncate(stderr, maxStderrBytes), code == 0, nil
+	compileLog := stderr
+	if compileLog == "" {
+		compileLog = stdout
+	}
+	return truncate(compileLog, maxStderrBytes), code == 0, nil
 }
 
 // Run 在复用的容器中执行单个测试用例。
