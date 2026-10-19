@@ -8,6 +8,10 @@
 
 ---
 
+## 在线体验  https://kece.zheco68.asia/
+
+
+
 ##  界面全景展示 (Interface Showcase)
 
 KECE 采用**纯粹极简的硬朗直角（0-Radius）与 Bento Grid 工业美学**设计，摒弃多余拟物与圆角修饰，采用高对比度黑白灰、数码排盘以及标志性的**评测直角状态方块矩阵**。
