@@ -855,9 +855,10 @@ onBeforeUnmount(() => {
 }
 .code-pre {
   margin: 0;
-  padding: 16px;
-  background: #1e1e1e;
-  color: #f8f8f2;
+  padding: 16px 18px;
+  background: #f6f8fa;
+  color: #24292f;
+  border: 1px solid var(--line, #e1e4e8);
   border-radius: 8px;
   font-size: 13px;
   line-height: 1.6;
@@ -865,6 +866,7 @@ onBeforeUnmount(() => {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 .obj-detail-section {
   padding: 10px 14px;

@@ -1883,14 +1883,17 @@ onMounted(() => {
 
 .code-pre {
   margin: 0;
-  padding: 16px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 0;
+  padding: 16px 18px;
+  background: #f6f8fa;
+  color: #24292f;
+  border: 1px solid var(--line, #e1e4e8);
+  border-radius: 8px;
   max-height: 50vh;
   overflow: auto;
   font-size: 13px;
   line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .code-pre code {
