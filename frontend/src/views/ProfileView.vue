@@ -1887,7 +1887,7 @@ onMounted(() => {
   background: #f6f8fa;
   color: #24292f;
   border: 1px solid var(--line, #e1e4e8);
-  border-radius: 8px;
+  border-radius: 0;
   max-height: 50vh;
   overflow: auto;
   font-size: 13px;

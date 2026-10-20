@@ -783,7 +783,7 @@ onBeforeUnmount(() => {
 .modal-card {
   background: var(--bg, #fff);
   border: 1px solid var(--line, #e5e7eb);
-  border-radius: 12px;
+  border-radius: 0;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
   width: 100%;
   max-width: 820px;
@@ -859,7 +859,7 @@ onBeforeUnmount(() => {
   background: #f6f8fa;
   color: #24292f;
   border: 1px solid var(--line, #e1e4e8);
-  border-radius: 8px;
+  border-radius: 0;
   font-size: 13px;
   line-height: 1.6;
   max-height: 480px;
@@ -871,7 +871,7 @@ onBeforeUnmount(() => {
 .obj-detail-section {
   padding: 10px 14px;
   background: var(--bg-secondary, #f9fafb);
-  border-radius: 8px;
+  border-radius: 0;
   border: 1px solid var(--line, #e5e7eb);
   font-size: 14px;
   line-height: 1.6;
@@ -892,7 +892,7 @@ onBeforeUnmount(() => {
 }
 .obj-detail-box {
   padding: 12px 14px;
-  border-radius: 8px;
+  border-radius: 0;
   border: 1px solid var(--line, #e5e7eb);
 }
 .box-label {
