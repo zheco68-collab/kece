@@ -199,6 +199,12 @@ public class ObjectiveQuestionService {
         int offset = (safePage - 1) * safeSize;
         List<ObjectiveSubmissionListVO> list =
                 submissionMapper.findPage(userId, null, correct, offset, safeSize);
+        // 安全防抄袭：前台客观题作答列表仅答题者本人可见作答原文，其他人一律脱敏置空
+        if (!userId.equals(user.getId())) {
+            for (ObjectiveSubmissionListVO item : list) {
+                item.setAnswer(null);
+            }
+        }
         long total = submissionMapper.count(userId, null, correct);
         return new PageResult<>(list, total, safePage, safeSize);
     }

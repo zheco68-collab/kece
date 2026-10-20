@@ -124,6 +124,12 @@ public class SubmissionService {
                 (status == null || status.isBlank()) ? null : status.trim().toUpperCase();
         List<SubmissionListVO> list =
                 submissionMapper.findPage(userId, null, statusFilter, null, offset, safeSize);
+        // 安全防抄袭：前台提交列表仅提交者本人可见代码原文，其他人一律脱敏置空
+        if (!userId.equals(user.getId())) {
+            for (SubmissionListVO item : list) {
+                item.setCodeContent(null);
+            }
+        }
         long total = submissionMapper.count(userId, null, statusFilter, null);
         return new PageResult<>(list, total, safePage, safeSize);
     }

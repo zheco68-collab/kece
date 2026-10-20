@@ -113,6 +113,12 @@ public class DbSubmissionService {
                 (status == null || status.isBlank()) ? null : status.trim().toUpperCase();
         List<DbSubmissionListVO> list =
                 submissionMapper.findPage(userId, null, statusFilter, null, offset, safeSize);
+        // 安全防抄袭：前台数据库提交列表仅提交者本人可见 SQL 原文，其他人一律脱敏置空
+        if (!userId.equals(user.getId())) {
+            for (DbSubmissionListVO item : list) {
+                item.setSqlContent(null);
+            }
+        }
         long total = submissionMapper.count(userId, null, statusFilter, null);
         return new PageResult<>(list, total, safePage, safeSize);
     }

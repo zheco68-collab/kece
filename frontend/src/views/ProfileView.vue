@@ -42,6 +42,11 @@ const isSelf = computed(() => {
   return targetUserId.value === userStore.userInfo?.id
 })
 
+const isAdminOrTeacher = computed(() => {
+  const roles = userStore.userInfo?.roles || []
+  return roles.includes('ADMIN') || roles.includes('TEACHER')
+})
+
 // ---- 个人基础信息 ----
 const profile = ref<UserProfile | null>(null)
 const profileLoading = ref(true)
@@ -234,6 +239,11 @@ async function loadExams() {
 }
 
 async function loadCodeSubmissions() {
+  if (!isSelf.value && !isAdminOrTeacher.value) {
+    codeList.value = []
+    codeTotal.value = 0
+    return
+  }
   codeLoading.value = true
   try {
     const res = await submissionApi.list({
@@ -253,6 +263,11 @@ async function loadCodeSubmissions() {
 }
 
 async function loadDbSubmissions() {
+  if (!isSelf.value && !isAdminOrTeacher.value) {
+    dbList.value = []
+    dbTotal.value = 0
+    return
+  }
   dbLoading.value = true
   try {
     const res = await databaseApi.listSubmissions({
@@ -272,6 +287,11 @@ async function loadDbSubmissions() {
 }
 
 async function loadObjSubmissions() {
+  if (!isSelf.value && !isAdminOrTeacher.value) {
+    objList.value = []
+    objTotal.value = 0
+    return
+  }
   objLoading.value = true
   try {
     const correct =
@@ -594,7 +614,7 @@ onMounted(() => {
       </section>
 
       <!-- 4. 全量整合提交记录模块 (Submissions Module) -->
-      <section id="submissions-section" class="card profile-block-card">
+      <section v-if="isSelf || isAdminOrTeacher" id="submissions-section" class="card profile-block-card">
         <div class="block-header">
           <div class="block-title-box">
             <div class="block-title-row">
@@ -691,7 +711,7 @@ onMounted(() => {
                   <th>用时</th>
                   <th>内存</th>
                   <th>提交时间</th>
-                  <th>操作</th>
+                  <th v-if="isSelf">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -708,10 +728,10 @@ onMounted(() => {
                   <td>
                     <button
                       type="button"
-                      class="status-badge clickable"
-                      :class="statusTone(r.status)"
-                      title="点击查看提交代码"
-                      @click="codeSelected = r"
+                      class="status-badge"
+                      :class="[statusTone(r.status), isSelf ? 'clickable' : '']"
+                      :title="isSelf ? '点击查看提交代码' : ''"
+                      @click="isSelf ? (codeSelected = r) : null"
                     >
                       {{ STATUS_ABBR[r.status] ?? r.status }}
                     </button>
@@ -720,7 +740,7 @@ onMounted(() => {
                   <td class="mono time-used">{{ r.timeUsedMs != null ? r.timeUsedMs + 'ms' : '-' }}</td>
                   <td class="mono mem-used">{{ r.memoryUsedKb != null ? r.memoryUsedKb + 'KB' : '-' }}</td>
                   <td class="mono date-cell">{{ formatTime(r.createdAt) }}</td>
-                  <td>
+                  <td v-if="isSelf">
                     <RouterLink
                       :to="`/submissions/${r.submissionId}?questionId=${r.questionId}`"
                       class="detail-action"
@@ -775,7 +795,7 @@ onMounted(() => {
                   <th>得分</th>
                   <th>用时</th>
                   <th>提交时间</th>
-                  <th>操作</th>
+                  <th v-if="isSelf">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -789,10 +809,10 @@ onMounted(() => {
                   <td>
                     <button
                       type="button"
-                      class="status-badge clickable"
-                      :class="statusTone(r.status)"
-                      title="点击查看提交 SQL"
-                      @click="dbSelected = r"
+                      class="status-badge"
+                      :class="[statusTone(r.status), isSelf ? 'clickable' : '']"
+                      :title="isSelf ? '点击查看提交 SQL' : ''"
+                      @click="isSelf ? (dbSelected = r) : null"
                     >
                       {{ STATUS_ABBR[r.status] ?? r.status }}
                     </button>
@@ -800,7 +820,7 @@ onMounted(() => {
                   <td class="mono score-cell">{{ r.score ?? '-' }}</td>
                   <td class="mono time-used">{{ r.timeUsedMs != null ? r.timeUsedMs + 'ms' : '-' }}</td>
                   <td class="mono date-cell">{{ formatTime(r.createdAt) }}</td>
-                  <td>
+                  <td v-if="isSelf">
                     <RouterLink
                       :to="`/database-submissions/${r.submissionId}`"
                       class="detail-action"
@@ -854,9 +874,9 @@ onMounted(() => {
                   <th>题型</th>
                   <th>作答结果</th>
                   <th>得分</th>
-                  <th>提交答案</th>
+                  <th v-if="isSelf">提交答案</th>
                   <th>作答时间</th>
-                  <th>操作</th>
+                  <th v-if="isSelf">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -875,10 +895,10 @@ onMounted(() => {
                   <td>
                     <button
                       type="button"
-                      class="status-badge clickable"
-                      :class="r.correct === 1 ? 'ac' : 'wa'"
-                      title="点击查看作答明细"
-                      @click="objSelected = r"
+                      class="status-badge"
+                      :class="[r.correct === 1 ? 'ac' : 'wa', isSelf ? 'clickable' : '']"
+                      :title="isSelf ? '点击查看作答明细' : ''"
+                      @click="isSelf ? (objSelected = r) : null"
                     >
                       {{ r.correct === 1 ? 'AC' : 'WA' }}
                     </button>
@@ -886,11 +906,11 @@ onMounted(() => {
                   <td class="mono score-cell">
                     {{ r.score ?? '-' }} / {{ r.fullScore ?? '-' }}
                   </td>
-                  <td class="mono ans-preview">
+                  <td v-if="isSelf" class="mono ans-preview">
                     {{ r.answer || '-' }}
                   </td>
                   <td class="mono date-cell">{{ formatTime(r.createdAt) }}</td>
-                  <td>
+                  <td v-if="isSelf">
                     <button
                       type="button"
                       class="detail-action btn-inline"

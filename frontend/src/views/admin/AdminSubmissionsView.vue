@@ -338,6 +338,50 @@ async function rejudgeQuestionBatch() {
 const canBatchRejudge = () =>
   activeTab.value === 'objective' && toOptionalNumber(objQuestionId.value) != null;
 
+// ---- 提交详情/代码查看弹窗 ----
+const selectedCodeRow = ref<CodeSubmissionRow | null>(null);
+const selectedDbRow = ref<DbSubmissionRow | null>(null);
+const selectedObjRow = ref<ObjectiveSubmissionRow | null>(null);
+const copyTip = ref(false);
+
+function parseCode(codeContent: string): string {
+  if (!codeContent) return '';
+  try {
+    const obj = JSON.parse(codeContent);
+    if (obj && typeof obj === 'object') {
+      const val = Object.values(obj).find((v) => typeof v === 'string' && v.length > 0);
+      if (typeof val === 'string') return val;
+    }
+  } catch {
+    return codeContent;
+  }
+  return codeContent;
+}
+
+async function copyText(text: string) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    copyTip.value = true;
+    setTimeout(() => {
+      copyTip.value = false;
+    }, 1500);
+    success('已复制到剪贴板');
+  } catch {
+    error('复制失败，请手动选中文本复制');
+  }
+}
+
+function openViewModal(row: CodeSubmissionRow | DbSubmissionRow | ObjectiveSubmissionRow) {
+  if (activeTab.value === 'code') {
+    selectedCodeRow.value = row as CodeSubmissionRow;
+  } else if (activeTab.value === 'database') {
+    selectedDbRow.value = row as DbSubmissionRow;
+  } else {
+    selectedObjRow.value = row as ObjectiveSubmissionRow;
+  }
+}
+
 onMounted(() => {
   load();
 });
@@ -427,7 +471,12 @@ onBeforeUnmount(() => {
       row-key="submissionId"
     >
       <template #cell-status="{ row }">
-        <span class="status-badge" :class="statusTone(row.status as SubmissionStatus)">
+        <span
+          class="status-badge clickable"
+          :class="statusTone(row.status as SubmissionStatus)"
+          :title="activeTab === 'code' ? '点击查看代码' : '点击查看 SQL'"
+          @click="openViewModal(row)"
+        >
           {{ STATUS_ABBR[row.status as SubmissionStatus] ?? row.status }}
         </span>
       </template>
@@ -444,7 +493,12 @@ onBeforeUnmount(() => {
         <span>{{ LANGUAGE_LABELS[row.language] ?? row.language }}</span>
       </template>
       <template #cell-correct="{ row }">
-        <span class="status-badge" :class="row.correct === 1 ? 'ac' : 'wa'">
+        <span
+          class="status-badge clickable"
+          :class="row.correct === 1 ? 'ac' : 'wa'"
+          title="点击查看作答详情"
+          @click="openViewModal(row)"
+        >
           {{ row.correct === 1 ? 'AC' : 'WA' }}
         </span>
       </template>
@@ -461,7 +515,12 @@ onBeforeUnmount(() => {
         <span class="muted">{{ row.username }}</span>
       </template>
       <template #actions="{ row }">
-        <button class="btn btn-ghost btn-sm" type="button" @click="rejudgeRow(row)">重判</button>
+        <div class="row-actions">
+          <button class="btn btn-outline btn-sm action-btn" type="button" @click="openViewModal(row)">
+            {{ activeTab === 'code' ? '查看代码' : activeTab === 'database' ? '查看 SQL' : '查看作答' }}
+          </button>
+          <button class="btn btn-ghost btn-sm action-btn" type="button" @click="rejudgeRow(row)">重判</button>
+        </div>
       </template>
     </DataTable>
 
@@ -471,6 +530,120 @@ onBeforeUnmount(() => {
       :size="size"
       :total="currentTotal()"
     />
+
+    <!-- 弹窗 1: 编程题代码预览弹窗 -->
+    <Teleport to="body">
+      <div v-if="selectedCodeRow" class="modal-overlay" @click.self="selectedCodeRow = null">
+        <div class="modal-card code-view-modal" role="dialog" aria-modal="true">
+          <div class="modal-header">
+            <div class="code-modal-title-group">
+              <span class="mono code-modal-id">#{{ selectedCodeRow.submissionId }}</span>
+              <span class="code-modal-title">{{ selectedCodeRow.questionTitle || '编程题' }}</span>
+              <span class="status-badge" :class="statusTone(selectedCodeRow.status as SubmissionStatus)">
+                {{ STATUS_ABBR[selectedCodeRow.status as SubmissionStatus] ?? selectedCodeRow.status }}
+              </span>
+            </div>
+            <button class="modal-close-btn" type="button" @click="selectedCodeRow = null">✕</button>
+          </div>
+
+          <div class="modal-body modal-code-body">
+            <div class="code-modal-meta mono">
+              <span>用户: <b>{{ selectedCodeRow.username }}</b> (UID: {{ selectedCodeRow.userId }})</span>
+              <span>语言: <b>{{ LANGUAGE_LABELS[selectedCodeRow.language] ?? selectedCodeRow.language }}</b></span>
+              <span>得分: <b>{{ selectedCodeRow.score ?? '-' }}</b></span>
+              <span>用时: <b>{{ selectedCodeRow.timeUsedMs != null ? selectedCodeRow.timeUsedMs + 'ms' : '-' }}</b></span>
+              <span>内存: <b>{{ formatMemory(selectedCodeRow.memoryUsedKb) }}</b></span>
+              <span class="copy-action-span">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm copy-btn"
+                  @click="copyText(parseCode(selectedCodeRow.codeContent))"
+                >
+                  {{ copyTip ? '已复制 ✔' : '复制代码' }}
+                </button>
+              </span>
+            </div>
+            <pre class="code-pre mono"><code>{{ parseCode(selectedCodeRow.codeContent) }}</code></pre>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 弹窗 2: 数据库 SQL 预览弹窗 -->
+    <Teleport to="body">
+      <div v-if="selectedDbRow" class="modal-overlay" @click.self="selectedDbRow = null">
+        <div class="modal-card code-view-modal" role="dialog" aria-modal="true">
+          <div class="modal-header">
+            <div class="code-modal-title-group">
+              <span class="mono code-modal-id">#{{ selectedDbRow.submissionId }}</span>
+              <span class="code-modal-title">{{ selectedDbRow.questionTitle || '数据库题' }}</span>
+              <span class="status-badge" :class="statusTone(selectedDbRow.status as SubmissionStatus)">
+                {{ STATUS_ABBR[selectedDbRow.status as SubmissionStatus] ?? selectedDbRow.status }}
+              </span>
+            </div>
+            <button class="modal-close-btn" type="button" @click="selectedDbRow = null">✕</button>
+          </div>
+
+          <div class="modal-body modal-code-body">
+            <div class="code-modal-meta mono">
+              <span>用户: <b>{{ selectedDbRow.username }}</b> (UID: {{ selectedDbRow.userId }})</span>
+              <span>得分: <b>{{ selectedDbRow.score ?? '-' }}</b></span>
+              <span>用时: <b>{{ selectedDbRow.timeUsedMs != null ? selectedDbRow.timeUsedMs + 'ms' : '-' }}</b></span>
+              <span class="copy-action-span">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm copy-btn"
+                  @click="copyText(selectedDbRow.sqlContent)"
+                >
+                  {{ copyTip ? '已复制 ✔' : '复制 SQL' }}
+                </button>
+              </span>
+            </div>
+            <pre class="code-pre mono"><code>{{ selectedDbRow.sqlContent }}</code></pre>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 弹窗 3: 客观题作答预览弹窗 -->
+    <Teleport to="body">
+      <div v-if="selectedObjRow" class="modal-overlay" @click.self="selectedObjRow = null">
+        <div class="modal-card code-view-modal" role="dialog" aria-modal="true">
+          <div class="modal-header">
+            <div class="code-modal-title-group">
+              <span class="mono code-modal-id">#{{ selectedObjRow.submissionId }}</span>
+              <span class="code-modal-title">客观题作答详情</span>
+              <span class="status-badge" :class="selectedObjRow.correct === 1 ? 'ac' : 'wa'">
+                {{ selectedObjRow.correct === 1 ? '答对 AC' : '答错 WA' }}
+              </span>
+            </div>
+            <button class="modal-close-btn" type="button" @click="selectedObjRow = null">✕</button>
+          </div>
+
+          <div class="modal-body modal-code-body">
+            <div class="code-modal-meta mono">
+              <span>用户: <b>{{ selectedObjRow.username }}</b> (UID: {{ selectedObjRow.userId }})</span>
+              <span>题型: <b>{{ OBJECTIVE_TYPE_LABELS[selectedObjRow.type] ?? selectedObjRow.type }}</b></span>
+              <span>得分: <b>{{ selectedObjRow.score ?? '-' }} / {{ selectedObjRow.fullScore ?? '-' }}</b></span>
+            </div>
+            <div class="obj-detail-section">
+              <div class="obj-detail-label">题目内容：</div>
+              <div class="obj-detail-content">{{ selectedObjRow.questionTitle }}</div>
+            </div>
+            <div class="obj-detail-grid">
+              <div class="obj-detail-box user-ans" :class="selectedObjRow.correct === 1 ? 'box-correct' : 'box-wrong'">
+                <div class="box-label">学生作答</div>
+                <div class="box-content mono">{{ selectedObjRow.answer || '（未作答）' }}</div>
+              </div>
+              <div class="obj-detail-box std-ans">
+                <div class="box-label">标准答案</div>
+                <div class="box-content mono">{{ selectedObjRow.correctAnswer || '—' }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -578,5 +751,171 @@ onBeforeUnmount(() => {
 .time {
   color: var(--ink-tertiary);
   font-size: 13px;
+}
+.clickable {
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.clickable:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.action-btn {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+.modal-card {
+  background: var(--bg, #fff);
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  width: 100%;
+  max-width: 820px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalIn 0.18s ease-out;
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line, #e5e7eb);
+  background: var(--bg-secondary, #fafafa);
+}
+.code-modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.code-modal-id {
+  font-size: 14px;
+  color: var(--ink-secondary);
+  font-weight: 700;
+}
+.code-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.modal-close-btn {
+  font-size: 16px;
+  color: var(--ink-tertiary);
+  padding: 4px;
+  line-height: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.modal-close-btn:hover {
+  color: var(--ink);
+}
+.modal-code-body {
+  padding: 18px 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.code-modal-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--ink-secondary);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line, #e5e7eb);
+}
+.copy-action-span {
+  margin-left: auto;
+}
+.code-pre {
+  margin: 0;
+  padding: 16px;
+  background: #1e1e1e;
+  color: #f8f8f2;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  max-height: 480px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.obj-detail-section {
+  padding: 10px 14px;
+  background: var(--bg-secondary, #f9fafb);
+  border-radius: 8px;
+  border: 1px solid var(--line, #e5e7eb);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.obj-detail-label {
+  font-weight: 600;
+  color: var(--ink-secondary);
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.obj-detail-content {
+  color: var(--ink);
+}
+.obj-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.obj-detail-box {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line, #e5e7eb);
+}
+.box-label {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--ink-secondary);
+}
+.box-content {
+  font-size: 14px;
+  font-weight: 600;
+}
+.box-correct {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
+.box-wrong {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+.std-ans {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #1e293b;
 }
 </style>
