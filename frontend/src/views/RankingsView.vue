@@ -797,13 +797,23 @@ onBeforeUnmount(() => {
 }
 
 .role-admin {
-  background: #fee2e2;
-  color: #991b1b;
+  background: #7048e8;
+  color: #ffffff;
+  border: 1px solid #5f3dc4;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .role-teacher {
-  background: #e0e7ff;
-  color: #3730a3;
+  background: #2b8a3e;
+  color: #ffffff;
+  border: 1px solid #237032;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .user-bio {

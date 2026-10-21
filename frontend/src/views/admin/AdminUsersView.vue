@@ -389,12 +389,14 @@ onBeforeUnmount(() => {
   color: var(--ink-secondary);
 }
 .role-teacher {
-  background: #e2e2e2;
-  color: var(--ink);
+  background: #2b8a3e;
+  color: #fff;
+  border: 1px solid #237032;
 }
 .role-admin {
-  background: var(--button);
+  background: #7048e8;
   color: #fff;
+  border: 1px solid #5f3dc4;
 }
 .status-enabled {
   background: var(--success-bg);
