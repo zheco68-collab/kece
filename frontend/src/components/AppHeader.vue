@@ -236,31 +236,39 @@ function logout() {
 }
 .user-profile-link {
   display: inline-flex;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
-  padding: 3px 8px 3px 4px;
+  padding: 0 10px 0 0;
   border: 1px solid var(--line);
   background: var(--surface);
   transition: all 0.15s ease;
   color: var(--ink);
   height: 34px;
   box-sizing: border-box;
+  overflow: hidden;
+  text-decoration: none;
 }
 .user-profile-link:hover,
 .user-profile-link.active {
   border-color: var(--ink);
   background: var(--bg);
 }
+.user-profile-link:hover .user-avatar-wrap {
+  border-right-color: var(--ink);
+}
 .user-avatar-wrap {
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  min-width: 32px;
+  align-self: stretch;
   flex-shrink: 0;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: none;
+  border-right: 1px solid var(--line);
+  background: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  transition: border-color 0.15s ease;
 }
 .user-avatar {
   width: 100%;
@@ -269,11 +277,19 @@ function logout() {
   display: block;
 }
 .user-avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 13px;
   font-weight: 700;
   color: var(--ink-secondary);
+  background: #f0f0f0;
 }
 .username {
+  display: flex;
+  align-items: center;
   color: var(--ink);
   font-size: 14px;
   font-weight: 600;
