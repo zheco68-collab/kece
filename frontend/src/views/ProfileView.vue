@@ -1134,30 +1134,35 @@ onMounted(() => {
   transform: translateY(-8px);
 }
 
-/* 1. 个人名片 Hero Card */
+/* 1. 个人名片 Hero Card（头像占满左侧，严格直角边线分割） */
 .hero-profile-card {
-  padding: 32px;
+  padding: 0;
   background: var(--surface);
   border: 1px solid var(--line);
   box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .hero-main-layout {
   display: flex;
-  align-items: flex-start;
-  gap: 32px;
+  align-items: stretch;
+  min-height: 180px;
 }
 
-/* 放大后的方形头像 (128px × 128px) */
+/* 方形头像占满左侧 (宽高自适应正方形，右侧直角边线分割) */
 .hero-avatar-box {
-  width: 128px;
-  height: 128px;
+  width: auto;
+  min-width: 180px;
+  max-width: 240px;
+  aspect-ratio: 1 / 1;
+  align-self: stretch;
   flex-shrink: 0;
-  border: 2px solid var(--line);
+  border: none;
+  border-right: 1px solid var(--line);
   background: #fbfbfb;
   position: relative;
   overflow: hidden;
-  transition: border-color 0.2s ease, transform 0.15s ease;
+  transition: opacity 0.15s ease;
 }
 
 .hero-avatar-box.is-clickable {
@@ -1165,8 +1170,7 @@ onMounted(() => {
 }
 
 .hero-avatar-box.is-clickable:hover {
-  border-color: var(--ink);
-  transform: translateY(-1px);
+  opacity: 0.92;
 }
 
 .avatar-image {
@@ -1182,7 +1186,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 56px;
+  font-size: 64px;
   font-weight: 800;
   color: var(--ink-secondary);
   background: #f4f4f5;
@@ -1200,7 +1204,7 @@ onMounted(() => {
   opacity: 0;
   transition: opacity 0.2s ease;
   color: #fff;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -1218,7 +1222,9 @@ onMounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px 32px;
   min-width: 0;
 }
 
@@ -1947,12 +1953,22 @@ onMounted(() => {
 @media (max-width: 860px) {
   .hero-main-layout {
     flex-direction: column;
-    align-items: center;
-    text-align: center;
+    align-items: stretch;
+  }
+  .hero-avatar-box {
+    width: 100%;
+    min-width: unset;
+    max-width: unset;
+    height: 180px;
+    aspect-ratio: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
   }
   .hero-info-column {
+    padding: 20px 16px;
     width: 100%;
     align-items: center;
+    text-align: center;
   }
   .user-primary-row {
     flex-direction: column;
