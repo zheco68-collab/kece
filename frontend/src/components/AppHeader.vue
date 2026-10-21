@@ -236,7 +236,7 @@ function logout() {
 }
 .user-profile-link {
   display: inline-flex;
-  align-items: stretch;
+  align-items: center;
   gap: 8px;
   padding: 0 10px 0 0;
   border: 1px solid var(--line);
@@ -259,6 +259,7 @@ function logout() {
 .user-avatar-wrap {
   width: 32px;
   min-width: 32px;
+  height: 100%;
   align-self: stretch;
   flex-shrink: 0;
   border: none;
@@ -288,8 +289,6 @@ function logout() {
   background: #f0f0f0;
 }
 .username {
-  display: flex;
-  align-items: center;
   color: var(--ink);
   font-size: 14px;
   font-weight: 600;
@@ -299,6 +298,10 @@ function logout() {
   white-space: nowrap;
 }
 .role-tag {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 11px;
   font-weight: 600;
   border-radius: 0;
