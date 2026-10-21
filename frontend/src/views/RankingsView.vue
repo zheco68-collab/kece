@@ -414,31 +414,38 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 
-/* 登录用户位次卡片 */
+/* 登录用户位次卡片（头像占满左侧，严格直角单色分割） */
 .head-rank-card {
-  padding: 12px 18px;
+  padding: 0;
   border: 1px solid var(--line);
   background: var(--surface);
   display: flex;
-  align-items: center;
-  gap: 20px;
-  flex-wrap: wrap;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  min-height: 64px;
+  overflow: hidden;
 }
 
 .my-rank-header {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  align-items: stretch;
+  flex-shrink: 0;
 }
 
 .my-avatar-wrap {
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--line);
+  width: 64px;
+  min-width: 64px;
+  align-self: stretch;
+  border-right: 1px solid var(--line);
   background: #ffffff;
   overflow: hidden;
   display: block;
   flex-shrink: 0;
+  transition: opacity 0.15s ease;
+}
+
+.my-avatar-wrap:hover {
+  opacity: 0.85;
 }
 
 .my-avatar-img {
@@ -455,7 +462,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 20px;
   color: var(--ink-secondary);
   background: #f0f0f0;
 }
@@ -463,6 +470,9 @@ onBeforeUnmount(() => {
 .my-info-text {
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 16px;
 }
 
 .my-name-row {
@@ -497,7 +507,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 18px;
-  padding-left: 18px;
+  padding: 10px 18px;
   border-left: 1px solid var(--line);
 }
 
@@ -900,10 +910,15 @@ onBeforeUnmount(() => {
   }
   .head-rank-card {
     width: 100%;
+    flex-wrap: wrap;
+  }
+  .my-rank-header {
+    width: 100%;
   }
   .my-rank-stats {
     border-left: none;
-    padding-left: 0;
+    border-top: 1px solid var(--line);
+    padding: 12px 16px;
     width: 100%;
     justify-content: space-between;
   }
