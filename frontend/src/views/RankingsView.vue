@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { rankApi, type RankUser } from '@/api/rank'
 import Pagination from '@/components/Pagination.vue'
 import { useUserStore } from '@/stores/user'
 
+const router = useRouter()
 const userStore = useUserStore()
 
 // 选中的题型分类
@@ -112,6 +113,11 @@ function changePage(p: number) {
   page.value = p
   load()
   window.scrollTo({ top: 180, behavior: 'smooth' })
+}
+
+// 点击行直达选手主页
+function goToProfile(userId: number) {
+  router.push(`/profile/${userId}`)
 }
 
 // 搜索防抖
@@ -265,7 +271,6 @@ onBeforeUnmount(() => {
             <th class="col-submissions mono">总作答次数</th>
             <th class="col-rate mono">AC 通过率</th>
             <th class="col-time mono">最后活跃时间</th>
-            <th class="col-action">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -274,6 +279,7 @@ onBeforeUnmount(() => {
             :key="row.userId"
             class="rank-row"
             :class="{ 'is-self': row.userId === userStore.userInfo?.id }"
+            @click="goToProfile(row.userId)"
           >
             <!-- 名次徽标（前三名使用单色灰阶徽章，不使用花哨表情） -->
             <td class="col-rank">
@@ -286,11 +292,7 @@ onBeforeUnmount(() => {
             <!-- 用户信息（头像、用户名、角色标签、个性签名） -->
             <td class="col-user">
               <div class="user-cell">
-                <RouterLink
-                  :to="`/profile/${row.userId}`"
-                  class="user-avatar-wrap"
-                  title="点击查看个人主页"
-                >
+                <div class="user-avatar-wrap">
                   <img
                     v-if="row.avatarUrl"
                     :src="row.avatarUrl"
@@ -300,16 +302,12 @@ onBeforeUnmount(() => {
                   <div v-else class="avatar-placeholder mono">
                     {{ getInitial(row.username) }}
                   </div>
-                </RouterLink>
+                </div>
                 <div class="user-meta">
                   <div class="user-title-row">
-                    <RouterLink
-                      :to="`/profile/${row.userId}`"
-                      class="user-name"
-                      title="点击查看个人主页"
-                    >
+                    <span class="user-name">
                       {{ row.username }}
-                    </RouterLink>
+                    </span>
                     <span
                       v-if="getRoleBadge(row.roles)"
                       class="badge"
@@ -359,13 +357,6 @@ onBeforeUnmount(() => {
             <!-- 最后活跃时间 -->
             <td class="col-time mono muted">
               {{ formatTime(row.lastAcceptedAt) }}
-            </td>
-
-            <!-- 操作：进入主页 -->
-            <td class="col-action">
-              <RouterLink :to="`/profile/${row.userId}`" class="btn btn-ghost btn-sm action-btn">
-                查看主页
-              </RouterLink>
             </td>
           </tr>
         </tbody>
@@ -664,11 +655,20 @@ onBeforeUnmount(() => {
 }
 
 .rank-row {
+  cursor: pointer;
   transition: background 0.12s ease;
 }
 
 .rank-row:hover td {
   background: var(--bg);
+}
+
+.rank-row:hover .user-name {
+  text-decoration: underline;
+}
+
+.rank-row:hover .user-avatar-wrap {
+  border-color: var(--ink);
 }
 
 .rank-row.is-self td {
@@ -844,19 +844,9 @@ onBeforeUnmount(() => {
   background: var(--ink);
 }
 
-/* 时间与操作 */
+/* 时间 */
 .col-time {
   font-size: 12px;
-}
-
-.col-action {
-  width: 90px;
-  text-align: right;
-}
-
-.action-btn {
-  font-size: 12px;
-  padding: 4px 10px;
 }
 
 /* 加载与空态 */
