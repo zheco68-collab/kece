@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kece.rank.mapper.RankMapper">
+
+    <!-- ==================== 1. 编程算法榜 (ALGO) ==================== -->
+
+    <select id="findAlgoRankings" resultType="com.kece.rank.dto.RankUserVO">
+        WITH ranked AS (
+            SELECT 
+                u.id AS userId,
+                u.username AS username,
+                u.avatar_url AS avatarUrl,
+                u.bio AS bio,
+                u.roles AS roles,
+                COUNT(DISTINCT CASE WHEN s.status = 'ACCEPTED' THEN s.question_id END) AS solvedCount,
+                COUNT(s.id) AS totalSubmissions,
+                COUNT(CASE WHEN s.status = 'ACCEPTED' THEN 1 END) AS acSubmissions,
+                ROUND(COUNT(CASE WHEN s.status = 'ACCEPTED' THEN 1 END) * 100.0 / NULLIF(COUNT(s.id), 0), 1) AS acceptRate,
+                0 AS totalScore,
+                MAX(CASE WHEN s.status = 'ACCEPTED' THEN s.created_at END) AS lastAcceptedAt,
+                ROW_NUMBER() OVER (
+                    ORDER BY 
+                        COUNT(DISTINCT CASE WHEN s.status = 'ACCEPTED' THEN s.question_id END) DESC,
+                        COUNT(CASE WHEN s.status = 'ACCEPTED' THEN 1 END) DESC,
+                        COUNT(s.id) ASC,
+                        MAX(CASE WHEN s.status = 'ACCEPTED' THEN s.created_at END) ASC,
+                        u.id ASC
+                ) AS `rank`
+            FROM `user` u
+            LEFT JOIN `submission` s ON u.id = s.user_id
+            WHERE u.status = 1
+            GROUP BY u.id, u.username, u.avatar_url, u.bio, u.roles
+            HAVING totalSubmissions &gt; 0
+        )
+        SELECT * FROM ranked
+        <where>
+            <if test="keyword != null and keyword != ''">
+                username LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+        </where>
+        ORDER BY `rank` ASC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <select id="countAlgoRankings" resultType="long">
+        WITH ranked AS (
+            SELECT 
+                u.id AS userId,
+                u.username AS username,
+                COUNT(s.id) AS totalSubmissions
+            FROM `user` u
+            LEFT JOIN `submission` s ON u.id = s.user_id
+            WHERE u.status = 1
+            GROUP BY u.id, u.username
+            HAVING totalSubmissions &gt; 0
+        )
+        SELECT COUNT(*) FROM ranked
+        <where>
+            <if test="keyword != null and keyword != ''">
+                username LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+        </where>
+    </select>
+
+    <select id="findUserAlgoRank" resultType="com.kece.rank.dto.RankUserVO">
+        WITH ranked AS (
+            SELECT 
+                u.id AS userId,
+                u.username AS username,
+                u.avatar_url AS avatarUrl,
+                u.bio AS bio,
+                u.roles AS roles,
+                COUNT(DISTINCT CASE WHEN s.status = 'ACCEPTED' THEN s.question_id END) AS solvedCount,
+                COUNT(s.id) AS totalSubmissions,
+                COUNT(CASE WHEN s.status = 'ACCEPTED' THEN 1 END) AS acSubmissions,
+                ROUND(COUNT(CASE WHEN s.status = 'ACCEPTED' THEN 1 END) * 100.0 / NULLIF(COUNT(s.id), 0), 1) AS acceptRate,
+                0 AS totalScore,
+                MAX(CASE WHEN s.status = 'ACCEPTED' THEN s.created_at END) AS lastAcceptedAt,
+                ROW_NUMBER() OVER (
+                    ORDER BY 
+                        COUNT(DISTINCT CASE WHEN s.status = 'ACCEPTED' THEN s.question_id END) DESC,
+                        COUNT(CASE WHEN s.status = 'ACCEPTED' THEN 1 END) DESC,
+                        COUNT(s.id) ASC,
+                        MAX(CASE WHEN s.status = 'ACCEPTED' THEN s.created_at END) ASC,
+                        u.id ASC
+                ) AS `rank`
+            FROM `user` u
+            LEFT JOIN `submission` s ON u.id = s.user_id
+            WHERE u.status = 1
+            GROUP BY u.id, u.username, u.avatar_url, u.bio, u.roles
+            HAVING totalSubmissions &gt; 0
+        )
+        SELECT * FROM ranked WHERE userId = #{userId}
+    </select>
+
+    <!-- ==================== 2. 数据库 SQL 榜 (SQL) ==================== -->
+
+    <select id="findSqlRankings" resultType="com.kece.rank.dto.RankUserVO">
+        WITH ranked AS (
+            SELECT 
+                u.id AS userId,
+                u.username AS username,
+                u.avatar_url AS avatarUrl,
+                u.bio AS bio,
+                u.roles AS roles,
+                COUNT(DISTINCT CASE WHEN s.status = 'ACCEPTED' THEN s.question_id END) AS solvedCount,
+                COUNT(s.id) AS totalSubmissions,
+                COUNT(CASE WHEN s.status = 'ACCEPTED' THEN 1 END) AS acSubmissions,
+                ROUND(COUNT(CASE WHEN s.status = 'ACCEPTED' THEN 1 END) * 100.0 / NULLIF(COUNT(s.id), 0), 1) AS acceptRate,
+                0 AS totalScore,
+                MAX(CASE WHEN s.status = 'ACCEPTED' THEN s.created_at END) AS lastAcceptedAt,
+                ROW_NUMBER() OVER (
+                    ORDER BY 
+                        COUNT(DISTINCT CASE WHEN s.status = 'ACCEPTED' THEN s.question_id END) DESC,
+                        COUNT(CASE WHEN s.status = 'ACCEPTED' THEN 1 END) DESC,
+                        COUNT(s.id) ASC,
+                        MAX(CASE WHEN s.status = 'ACCEPTED' THEN s.created_at END) ASC,
+                        u.id ASC
+                ) AS `rank`
+            FROM `user` u
+            LEFT JOIN `db_submission` s ON u.id = s.user_id
+            WHERE u.status = 1
+            GROUP BY u.id, u.username, u.avatar_url, u.bio, u.roles
+            HAVING totalSubmissions &gt; 0
+        )
+        SELECT * FROM ranked
+        <where>
+            <if test="keyword != null and keyword != ''">
+                username LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+        </where>
+        ORDER BY `rank` ASC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <select id="countSqlRankings" resultType="long">
+        WITH ranked AS (
+            SELECT 
+                u.id AS userId,
+                u.username AS username,
+                COUNT(s.id) AS totalSubmissions
+            FROM `user` u
+            LEFT JOIN `db_submission` s ON u.id = s.user_id
+            WHERE u.status = 1
+            GROUP BY u.id, u.username
+            HAVING totalSubmissions &gt; 0
+        )
+        SELECT COUNT(*) FROM ranked
+        <where>
+            <if test="keyword != null and keyword != ''">
+                username LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+        </where>
+    </select>
+
+    <select id="findUserSqlRank" resultType="com.kece.rank.dto.RankUserVO">
+        WITH ranked AS (
+            SELECT 
+                u.id AS userId,
+                u.username AS username,
+                u.avatar_url AS avatarUrl,
+                u.bio AS bio,
+                u.roles AS roles,
+                COUNT(DISTINCT CASE WHEN s.status = 'ACCEPTED' THEN s.question_id END) AS solvedCount,
+                COUNT(s.id) AS totalSubmissions,
+                COUNT(CASE WHEN s.status = 'ACCEPTED' THEN 1 END) AS acSubmissions,
+                ROUND(COUNT(CASE WHEN s.status = 'ACCEPTED' THEN 1 END) * 100.0 / NULLIF(COUNT(s.id), 0), 1) AS acceptRate,
+                0 AS totalScore,
+                MAX(CASE WHEN s.status = 'ACCEPTED' THEN s.created_at END) AS lastAcceptedAt,
+                ROW_NUMBER() OVER (
+                    ORDER BY 
+                        COUNT(DISTINCT CASE WHEN s.status = 'ACCEPTED' THEN s.question_id END) DESC,
+                        COUNT(CASE WHEN s.status = 'ACCEPTED' THEN 1 END) DESC,
+                        COUNT(s.id) ASC,
+                        MAX(CASE WHEN s.status = 'ACCEPTED' THEN s.created_at END) ASC,
+                        u.id ASC
+                ) AS `rank`
+            FROM `user` u
+            LEFT JOIN `db_submission` s ON u.id = s.user_id
+            WHERE u.status = 1
+            GROUP BY u.id, u.username, u.avatar_url, u.bio, u.roles
+            HAVING totalSubmissions &gt; 0
+        )
+        SELECT * FROM ranked WHERE userId = #{userId}
+    </select>
+
+    <!-- ==================== 3. 客观题积分榜 (OBJECTIVE) ==================== -->
+
+    <select id="findObjectiveRankings" resultType="com.kece.rank.dto.RankUserVO">
+        WITH ranked AS (
+            SELECT 
+                u.id AS userId,
+                u.username AS username,
+                u.avatar_url AS avatarUrl,
+                u.bio AS bio,
+                u.roles AS roles,
+                COUNT(DISTINCT CASE WHEN s.correct = 1 THEN s.question_id END) AS solvedCount,
+                COALESCE(SUM(s.score), 0) AS totalScore,
+                COUNT(s.id) AS totalSubmissions,
+                COUNT(CASE WHEN s.correct = 1 THEN 1 END) AS acSubmissions,
+                ROUND(COUNT(CASE WHEN s.correct = 1 THEN 1 END) * 100.0 / NULLIF(COUNT(s.id), 0), 1) AS acceptRate,
+                MAX(CASE WHEN s.correct = 1 THEN s.created_at END) AS lastAcceptedAt,
+                ROW_NUMBER() OVER (
+                    ORDER BY 
+                        COUNT(DISTINCT CASE WHEN s.correct = 1 THEN s.question_id END) DESC,
+                        COALESCE(SUM(s.score), 0) DESC,
+                        COUNT(CASE WHEN s.correct = 1 THEN 1 END) DESC,
+                        COUNT(s.id) ASC,
+                        MAX(CASE WHEN s.correct = 1 THEN s.created_at END) ASC,
+                        u.id ASC
+                ) AS `rank`
+            FROM `user` u
+            LEFT JOIN `objective_submission` s ON u.id = s.user_id
+            WHERE u.status = 1
+            GROUP BY u.id, u.username, u.avatar_url, u.bio, u.roles
+            HAVING totalSubmissions &gt; 0
+        )
+        SELECT * FROM ranked
+        <where>
+            <if test="keyword != null and keyword != ''">
+                username LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+        </where>
+        ORDER BY `rank` ASC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <select id="countObjectiveRankings" resultType="long">
+        WITH ranked AS (
+            SELECT 
+                u.id AS userId,
+                u.username AS username,
+                COUNT(s.id) AS totalSubmissions
+            FROM `user` u
+            LEFT JOIN `objective_submission` s ON u.id = s.user_id
+            WHERE u.status = 1
+            GROUP BY u.id, u.username
+            HAVING totalSubmissions &gt; 0
+        )
+        SELECT COUNT(*) FROM ranked
+        <where>
+            <if test="keyword != null and keyword != ''">
+                username LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+        </where>
+    </select>
+
+    <select id="findUserObjectiveRank" resultType="com.kece.rank.dto.RankUserVO">
+        WITH ranked AS (
+            SELECT 
+                u.id AS userId,
+                u.username AS username,
+                u.avatar_url AS avatarUrl,
+                u.bio AS bio,
+                u.roles AS roles,
+                COUNT(DISTINCT CASE WHEN s.correct = 1 THEN s.question_id END) AS solvedCount,
+                COALESCE(SUM(s.score), 0) AS totalScore,
+                COUNT(s.id) AS totalSubmissions,
+                COUNT(CASE WHEN s.correct = 1 THEN 1 END) AS acSubmissions,
+                ROUND(COUNT(CASE WHEN s.correct = 1 THEN 1 END) * 100.0 / NULLIF(COUNT(s.id), 0), 1) AS acceptRate,
+                MAX(CASE WHEN s.correct = 1 THEN s.created_at END) AS lastAcceptedAt,
+                ROW_NUMBER() OVER (
+                    ORDER BY 
+                        COUNT(DISTINCT CASE WHEN s.correct = 1 THEN s.question_id END) DESC,
+                        COALESCE(SUM(s.score), 0) DESC,
+                        COUNT(CASE WHEN s.correct = 1 THEN 1 END) DESC,
+                        COUNT(s.id) ASC,
+                        MAX(CASE WHEN s.correct = 1 THEN s.created_at END) ASC,
+                        u.id ASC
+                ) AS `rank`
+            FROM `user` u
+            LEFT JOIN `objective_submission` s ON u.id = s.user_id
+            WHERE u.status = 1
+            GROUP BY u.id, u.username, u.avatar_url, u.bio, u.roles
+            HAVING totalSubmissions &gt; 0
+        )
+        SELECT * FROM ranked WHERE userId = #{userId}
+    </select>
+
+</mapper>

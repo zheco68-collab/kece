@@ -94,6 +94,20 @@ const router = createRouter({
           component: () => import('@/views/ObjectiveAnswerView.vue'),
         },
         {
+          path: 'rankings',
+          name: 'rankings',
+          component: () => import('@/views/RankingsView.vue'),
+          meta: { title: '全域天梯排名' },
+        },
+        {
+          path: 'leaderboard',
+          redirect: '/rankings',
+        },
+        {
+          path: 'rank',
+          redirect: '/rankings',
+        },
+        {
           path: 'exams',
           name: 'exams',
           component: () => import('@/views/ExamListView.vue'),

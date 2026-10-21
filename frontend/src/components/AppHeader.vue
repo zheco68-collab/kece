@@ -13,6 +13,7 @@ const navLinks = [
   { path: '/database', label: '数据库' },
   { path: '/frontend', label: '前端' },
   { path: '/objective', label: '客观题' },
+  { path: '/rankings', label: '排名' },
   { path: '/practice', label: '课练' },
   { path: '/exams', label: '考试' },
 ];
