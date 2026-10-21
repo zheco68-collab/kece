@@ -94,9 +94,18 @@ func (q *Queue) ListProcessing(ctx context.Context) ([]string, error) {
 	return q.client.LRange(ctx, q.cfg.ProcessingKey, 0, -1).Result()
 }
 
-// Heartbeat 上报判题机存活心跳。
+// Heartbeat 上报判题机存活心跳并将 Worker 登记至全局注册集合。
 func (q *Queue) Heartbeat(ctx context.Context) error {
-	return q.client.Set(ctx, q.cfg.HeartbeatKey+q.cfg.WorkerID, time.Now().Format(time.RFC3339), q.cfg.HeartbeatInterval*3).Err()
+	pipe := q.client.TxPipeline()
+	pipe.Set(ctx, q.cfg.HeartbeatKey+q.cfg.WorkerID, time.Now().Format(time.RFC3339), q.cfg.HeartbeatInterval*3)
+	pipe.SAdd(ctx, "judge:workers", q.cfg.WorkerID)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// ClearHeartbeat 移除判题机存活心跳键（用于优雅停机即刻变更为掉线状态）。
+func (q *Queue) ClearHeartbeat(ctx context.Context) error {
+	return q.client.Del(ctx, q.cfg.HeartbeatKey+q.cfg.WorkerID).Err()
 }
 
 func itoa(n int64) string {

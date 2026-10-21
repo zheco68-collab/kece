@@ -69,6 +69,7 @@ func main() {
 	<-sig
 	log.Println("shutting down")
 	cancel()
+	_ = q.ClearHeartbeat(context.Background())
 	time.Sleep(time.Second)
 }
 
@@ -158,6 +159,10 @@ func renewLease(ctx context.Context, q *queue.Queue, submissionID int64, interva
 
 // heartbeatLoop 周期性上报判题机存活心跳。
 func heartbeatLoop(ctx context.Context, q *queue.Queue, interval time.Duration) {
+	// 启动时立即上报一次初始心跳，不等待首个周期
+	if err := q.Heartbeat(ctx); err != nil {
+		log.Printf("initial heartbeat: %v", err)
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import ClusterConsole from '@/components/ClusterConsole.vue'
 
 const router = useRouter()
 
@@ -102,148 +103,110 @@ LIMIT 3;`,
 function start() {
   router.push('/questions')
 }
+
+// Trae 风格故障切片动效（仅在鼠标主动移动时触发，鼠标放上去不动或离开时立即完全静止）
+const isGlitching = ref(false)
+const glitchStyle = ref<Record<string, string>>({})
+let glitchTimer: ReturnType<typeof setTimeout> | null = null
+
+function handleTitleMouseMove(e: MouseEvent) {
+  isGlitching.value = true
+
+  const target = e.currentTarget as HTMLElement
+  if (!target) return
+  const rect = target.getBoundingClientRect()
+  const relY = ((e.clientY - rect.top) / rect.height) * 100
+
+  // 围绕光标 Y 动态产生阶梯切片区间
+  const y1 = Math.max(5, (relY - 15) % 100)
+  const y2 = Math.min(95, y1 + 18)
+  const y3 = (y2 + 25) % 95
+  const y4 = Math.min(98, y3 + 16)
+
+  const s1 = (Math.random() > 0.4 ? 1 : -1) * (7 + Math.random() * 8)
+  const s2 = -s1 * (0.8 + Math.random() * 0.4)
+
+  glitchStyle.value = {
+    '--shift-1': `${s1.toFixed(1)}px`,
+    '--shift-2': `${s2.toFixed(1)}px`,
+    '--clip-1': `polygon(0 ${y1.toFixed(1)}%, 100% ${y1.toFixed(1)}%, 100% ${y2.toFixed(1)}%, 0 ${y2.toFixed(1)}%, 0 ${y3.toFixed(1)}%, 100% ${y3.toFixed(1)}%, 100% ${y4.toFixed(1)}%, 0 ${y4.toFixed(1)}%)`,
+    '--clip-2': `polygon(0 ${((y1 + 20) % 90).toFixed(1)}%, 100% ${((y1 + 20) % 90).toFixed(1)}%, 100% ${((y1 + 38) % 95).toFixed(1)}%, 0 ${((y1 + 38) % 95).toFixed(1)}%)`,
+  }
+
+  if (glitchTimer) clearTimeout(glitchTimer)
+  // 鼠标停止移动 130ms 后，故障切片动效立即停止，文字完全恢复静止
+  glitchTimer = setTimeout(() => {
+    isGlitching.value = false
+  }, 130)
+}
+
+function handleTitleMouseLeave() {
+  if (glitchTimer) clearTimeout(glitchTimer)
+  isGlitching.value = false
+}
 </script>
 
 <template>
   <div class="home">
-    <!-- 官网 Hero 区域（严格对齐品牌 VI 规范） -->
+    <!-- 官网 Hero 区域（左侧硬核工程标语，右侧真实沙箱集群遥测控制台） -->
     <section class="hero container">
       <div class="hero-text">
-        <h1 class="hero-title">
-          多维度编程与<br />
-          技能评测平台
+        <div class="hero-eyebrow mono">// HIGH-PERFORMANCE JUDGMENT PLATFORM</div>
+        <h1
+          class="hero-title trae-glitch-wrapper"
+          :class="{ 'is-glitching': isGlitching }"
+          :style="glitchStyle"
+          @mousemove="handleTitleMouseMove"
+          @mouseleave="handleTitleMouseLeave"
+        >
+          <span class="trae-glitch" data-text="多维度编程与">多维度编程与</span><br />
+          <span class="trae-glitch" data-text="技能评测平台">技能评测平台</span>
         </h1>
         <p class="hero-sub">
-          无缝集成算法 OJ、数据库 OJ、前端 AI 智能评测<br />
-          及标准客观题系统
+          无缝集成算法 OJ、数据库 OJ、前端 AI 智能评测及标准客观题系统。<br />
+          基于高可用强隔离沙箱与独立临时库，提供确定性、防作弊的全真技术考核。
         </p>
 
         <div class="hero-actions">
           <button class="btn btn-primary btn-lg hero-cta" @click="start">开始使用 →</button>
           <RouterLink to="/exams" class="btn btn-ghost btn-lg">在线考试系统</RouterLink>
         </div>
+
+        <!-- 工业规格小标条 -->
+        <div class="hero-spec-strip mono">
+          <span class="spec-pill">DOCKER CGROUPS V2</span>
+          <span class="spec-dot">·</span>
+          <span class="spec-pill">MYSQL 8.0 临时库</span>
+          <span class="spec-dot">·</span>
+          <span class="spec-pill">PLAYWRIGHT + AI 审计</span>
+        </div>
       </div>
 
-      <!-- 右侧 3D 纸雕折叠几何装置（还原 VI 规范概念图） -->
+      <!-- 右侧真实沙箱评测集群控制台（硬核工控控制台） -->
       <div class="hero-visual">
-        <div class="sculpture-wrapper">
-          <svg
-            class="origami-svg"
-            viewBox="0 0 520 400"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <defs>
-              <!-- 投影渐变 -->
-              <radialGradient
-                id="groundShadow"
-                cx="50%"
-                cy="50%"
-                r="50%"
-                fx="50%"
-                fy="50%"
-              >
-                <stop offset="0%" stop-color="#141824" stop-opacity="0.14" />
-                <stop offset="60%" stop-color="#141824" stop-opacity="0.05" />
-                <stop offset="100%" stop-color="#141824" stop-opacity="0" />
-              </radialGradient>
-
-              <!-- 各折面微妙明暗渐变 -->
-              <linearGradient id="facet1" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#ffffff" />
-                <stop offset="100%" stop-color="#eaedf2" />
-              </linearGradient>
-
-              <linearGradient id="facet2" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#d6dae2" />
-                <stop offset="100%" stop-color="#c1c7d2" />
-              </linearGradient>
-
-              <linearGradient id="facet3" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#ffffff" />
-                <stop offset="70%" stop-color="#f6f8fb" />
-                <stop offset="100%" stop-color="#ebedf3" />
-              </linearGradient>
-
-              <linearGradient id="facet4" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#d4d8e0" />
-                <stop offset="100%" stop-color="#bec4ce" />
-              </linearGradient>
-
-              <linearGradient id="facet5" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#ffffff" />
-                <stop offset="100%" stop-color="#f1f3f7" />
-              </linearGradient>
-
-              <linearGradient id="facet6" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#ccd2dc" />
-                <stop offset="100%" stop-color="#b8bfcb" />
-              </linearGradient>
-
-              <!-- 边缘高光 -->
-              <linearGradient id="edgeGleam" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9" />
-                <stop offset="100%" stop-color="#ffffff" stop-opacity="0.2" />
-              </linearGradient>
-            </defs>
-
-            <!-- 地面柔和接触阴影 -->
-            <ellipse cx="265" cy="340" rx="225" ry="34" fill="url(#groundShadow)" />
-
-            <!-- 折纸屏风 面 1（左外侧向前） -->
-            <polygon
-              points="45,95 130,55 130,295 45,325"
-              fill="url(#facet1)"
-            />
-
-            <!-- 折纸屏风 面 2（向内折入暗面） -->
-            <polygon
-              points="130,55 205,115 205,345 130,295"
-              fill="url(#facet2)"
-            />
-
-            <!-- 折纸屏风 面 3（中心最高主受光面） -->
-            <polygon
-              points="205,115 315,65 315,295 205,345"
-              fill="url(#facet3)"
-            />
-
-            <!-- 折纸屏风 面 4（向内折入侧暗面） -->
-            <polygon
-              points="315,65 385,120 385,345 315,295"
-              fill="url(#facet4)"
-            />
-
-            <!-- 折纸屏风 面 5（右侧向前延伸受光面） -->
-            <polygon
-              points="385,120 475,80 475,305 385,345"
-              fill="url(#facet5)"
-            />
-
-            <!-- 折纸屏风 面 6（右端收尾暗面） -->
-            <polygon
-              points="475,80 500,102 500,325 475,305"
-              fill="url(#facet6)"
-            />
-
-            <!-- 折棱高光线，强化几何立体感与纯净质感 -->
-            <line x1="130" y1="55" x2="130" y2="295" stroke="url(#edgeGleam)" stroke-width="1.5" />
-            <line x1="205" y1="115" x2="205" y2="345" stroke="#b0b7c4" stroke-width="0.8" />
-            <line x1="315" y1="65" x2="315" y2="295" stroke="url(#edgeGleam)" stroke-width="1.5" />
-            <line x1="385" y1="120" x2="385" y2="345" stroke="#adb4c2" stroke-width="0.8" />
-            <line x1="475" y1="80" x2="475" y2="305" stroke="url(#edgeGleam)" stroke-width="1.2" />
-          </svg>
-        </div>
+        <ClusterConsole />
       </div>
     </section>
 
-    <!-- 功能模块图标卡片区（精确对应 VI 规范设计） -->
+    <!-- 核心多维能力评测矩阵（5 大直角 Bento 宽幅卡片，清晰大方、绝不杂乱） -->
     <section class="modules-section container">
+      <div class="modules-header">
+        <div class="modules-eyebrow mono">// CAPABILITY MATRIX · 5 ENGINES</div>
+        <h2 class="modules-title">全栈技术与工程能力评测矩阵</h2>
+        <p class="modules-desc">
+          每个评测引擎均拥有独立的物理隔离与自动判分机制，满足从日常练习到正规机考的全流程需求。
+        </p>
+      </div>
+
       <div class="modules-grid">
-        <!-- 算法 OJ -->
+        <!-- 01 算法 OJ -->
         <RouterLink to="/questions" class="module-card">
+          <div class="module-card-top">
+            <span class="module-num mono">01</span>
+            <span class="module-arch-tag mono">CGROUPS V2</span>
+          </div>
+
           <div class="module-icon-box">
-            <!-- 线性代码图标 </> -->
             <svg class="module-svg" viewBox="0 0 48 48" fill="none">
               <rect x="6" y="6" width="36" height="36" rx="0" stroke="currentColor" stroke-width="2.5" />
               <path d="M18 20L14 24L18 28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -251,30 +214,42 @@ function start() {
               <path d="M26 17L22 31" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
             </svg>
           </div>
+
           <div class="module-title">算法 OJ</div>
           <div class="module-desc">在线编程 · 智能评测</div>
+          <div class="module-spec mono">毫秒级时空限制判定</div>
           <div class="module-arrow">进入题库 →</div>
         </RouterLink>
 
-        <!-- 数据库 OJ -->
+        <!-- 02 数据库 OJ -->
         <RouterLink to="/database" class="module-card">
+          <div class="module-card-top">
+            <span class="module-num mono">02</span>
+            <span class="module-arch-tag mono">MYSQL 8.0</span>
+          </div>
+
           <div class="module-icon-box">
-            <!-- 线性数据库图标 -->
             <svg class="module-svg" viewBox="0 0 48 48" fill="none">
               <ellipse cx="24" cy="14" rx="14" ry="5.5" stroke="currentColor" stroke-width="2.5" />
               <path d="M10 14V24C10 27 16.3 29.5 24 29.5C31.7 29.5 38 27 38 24V14" stroke="currentColor" stroke-width="2.5" />
               <path d="M10 24V34C10 37 16.3 39.5 24 39.5C31.7 39.5 38 37 38 34V24" stroke="currentColor" stroke-width="2.5" />
             </svg>
           </div>
+
           <div class="module-title">数据库 OJ</div>
           <div class="module-desc">SQL 实战 · 结果评测</div>
+          <div class="module-spec mono">动态临时库物理强隔离</div>
           <div class="module-arrow">进入题库 →</div>
         </RouterLink>
 
-        <!-- 前端 AI 评测 -->
+        <!-- 03 前端 AI 评测 -->
         <RouterLink to="/frontend" class="module-card">
+          <div class="module-card-top">
+            <span class="module-num mono">03</span>
+            <span class="module-arch-tag mono">PLAYWRIGHT</span>
+          </div>
+
           <div class="module-icon-box">
-            <!-- 线性浏览器窗口与代码检查图标 -->
             <svg class="module-svg" viewBox="0 0 48 48" fill="none">
               <rect x="7" y="9" width="34" height="30" rx="0" stroke="currentColor" stroke-width="2.5" />
               <line x1="7" y1="18" x2="41" y2="18" stroke="currentColor" stroke-width="2.5" />
@@ -284,15 +259,21 @@ function start() {
               <path d="M16 29L20 33L32 23" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
           </div>
+
           <div class="module-title">前端 AI 评测</div>
           <div class="module-desc">代码检查 · 智能反馈</div>
+          <div class="module-spec mono">DOM 交互断言与多模态审计</div>
           <div class="module-arrow">体验评测 →</div>
         </RouterLink>
 
-        <!-- 标准客观题 -->
+        <!-- 04 标准客观题 -->
         <RouterLink to="/objective" class="module-card">
+          <div class="module-card-top">
+            <span class="module-num mono">04</span>
+            <span class="module-arch-tag mono">LATEX MATH</span>
+          </div>
+
           <div class="module-icon-box">
-            <!-- 线性问卷/答题卡图标 -->
             <svg class="module-svg" viewBox="0 0 48 48" fill="none">
               <rect x="9" y="7" width="30" height="34" rx="0" stroke="currentColor" stroke-width="2.5" />
               <line x1="16" y1="16" x2="32" y2="16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
@@ -303,15 +284,21 @@ function start() {
               <circle cx="13" cy="30" r="1" fill="currentColor" />
             </svg>
           </div>
+
           <div class="module-title">标准客观题</div>
           <div class="module-desc">自动判分 · 成绩统计</div>
+          <div class="module-spec mono">单选/多选/填空智能判题</div>
           <div class="module-arrow">进入题库 →</div>
         </RouterLink>
 
-        <!-- 机考与竞赛（Phase 2 核心延伸） -->
-        <RouterLink to="/exams" class="module-card exam-highlight">
+        <!-- 05 在线考试系统 -->
+        <RouterLink to="/exams" class="module-card exam-card">
+          <div class="module-card-top">
+            <span class="module-num mono">05</span>
+            <span class="module-arch-tag mono">ACM / OI</span>
+          </div>
+
           <div class="module-icon-box">
-            <!-- 线性秒表/竞赛勋章图标 -->
             <svg class="module-svg" viewBox="0 0 48 48" fill="none">
               <circle cx="24" cy="26" r="14" stroke="currentColor" stroke-width="2.5" />
               <path d="M24 18V26L29 29" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -320,8 +307,10 @@ function start() {
               <line x1="34" y1="14" x2="37" y2="11" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
             </svg>
           </div>
+
           <div class="module-title">在线考试系统</div>
           <div class="module-desc">ACM / OI 双赛制 · 实时排名</div>
+          <div class="module-spec mono">题目快照防作弊天梯榜</div>
           <div class="module-arrow">进入机考 →</div>
         </RouterLink>
       </div>
@@ -330,7 +319,7 @@ function start() {
     <!-- 交互式技术体验区：实时沙箱评测终端 -->
     <section class="demo-section container">
       <div class="demo-header">
-        <div class="demo-eyebrow">// SANDBOX RUNNER · LIVE VERDICT</div>
+        <div class="demo-eyebrow mono">// SANDBOX RUNNER · LIVE VERDICT</div>
         <h2 class="demo-title">真实评测闭环体验</h2>
         <p class="demo-desc">
           基于 Linux 强隔离容器沙箱与独立 MySQL 临时库，提供毫秒级、防作弊、确定性的技术评测。
@@ -422,36 +411,92 @@ function start() {
   padding-bottom: 80px;
 }
 
+.mono {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, 'PingFang SC', 'Microsoft YaHei', monospace;
+}
+
 /* =========================================
-   1. Hero 区域（对齐 VI 规范）
+   1. Hero 区域（对齐 VI 规范与硬核工控控制台）
    ========================================= */
 .hero {
   display: grid;
   grid-template-columns: 1fr 1.05fr;
-  gap: 40px;
-  align-items: center;
-  padding-top: 60px;
-  padding-bottom: 70px;
+  gap: 48px;
+  align-items: flex-start;
+  padding-top: 52px;
+  padding-bottom: 64px;
 }
 
 .hero-text {
-  max-width: 500px;
+  max-width: 490px;
+}
+
+.hero-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-tertiary);
+  letter-spacing: 0.8px;
+  margin-bottom: 12px;
 }
 
 .hero-title {
   font-size: 46px;
-  line-height: 1.22;
+  line-height: 1.2;
   font-weight: 700;
   letter-spacing: -0.6px;
   color: var(--ink);
-  margin: 0 0 20px;
+  margin: 0 0 18px;
+  cursor: default;
+}
+
+/* =========================================
+   Trae 官网风格故障风切片 Hover 动效 (Glitch Slicing)
+   ========================================= */
+.trae-glitch-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.trae-glitch {
+  position: relative;
+  display: inline-block;
+  user-select: none;
+}
+
+.trae-glitch::before,
+.trae-glitch::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  color: var(--ink);
+  background: var(--bg);
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* 仅在鼠标主动滑动（.is-glitching）时触发切片与阶梯位移；鼠标静止或离开时完全静止，绝不持续自颤 */
+.trae-glitch-wrapper.is-glitching .trae-glitch::before {
+  opacity: 1;
+  clip-path: var(--clip-1, polygon(0 20%, 100% 20%, 100% 40%, 0 40%, 0 65%, 100% 65%, 100% 85%, 0 85%));
+  transform: translate(var(--shift-1, 10px), 0);
+  transition: transform 0.04s ease-out;
+}
+
+.trae-glitch-wrapper.is-glitching .trae-glitch::after {
+  opacity: 1;
+  clip-path: var(--clip-2, polygon(0 10%, 100% 10%, 100% 30%, 0 30%, 0 50%, 100% 50%, 100% 70%, 0 70%));
+  transform: translate(var(--shift-2, -10px), 0);
+  transition: transform 0.04s ease-out;
 }
 
 .hero-sub {
-  font-size: 16px;
+  font-size: 15.5px;
   line-height: 1.65;
   color: var(--ink-secondary);
-  margin: 0 0 36px;
+  margin: 0 0 32px;
   font-weight: 400;
 }
 
@@ -460,6 +505,7 @@ function start() {
   gap: 16px;
   align-items: center;
   flex-wrap: wrap;
+  margin-bottom: 24px;
 }
 
 .hero-cta {
@@ -475,61 +521,83 @@ function start() {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
 }
 
-/* 3D 纸雕折叠装置容器 */
+.hero-spec-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--ink-tertiary);
+  letter-spacing: 0.4px;
+}
+
+.spec-pill {
+  padding: 2px 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-secondary);
+}
+
+.spec-dot {
+  color: var(--ink-tertiary);
+}
+
 .hero-visual {
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  min-height: 380px;
-}
-
-.sculpture-wrapper {
-  width: 100%;
-  max-width: 520px;
-  animation: gentleFloat 5s ease-in-out infinite alternate;
-  filter: drop-shadow(0 20px 30px rgba(0, 0, 0, 0.04));
-}
-
-@keyframes gentleFloat {
-  0% {
-    transform: translateY(0px);
-  }
-  100% {
-    transform: translateY(-8px);
-  }
-}
-
-.origami-svg {
-  width: 100%;
-  height: auto;
-  display: block;
-  overflow: visible;
 }
 
 /* =========================================
-   2. 功能模块卡片区（精确还原 VI 规范图标与排版）
+   2. 全宽 5 大能力评测矩阵（Bento Grid）
    ========================================= */
 .modules-section {
   padding-top: 10px;
-  padding-bottom: 60px;
+  padding-bottom: 64px;
+}
+
+.modules-header {
+  text-align: center;
+  max-width: 620px;
+  margin: 0 auto 36px;
+}
+
+.modules-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: var(--ink-tertiary);
+  margin-bottom: 8px;
+}
+
+.modules-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+
+.modules-desc {
+  font-size: 14.5px;
+  color: var(--ink-secondary);
+  line-height: 1.6;
+  margin: 0;
 }
 
 .modules-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 18px;
+  gap: 16px;
 }
 
 .module-card {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 28px 20px 22px;
+  border-radius: 0;
+  padding: 24px 20px 22px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
   box-shadow: var(--shadow-sm);
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
@@ -539,63 +607,103 @@ function start() {
 
 .module-card:hover {
   transform: translateY(-4px);
-  border-color: #cfd4dc;
-  box-shadow: 0 14px 30px rgba(17, 24, 39, 0.08);
+  border-color: var(--line-strong);
+  background: #ffffff;
+  box-shadow: 0 16px 36px rgba(17, 24, 39, 0.08);
 }
 
-.module-card.exam-highlight {
+.module-card.exam-card {
   background: #ffffff;
-  border-color: #d8dde6;
+}
+
+.module-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.module-num {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  background: #ffffff;
+  border: 1px solid var(--line);
+  padding: 1px 6px;
+}
+
+.module-arch-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  color: var(--ink-tertiary);
+  letter-spacing: 0.4px;
 }
 
 .module-icon-box {
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   border-radius: 0;
-  background: #f4f5f7;
+  background: #ffffff;
+  border: 1px solid var(--line);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--ink);
-  margin-bottom: 18px;
+  margin-bottom: 16px;
   transition: all 0.25s ease;
 }
 
 .module-card:hover .module-icon-box {
   background: var(--ink);
   color: #ffffff;
-  transform: scale(1.06);
+  border-color: var(--ink);
 }
 
 .module-svg {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
 }
 
 .module-title {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--ink);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .module-desc {
-  font-size: 13px;
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.module-spec {
+  font-size: 10.5px;
   color: var(--ink-tertiary);
+  background: #ffffff;
+  border: 1px solid var(--line);
+  padding: 3px 6px;
   margin-bottom: 16px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .module-arrow {
   margin-top: auto;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--ink-secondary);
-  transition: color 0.15s ease;
+  transition: all 0.15s ease;
 }
 
 .module-card:hover .module-arrow {
   color: var(--ink);
+  transform: translateX(3px);
 }
 
 /* =========================================
@@ -612,9 +720,8 @@ function start() {
 }
 
 .demo-eyebrow {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.8px;
   color: var(--ink-tertiary);
   margin-bottom: 8px;
@@ -877,8 +984,8 @@ function start() {
 @media (max-width: 860px) {
   .hero {
     grid-template-columns: 1fr;
-    padding-top: 40px;
-    padding-bottom: 50px;
+    padding-top: 36px;
+    padding-bottom: 48px;
     gap: 36px;
   }
   .hero-text {
@@ -889,6 +996,9 @@ function start() {
     display: none;
   }
   .hero-actions {
+    justify-content: center;
+  }
+  .hero-spec-strip {
     justify-content: center;
   }
   .modules-grid {

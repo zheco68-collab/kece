@@ -4,6 +4,31 @@
 
 ---
 
+## [v0.2.3] - 2026-10-21
+
+### 官网全新工业化主页与 Trae 风格动效 (Homepage Redesign & Cyber Slicing)
+* **核心标语 Trae 风格故障风切片交互 (Glitch Slicing)**：
+  * 为 Hero 主标语「多维度编程与技能评测平台」引入对标 Trae 官网的 Cyber 阶梯水平切片撕裂动效。
+  * **动量驱动与防抽搐设计**：采用完全由光标真实滑动位移（`mousemove`）驱动的切片算法，并在鼠标停下 130ms 后自动静止收敛（Debounce）。彻底解决传统 `:hover` 无限循环导致光标静止悬停时文字抽搐颤动的问题，实现“滑移撕裂、静止如初”的极佳操作质感。
+* **沙箱评测集群控制台 (Cluster Telemetry Console)**：
+  * 在 Hero 右侧构建硬核极简的真实评测机遥测控制台（`ClusterConsole.vue`），摒弃杂乱拥挤的信息堆砌，保持 Swiss 极简直角工业风格。
+  * 实时透出算法沙箱（ALGO - Cgroups v2）、数据库评测机（DATABASE - 物理隔离临时库）、前端 AI 智能评测（FRONTEND_AI - Playwright+多模态审计）三类核心节点的健康度、当前负载与并发度。
+* **全宽 5 大能力评测矩阵 (5-Engine Capability Bento Matrix)**：
+  * 重构全宽 5 列等高直角 Bento 矩阵卡片，涵盖算法 OJ、数据库 OJ、前端 AI 评测、客观题系统与全真模拟机考 5 大支柱。
+  * 强化直角微标、架构规格标签与极简悬浮反馈，层次清晰、严谨规整。
+
+---
+
+### 评测机心跳与优雅停机体系加固 (Judger Lifecycle & Heartbeat)
+* **判题机即时心跳注册**：
+  * Go 判题机（`judger`）启动时立即上报首发心跳并登记入 Redis `judge:workers` 注册表，无需等待首个周期。
+* **捕获信号即刻移除心跳 (Graceful Shutdown)**：
+  * 判题机进程捕获 `SIGTERM` / `SIGINT` 时，即刻调用 `ClearHeartbeat` 抹除 Redis 心跳键，避免掉线后仍残留在活跃列表，实现秒级状态同步。
+* **后端集群遥测端点与心跳聚合**：
+  * 后端新增 `/api/system/judgers` REST 接口（`SystemStatusController` 与 `SystemStatusService`），打通前端控制台与真实集群节点的遥测通道。
+
+---
+
 ## [v0.2.2] - 2026-10-15
 
 ### 课堂练习系统安全与权限重构 (Classroom Practice Security & Permissions)
