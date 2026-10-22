@@ -139,9 +139,6 @@ function formatBytes(bytes?: number): string {
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
 }
 
-const totalDataBytes = computed(() => {
-  return cases.value.reduce((acc, c) => acc + (c.inputSize || 0) + (c.outputSize || 0), 0)
-})
 
 const sampleCasesCount = computed(() => {
   return cases.value.filter((c) => c.isSample).length
@@ -443,159 +440,123 @@ onMounted(() => {
       </div>
 
       <!-- 测试用例与评测点管理 -->
-      <div class="card form-card testcase-panel">
-        <div class="card-head testcase-head">
-          <div class="testcase-title-area">
-            <h2 class="card-title">测试用例与评测点</h2>
-            <div class="testcase-stats-pills">
-              <span class="stat-pill">
-                <span class="stat-label">总测试点</span>
-                <span class="stat-val">{{ cases.length }} 组</span>
-              </span>
-              <span class="stat-pill" v-if="sampleCasesCount > 0">
-                <span class="stat-label">公开样例</span>
-                <span class="stat-val sample-val">{{ sampleCasesCount }} 组</span>
-              </span>
-              <span class="stat-pill" v-if="totalDataBytes > 0">
-                <span class="stat-label">数据集总体积</span>
-                <span class="stat-val">{{ formatBytes(totalDataBytes) }}</span>
-              </span>
-            </div>
+      <div class="card form-card">
+        <div class="card-head">
+          <div class="card-title-group">
+            <h2 class="card-title">测试用例</h2>
+            <span v-if="cases.length > 0" class="muted case-count-tag">
+              共 {{ cases.length }} 组用例<span v-if="sampleCasesCount > 0">（含 {{ sampleCasesCount }} 组公开样例）</span>
+            </span>
           </div>
-          <div class="testcase-actions">
+          <div class="card-head-actions">
             <button
               v-if="isEdit"
-              class="btn btn-secondary btn-sm btn-icon"
+              class="btn btn-ghost btn-sm"
               type="button"
               @click="openZipModal"
             >
-              <span class="icon">📦</span> 批量导入 Zip
+              导入 Zip
             </button>
             <button
               v-if="isEdit && cases.length > 0"
-              class="btn btn-ghost btn-sm btn-icon"
+              class="btn btn-ghost btn-sm"
               type="button"
               @click="exportZip"
             >
-              <span class="icon">📥</span> 导出测试包
+              导出 Zip
             </button>
-            <button class="btn btn-primary btn-sm btn-icon" type="button" @click="addCase">
-              <span class="icon">➕</span> 添加测试点
+            <button class="btn btn-ghost btn-sm" type="button" @click="addCase">
+              添加测试点
             </button>
           </div>
         </div>
 
-        <!-- 存储说明条 -->
-        <div class="testcase-banner">
-          <span class="banner-icon">💡</span>
-          <span class="banner-text">
-            系统已全面升级为<b>本地文件流式存储架构</b>。评测点数据独立保存在服务器磁盘中，无论测试点多大都不会拖慢数据库与消息队列。支持单文件测试或上传 Zip 压缩包（成对的 <code>*.in</code> 与 <code>*.out</code>）一键导入。
-          </span>
-        </div>
+        <p class="muted testcase-hint">
+          测试点数据由服务器文件系统独立存储。支持在此逐组编辑或通过 Zip 压缩包（成对的 *.in 与 *.out 文件）批量导入。
+        </p>
 
-        <p v-if="cases.length === 0" class="muted empty-tip">
-          暂无测试点，你可以点击上方“批量导入 Zip”或“添加测试点”创建。
+        <p v-if="cases.length === 0" class="muted">
+          暂无测试点，请点击上方“添加测试点”或“导入 Zip”创建。
         </p>
 
         <div
           v-for="(c, idx) in cases"
           :key="c.clientId"
           class="case-card"
-          :class="{ 'is-sample-card': c.isSample, 'is-large-card': c.isLarge }"
         >
           <div class="case-head">
-            <div class="case-num-badge">
-              <span class="case-seq-tag">#{{ c.caseNum || idx + 1 }}</span>
-            </div>
+            <span class="case-seq muted">测试点 #{{ c.caseNum || idx + 1 }}</span>
 
-            <label class="sample-toggle" title="勾选后此用例将作为示例展示在学生题目详情页中">
-              <input v-model="c.isSample" type="checkbox" class="toggle-checkbox" />
-              <span class="toggle-label" :class="{ active: c.isSample }">
-                {{ c.isSample ? '🌟 题面公开样例' : '🔒 隐藏评测点' }}
-              </span>
+            <label class="sample-check">
+              <input v-model="c.isSample" type="checkbox" />
+              样例用例
             </label>
 
-            <div class="case-meta-group">
-              <div class="score-input-wrap" title="该测试点评测分值">
-                <span class="score-label">分值</span>
-                <input
-                  v-model.number="c.scoreWeight"
-                  type="number"
-                  min="1"
-                  max="100"
-                  class="input score-input"
-                />
-              </div>
+            <label class="score-field">
+              <span class="muted">分值</span>
+              <input
+                v-model.number="c.scoreWeight"
+                type="number"
+                min="1"
+                max="100"
+                class="input score-input"
+              />
+            </label>
 
-              <div class="file-size-badge" v-if="c.inputSize || c.outputSize">
-                <span>In: {{ formatBytes(c.inputSize) }}</span>
-                <span class="sep">|</span>
-                <span>Out: {{ formatBytes(c.outputSize) }}</span>
-              </div>
+            <span v-if="c.inputSize || c.outputSize" class="case-size-info muted">
+              In: {{ formatBytes(c.inputSize) }} / Out: {{ formatBytes(c.outputSize) }}
+            </span>
 
-              <span v-if="c.isLarge" class="large-file-tag">
-                ⚡ 超大数据集
-              </span>
-            </div>
+            <span v-if="c.isLarge" class="badge">大文件托管</span>
 
-            <div class="case-ops">
+            <div class="case-actions">
               <button
                 v-if="c.id"
-                class="btn btn-ghost btn-xs file-dl-btn"
+                class="btn btn-ghost btn-xs"
                 type="button"
-                title="下载输入文件"
                 @click="downloadInput(c.id)"
               >
-                📥 输入 (.in)
+                下载 .in
               </button>
               <button
                 v-if="c.id"
-                class="btn btn-ghost btn-xs file-dl-btn"
+                class="btn btn-ghost btn-xs"
                 type="button"
-                title="下载输出文件"
                 @click="downloadOutput(c.id)"
               >
-                📥 输出 (.out)
+                下载 .out
               </button>
-              <button class="btn btn-ghost btn-sm case-remove" type="button" @click="removeCase(c.clientId)">
+              <button
+                class="btn btn-ghost btn-sm btn-danger case-remove"
+                type="button"
+                @click="removeCase(c.clientId)"
+              >
                 删除
               </button>
             </div>
           </div>
 
-          <!-- 大文件提示区 -->
-          <div v-if="c.isLarge" class="large-case-notice">
-            <div class="notice-info">
-              <span class="notice-icon">💾</span>
-              <div>
-                <div class="notice-title">该测试点数据量庞大（{{ formatBytes(Math.max(c.inputSize || 0, c.outputSize || 0)) }}），已由服务器文件系统直接托管</div>
-                <div class="notice-desc">为避免浏览器主线程由于加载数万行文本而卡死崩溃，网页端不作全量渲染。评测机将在判题时通过文件流管道直接接入。</div>
-              </div>
-            </div>
-            <div class="notice-actions" v-if="c.id">
-              <button class="btn btn-secondary btn-sm" type="button" @click="downloadInput(c.id)">
-                📥 查看完整输入文件
-              </button>
-              <button class="btn btn-secondary btn-sm" type="button" @click="downloadOutput(c.id)">
-                📥 查看完整输出文件
-              </button>
-            </div>
+          <div v-if="c.isLarge" class="large-notice">
+            <span class="muted">
+              该测试点数据量庞大（{{ formatBytes(Math.max(c.inputSize || 0, c.outputSize || 0)) }}），已由服务器文件系统直接托管。网页端仅展示预览，保存时不会覆盖原始文件。
+            </span>
           </div>
 
-          <!-- 常规文本编辑区 -->
-          <div v-else class="case-inputs-grid">
+          <div class="case-inputs-grid">
             <FormField label="标准输入 (stdin)" hint="可为空">
               <textarea
                 v-model="c.input"
                 class="input textarea mono-area"
-                placeholder="测试用例标准输入数据（若为空表示该测试点无输入）"
+                :disabled="c.isLarge"
+                placeholder="标准输入数据"
               />
             </FormField>
             <FormField label="期望输出 (stdout)" required>
               <textarea
                 v-model="c.expectedOutput"
                 class="input textarea mono-area"
-                placeholder="标准预期输出数据（判题机将忽略末尾空格与空行换行）"
+                :disabled="c.isLarge"
+                placeholder="期望输出数据"
               />
             </FormField>
           </div>
@@ -613,93 +574,76 @@ onMounted(() => {
     </div>
 
     <!-- Zip 批量导入测试点弹窗 -->
-    <div v-if="showZipModal" class="modal-backdrop" @click.self="showZipModal = false">
-      <div class="modal-card">
-        <div class="modal-head">
-          <div class="modal-title-row">
-            <span class="modal-icon">📦</span>
-            <h3 class="modal-title">批量导入测试点压缩包 (Zip)</h3>
+    <Teleport to="body">
+      <div v-if="showZipModal" class="modal-overlay" @click.self="showZipModal = false">
+        <div class="modal-dialog" role="dialog" aria-modal="true">
+          <div class="modal-header">
+            <h3 class="modal-title">导入测试点压缩包 (Zip)</h3>
+            <button class="modal-close" type="button" @click="showZipModal = false">&times;</button>
           </div>
-          <button class="btn-close" type="button" @click="showZipModal = false">✕</button>
-        </div>
 
-        <div class="modal-body">
-          <!-- 拖拽上传区域 -->
-          <div
-            class="drop-zone"
-            :class="{ 'is-dragover': isZipDragOver, 'has-file': !!zipFile }"
-            @dragover.prevent="isZipDragOver = true"
-            @dragleave.prevent="isZipDragOver = false"
-            @drop="handleZipDrop"
-            @click="($refs.zipFileInput as HTMLInputElement)?.click()"
-          >
-            <input
-              ref="zipFileInput"
-              type="file"
-              accept=".zip"
-              class="hidden-file-input"
-              @change="handleZipFileSelect"
-            />
-            <div v-if="!zipFile" class="drop-prompt">
-              <span class="upload-icon">📁</span>
-              <span class="upload-main-text">点击选择文件，或将 Zip 压缩包拖拽至此</span>
-              <span class="upload-sub-text">支持任意大小的测试数据压缩包（.zip 格式）</span>
-            </div>
-            <div v-else class="file-selected-box">
-              <span class="zip-tag">ZIP</span>
-              <div class="file-selected-info">
-                <span class="file-selected-name">{{ zipFile.name }}</span>
-                <span class="file-selected-size">{{ formatBytes(zipFile.size) }}</span>
+          <div class="modal-body">
+            <div
+              class="drop-zone"
+              :class="{ 'is-dragover': isZipDragOver, 'has-file': !!zipFile }"
+              @dragover.prevent="isZipDragOver = true"
+              @dragleave.prevent="isZipDragOver = false"
+              @drop="handleZipDrop"
+              @click="($refs.zipFileInput as HTMLInputElement)?.click()"
+            >
+              <input
+                ref="zipFileInput"
+                type="file"
+                accept=".zip"
+                class="hidden-file-input"
+                @change="handleZipFileSelect"
+              />
+              <div v-if="!zipFile" class="drop-prompt">
+                <div class="drop-title">点击选择文件，或将 Zip 压缩包拖拽至此</div>
+                <div class="drop-hint muted">支持包含 .in 与 .out 测试数据的 .zip 压缩包</div>
               </div>
-              <button class="btn btn-ghost btn-xs remove-file-btn" type="button" @click.stop="zipFile = null">
-                重新选择
-              </button>
+              <div v-else class="file-selected-box">
+                <span class="file-name">{{ zipFile.name }} ({{ formatBytes(zipFile.size) }})</span>
+                <button class="btn btn-ghost btn-xs" type="button" @click.stop="zipFile = null">
+                  重新选择
+                </button>
+              </div>
+            </div>
+
+            <div class="modal-options">
+              <label class="sample-check">
+                <input v-model="zipReplace" type="checkbox" />
+                覆盖已有测试点（清空原有旧用例，以 Zip 内容完全重建）
+              </label>
+              <label class="sample-check">
+                <input v-model="zipFirstAsSample" type="checkbox" />
+                首组测试点设为公开样例
+              </label>
+            </div>
+
+            <div class="rules-box muted">
+              <div class="rules-title">命名规范说明：</div>
+              <div>1. 压缩包内请成对包含输入与输出文件，如 <code>1.in</code> / <code>1.out</code> 或 <code>input1.txt</code> / <code>output1.txt</code>。</div>
+              <div>2. 系统会自动按文件名数字自然排序（1, 2, ... 10）编号导入。</div>
             </div>
           </div>
 
-          <!-- 导入选项 -->
-          <div class="import-options">
-            <label class="opt-row">
-              <input v-model="zipReplace" type="checkbox" class="opt-checkbox" />
-              <span class="opt-text">
-                <b>覆盖已有测试点</b>（清空该题目原有旧测试集，以本次上传的 Zip 文件完全重建）
-              </span>
-            </label>
-
-            <label class="opt-row">
-              <input v-model="zipFirstAsSample" type="checkbox" class="opt-checkbox" />
-              <span class="opt-text">
-                <b>首组测试点设为公开样例</b>（或文件名含有 sample 的用例自动公开供题面展示）
-              </span>
-            </label>
+          <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" type="button" :disabled="zipUploading" @click="showZipModal = false">
+              取消
+            </button>
+            <button
+              class="btn btn-primary btn-sm"
+              type="button"
+              :disabled="!zipFile || zipUploading"
+              @click="submitZipImport"
+            >
+              {{ zipUploading ? '导入中…' : '开始导入' }}
+            </button>
           </div>
-
-          <!-- 说明帮助 -->
-          <div class="zip-help-card">
-            <div class="help-title">💡 压缩包文件命名规范：</div>
-            <ul class="help-list">
-              <li>成对包含输入与期望输出文件，例如：<code>1.in</code> 与 <code>1.out</code>（或 <code>1.ans</code>）。</li>
-              <li>亦支持标准命名：<code>input1.txt</code> 与 <code>output1.txt</code>，或 <code>data1.in</code> 与 <code>data1.out</code>。</li>
-              <li>支持嵌套在子文件夹内，系统会自动提取并按文件名数字自然排序（1, 2, ... 10）。</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="modal-foot">
-          <button class="btn btn-ghost" type="button" :disabled="zipUploading" @click="showZipModal = false">
-            取消
-          </button>
-          <button
-            class="btn btn-primary"
-            type="button"
-            :disabled="!zipFile || zipUploading"
-            @click="submitZipImport"
-          >
-            {{ zipUploading ? '正在解压并解析中…' : '确认上传并导入' }}
-          </button>
         </div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
@@ -742,224 +686,80 @@ onMounted(() => {
 .field-row > * {
   flex: 1;
 }
-/* 测试用例与评测点模块增强样式 */
-.testcase-panel {
+.card-title-group {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  align-items: baseline;
+  gap: 12px;
 }
-.testcase-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-bottom: 0;
+.case-count-tag {
+  font-size: 13px;
+  font-weight: normal;
 }
-.testcase-title-area {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.testcase-stats-pills {
+.card-head-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
-.stat-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: 9999px;
-  font-size: 12px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  color: var(--ink-secondary);
-}
-.stat-label {
-  opacity: 0.75;
-}
-.stat-val {
-  font-weight: 600;
-  color: var(--ink);
-  font-family: 'SFMono-Regular', Consolas, monospace;
-}
-.stat-val.sample-val {
-  color: #10b981;
-}
-.testcase-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.btn-icon {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.testcase-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 14px;
-  background: rgba(99, 102, 241, 0.06);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  border-radius: 8px;
+.testcase-hint {
   font-size: 13px;
-  color: var(--ink);
+  margin: -4px 0 16px;
   line-height: 1.5;
 }
-.banner-icon {
-  font-size: 16px;
-  line-height: 1.2;
-}
-.banner-text code {
-  padding: 1px 4px;
-  background: rgba(0, 0, 0, 0.05);
-  border-radius: 4px;
-  font-family: monospace;
-}
-.empty-tip {
-  padding: 32px 16px;
-  text-align: center;
-  background: var(--bg);
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-  font-size: 14px;
-}
-
 .case-card {
   border: 1px solid var(--line);
-  border-radius: 10px;
   padding: 14px 16px;
   margin-bottom: 14px;
-  background: var(--surface);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-  transition: all 0.2s ease;
+  background: var(--bg);
 }
-.case-card:hover {
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-.case-card.is-sample-card {
-  border-left: 3.5px solid #10b981;
-}
-.case-card.is-large-card {
-  border-left: 3.5px solid #f59e0b;
-}
-
 .case-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 14px;
   margin-bottom: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--line);
 }
-.case-num-badge {
-  display: flex;
-  align-items: center;
-}
-.case-seq-tag {
+.case-seq {
   font-size: 13px;
-  font-weight: 700;
-  color: var(--ink);
-  padding: 2px 8px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font-family: 'SFMono-Regular', Consolas, monospace;
-}
-.sample-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  user-select: none;
-}
-.toggle-checkbox {
-  width: 15px;
-  height: 15px;
-  accent-color: #10b981;
-  cursor: pointer;
-}
-.toggle-label {
-  font-size: 12px;
   font-weight: 600;
-  color: var(--ink-secondary);
+  color: var(--ink);
 }
-.toggle-label.active {
-  color: #10b981;
-}
-
-.case-meta-group {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.score-input-wrap {
+.sample-check {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-secondary);
+  cursor: pointer;
+}
+.score-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
 }
 .score-input {
-  width: 58px;
+  width: 52px;
   padding: 2px 6px;
   text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  height: 28px;
+  font-size: 13px;
 }
-.file-size-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  padding: 2px 8px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  color: var(--ink-secondary);
+.case-size-info {
+  font-size: 12px;
   font-family: 'SFMono-Regular', Consolas, monospace;
 }
-.file-size-badge .sep {
-  opacity: 0.4;
-}
-.large-file-tag {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: rgba(245, 158, 11, 0.12);
-  color: #d97706;
-  border: 1px solid rgba(245, 158, 11, 0.3);
-}
-
-.case-ops {
+.case-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-left: auto;
 }
-.file-dl-btn {
-  font-size: 12px;
-  padding: 2px 8px;
-  height: 26px;
-  color: var(--ink-secondary);
+.large-notice {
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  margin-bottom: 12px;
 }
-.file-dl-btn:hover {
-  color: var(--button);
-}
-
 .case-inputs-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -970,49 +770,6 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 }
-.mono-area {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-  font-size: 13px;
-  min-height: 96px;
-}
-
-.large-case-notice {
-  padding: 14px 16px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.notice-info {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  flex: 1;
-}
-.notice-icon {
-  font-size: 24px;
-  line-height: 1;
-}
-.notice-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  margin-bottom: 2px;
-}
-.notice-desc {
-  font-size: 12px;
-  color: var(--ink-secondary);
-  line-height: 1.4;
-}
-.notice-actions {
-  display: flex;
-  gap: 8px;
-}
-
 .textarea {
   height: auto;
   min-height: 88px;
@@ -1021,229 +778,139 @@ onMounted(() => {
   line-height: 1.5;
   font-family: inherit;
 }
+.mono-area {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 13px;
+  min-height: 96px;
+}
 .form-actions {
   display: flex;
   gap: 12px;
 }
 
-/* Modal 弹窗样式 */
-.modal-backdrop {
+/* Zip 导入弹窗样式（对齐 ConfirmModal / EditProfileModal） */
+.modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  z-index: 200;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-  animation: fadeIn 0.15s ease-out;
+  padding: 24px;
+  background: rgba(17, 17, 17, 0.45);
 }
-.modal-card {
+.modal-dialog {
   width: 100%;
-  max-width: 580px;
+  min-width: 320px;
+  max-width: 500px;
   background: var(--surface);
-  border-radius: 14px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
   border: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  animation: scaleUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 0;
+  box-shadow: var(--shadow-md);
 }
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes scaleUp {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-.modal-head {
+.modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid var(--line);
-}
-.modal-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.modal-icon {
-  font-size: 20px;
+  background: var(--bg);
 }
 .modal-title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--ink);
 }
-.btn-close {
+.modal-close {
+  font-size: 20px;
+  line-height: 1;
+  color: var(--ink-secondary);
   background: transparent;
   border: none;
-  font-size: 18px;
-  color: var(--ink-tertiary);
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: all 0.15s ease;
+  padding: 0 4px;
 }
-.btn-close:hover {
-  background: var(--bg);
+.modal-close:hover {
   color: var(--ink);
 }
-
 .modal-body {
   padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 .drop-zone {
-  border: 2px dashed var(--line);
-  border-radius: 12px;
-  padding: 32px 20px;
-  text-align: center;
+  border: 1px dashed var(--line);
   background: var(--bg);
+  padding: 24px 16px;
+  text-align: center;
   cursor: pointer;
-  transition: all 0.2s ease;
-  user-select: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 .drop-zone:hover,
 .drop-zone.is-dragover {
-  border-color: var(--button);
-  background: rgba(99, 102, 241, 0.04);
+  border-color: var(--ink);
+  background: var(--surface-hover);
 }
 .drop-zone.has-file {
-  border-color: #10b981;
-  background: rgba(16, 185, 129, 0.04);
-  padding: 18px 20px;
+  border-color: var(--button);
+  background: var(--bg);
+  padding: 16px;
+}
+.drop-title {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: var(--ink);
+}
+.drop-hint {
+  font-size: 12px;
+}
+.file-selected-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 13px;
+}
+.file-name {
+  color: var(--ink);
+  font-weight: 500;
 }
 .hidden-file-input {
   display: none;
 }
-.drop-prompt {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-.upload-icon {
-  font-size: 36px;
-}
-.upload-main-text {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.upload-sub-text {
-  font-size: 12px;
-  color: var(--ink-secondary);
-}
-
-.file-selected-box {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.zip-tag {
-  font-size: 12px;
-  font-weight: 700;
-  padding: 4px 8px;
-  background: #10b981;
-  color: #fff;
-  border-radius: 6px;
-  font-family: monospace;
-}
-.file-selected-info {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  flex: 1;
-  min-width: 0;
-}
-.file-selected-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-.file-selected-size {
-  font-size: 12px;
-  color: var(--ink-secondary);
-  font-family: 'SFMono-Regular', Consolas, monospace;
-}
-.remove-file-btn {
-  font-size: 12px;
-}
-
-.import-options {
+.modal-options {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px 14px;
+}
+.rules-box {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
   background: var(--bg);
-  border-radius: 8px;
-  border: 1px solid var(--line);
-}
-.opt-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  user-select: none;
-}
-.opt-checkbox {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--button);
-  cursor: pointer;
-}
-.opt-text {
-  font-size: 13px;
-  color: var(--ink);
-}
-
-.zip-help-card {
-  background: rgba(0, 0, 0, 0.02);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 12px 14px;
-}
-.help-title {
   font-size: 12px;
-  font-weight: 600;
-  color: var(--ink);
-  margin-bottom: 6px;
-}
-.help-list {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 12px;
-  color: var(--ink-secondary);
   line-height: 1.6;
 }
-.help-list code {
-  background: var(--bg);
-  padding: 1px 4px;
-  border-radius: 4px;
-  border: 1px solid var(--line);
-  font-family: monospace;
+.rules-title {
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 4px;
 }
-
-.modal-foot {
+.rules-box code {
+  background: var(--surface);
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+}
+.modal-footer {
   display: flex;
-  align-items: center;
   justify-content: flex-end;
   gap: 10px;
   padding: 14px 20px;
   border-top: 1px solid var(--line);
+  background: var(--bg);
 }
 
 /* 测评机多选卡片样式 */
