@@ -29,9 +29,17 @@ export interface PageResult<T> {
 
 export interface TestCase {
   id: number
+  questionId?: number
+  caseNum?: number
+  inputPath?: string | null
+  outputPath?: string | null
+  inputSize?: number
+  outputSize?: number
+  scoreWeight?: number
   input: string | null
   expectedOutput: string
   isSample: number
+  isLarge?: boolean
 }
 
 export interface Question {

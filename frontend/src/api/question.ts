@@ -26,6 +26,8 @@ export interface QuestionWriteRequest {
 export interface TestCaseWriteRequest {
   input?: string | null
   expectedOutput: string
+  caseNum?: number
+  scoreWeight?: number
   /** 是否为样例用例：1 是 0 否。 */
   isSample?: number
 }
@@ -45,4 +47,24 @@ export const questionApi = {
     http.put<TestCase>(`/questions/test-cases/${testCaseId}`, body),
   removeTestCase: (testCaseId: number | string) =>
     http.delete<void>(`/questions/test-cases/${testCaseId}`),
+  importTestCasesZip: (
+    questionId: number | string,
+    file: File,
+    replace = false,
+    firstAsSample = true
+  ) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return http.post<TestCase[]>(
+      `/questions/${questionId}/test-cases/import-zip?replace=${replace}&firstAsSample=${firstAsSample}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+  },
+  exportTestCasesZipUrl: (questionId: number | string) =>
+    `/api/v1/questions/${questionId}/test-cases/export-zip`,
+  downloadInputUrl: (testCaseId: number | string) =>
+    `/api/v1/questions/test-cases/${testCaseId}/input`,
+  downloadOutputUrl: (testCaseId: number | string) =>
+    `/api/v1/questions/test-cases/${testCaseId}/output`,
 }

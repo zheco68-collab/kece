@@ -9,7 +9,15 @@ import lombok.Data;
 public class TestCaseVO {
 
     private Long id;
+    private Long questionId;
+    private Integer caseNum;
+    private String inputPath;
+    private String outputPath;
+    private Long inputSize;
+    private Long outputSize;
+    private Integer scoreWeight;
     private String input;
     private String expectedOutput;
     private Integer isSample;
+    private Boolean isLarge;
 }

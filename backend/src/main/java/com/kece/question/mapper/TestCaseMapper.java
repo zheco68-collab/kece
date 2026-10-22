@@ -10,6 +10,8 @@ public interface TestCaseMapper {
 
     int insert(TestCase testCase);
 
+    int batchInsert(@org.apache.ibatis.annotations.Param("list") List<TestCase> list);
+
     int update(TestCase testCase);
 
     int deleteById(Long id);
@@ -21,4 +23,6 @@ public interface TestCaseMapper {
     List<TestCase> findByQuestionId(Long questionId);
 
     List<TestCase> findSamplesByQuestionId(Long questionId);
+
+    List<TestCase> findUnmigrated();
 }

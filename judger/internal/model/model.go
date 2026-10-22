@@ -22,13 +22,17 @@ type Task struct {
 }
 
 // TestCase 为单个测试点。
-// 代码任务仅使用 CaseID/Input/ExpectedOutput；数据库任务只用 SeedSql（该测试点的一套数据）。
+// 代码任务使用 CaseID/InputPath/OutputPath（或兜底 Input/ExpectedOutput）；数据库任务使用 SeedSql。
 type TestCase struct {
 	CaseID         int64  `json:"caseId"`
-	Input          string `json:"input"`
-	ExpectedOutput string `json:"expectedOutput"`
+	CaseNum        int    `json:"caseNum,omitempty"`
+	ScoreWeight    int    `json:"scoreWeight,omitempty"`
+	Input          string `json:"input,omitempty"`
+	ExpectedOutput string `json:"expectedOutput,omitempty"`
+	InputPath      string `json:"inputPath,omitempty"`
+	OutputPath     string `json:"outputPath,omitempty"`
 	// 数据库任务专用：该测试点的初始数据。
-	SeedSql string `json:"seedSql"`
+	SeedSql string `json:"seedSql,omitempty"`
 }
 
 // Progress 描述判题进度，对应后端 ProgressVO。

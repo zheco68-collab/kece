@@ -5,6 +5,12 @@
     <resultMap id="BaseResultMap" type="com.kece.question.entity.TestCase">
         <id column="id" property="id"/>
         <result column="question_id" property="questionId"/>
+        <result column="input_path" property="inputPath"/>
+        <result column="output_path" property="outputPath"/>
+        <result column="input_size" property="inputSize"/>
+        <result column="output_size" property="outputSize"/>
+        <result column="case_num" property="caseNum"/>
+        <result column="score_weight" property="scoreWeight"/>
         <result column="input" property="input"/>
         <result column="expected_output" property="expectedOutput"/>
         <result column="is_sample" property="isSample"/>
@@ -16,21 +22,39 @@
     </select>
 
     <select id="findByQuestionId" resultMap="BaseResultMap">
-        SELECT * FROM `test_case` WHERE question_id = #{questionId} ORDER BY id ASC
+        SELECT * FROM `test_case` WHERE question_id = #{questionId} ORDER BY case_num ASC, id ASC
     </select>
 
     <select id="findSamplesByQuestionId" resultMap="BaseResultMap">
-        SELECT * FROM `test_case` WHERE question_id = #{questionId} AND is_sample = 1 ORDER BY id ASC
+        SELECT * FROM `test_case` WHERE question_id = #{questionId} AND is_sample = 1 ORDER BY case_num ASC, id ASC
+    </select>
+
+    <select id="findUnmigrated" resultMap="BaseResultMap">
+        SELECT * FROM `test_case` WHERE input_path IS NULL OR input_path = '' ORDER BY id ASC
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO `test_case` (question_id, input, expected_output, is_sample)
-        VALUES (#{questionId}, #{input}, #{expectedOutput}, #{isSample})
+        INSERT INTO `test_case` (question_id, input_path, output_path, input_size, output_size, case_num, score_weight, input, expected_output, is_sample)
+        VALUES (#{questionId}, #{inputPath}, #{outputPath}, #{inputSize}, #{outputSize}, #{caseNum}, #{scoreWeight}, #{input}, #{expectedOutput}, #{isSample})
+    </insert>
+
+    <insert id="batchInsert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO `test_case` (question_id, input_path, output_path, input_size, output_size, case_num, score_weight, input, expected_output, is_sample)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.questionId}, #{item.inputPath}, #{item.outputPath}, #{item.inputSize}, #{item.outputSize}, #{item.caseNum}, #{item.scoreWeight}, #{item.input}, #{item.expectedOutput}, #{item.isSample})
+        </foreach>
     </insert>
 
     <update id="update">
         UPDATE `test_case`
         <set>
+            <if test="inputPath != null">input_path = #{inputPath},</if>
+            <if test="outputPath != null">output_path = #{outputPath},</if>
+            <if test="inputSize != null">input_size = #{inputSize},</if>
+            <if test="outputSize != null">output_size = #{outputSize},</if>
+            <if test="caseNum != null">case_num = #{caseNum},</if>
+            <if test="scoreWeight != null">score_weight = #{scoreWeight},</if>
             <if test="input != null">input = #{input},</if>
             <if test="expectedOutput != null">expected_output = #{expectedOutput},</if>
             <if test="isSample != null">is_sample = #{isSample},</if>

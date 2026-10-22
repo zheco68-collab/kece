@@ -36,6 +36,7 @@ type Config struct {
 	WorkspaceDir      string
 	WorkerID          string
 	WorkerConcurrency int
+	TestcaseDir       string
 	Images            Images
 	// 数据库判题专用：独立队列键与判题 MySQL 连接。
 	SqlQueueKey        string
@@ -79,6 +80,7 @@ func Load() Config {
 		WorkspaceDir:      getenv("WORKSPACE_DIR", defaultWs),
 		WorkerID:          getenv("WORKER_ID", hostname()),
 		WorkerConcurrency: getenvInt("WORKER_CONCURRENCY", 4),
+		TestcaseDir:       getenv("TESTCASE_DIR", "testcases"),
 		Images: Images{
 			CPP:    getenv("IMAGE_CPP", "gcc:13"),
 			Java:   getenv("IMAGE_JAVA", "eclipse-temurin:17-jdk"),

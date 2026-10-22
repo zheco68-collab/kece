@@ -104,4 +104,55 @@ public class QuestionController {
         questionService.deleteTestCase(testCaseId);
         return ApiResponse.success();
     }
+
+    @Operation(summary = "批量导入测试点（Zip 压缩包）")
+    @RequireRole({Role.TEACHER, Role.ADMIN})
+    @PostMapping(value = "/{id}/test-cases/import-zip", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<List<TestCaseVO>> importZip(
+            @PathVariable Long id,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam(value = "replace", defaultValue = "false") boolean replace,
+            @RequestParam(value = "firstAsSample", defaultValue = "true") boolean firstAsSample) {
+        return ApiResponse.success(questionService.importTestCasesZip(id, file, replace, firstAsSample));
+    }
+
+    @Operation(summary = "导出题目测试集为 Zip 压缩包")
+    @RequireRole({Role.TEACHER, Role.ADMIN})
+    @GetMapping("/{id}/test-cases/export-zip")
+    public void exportZip(@PathVariable Long id, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        response.setContentType("application/zip");
+        response.setHeader(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"testcases_q" + id + ".zip\"");
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(response.getOutputStream())) {
+            questionService.exportTestCasesZip(id, zos);
+            zos.finish();
+        }
+    }
+
+    @Operation(summary = "下载单个测试点输入文件")
+    @RequireRole({Role.TEACHER, Role.ADMIN})
+    @GetMapping("/test-cases/{testCaseId}/input")
+    public org.springframework.http.ResponseEntity<org.springframework.core.io.Resource> downloadInput(@PathVariable Long testCaseId) {
+        org.springframework.core.io.Resource resource = questionService.getTestCaseInputResource(testCaseId);
+        if (resource == null || !resource.exists()) {
+            return org.springframework.http.ResponseEntity.notFound().build();
+        }
+        return org.springframework.http.ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + testCaseId + ".in\"")
+                .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
+                .body(resource);
+    }
+
+    @Operation(summary = "下载单个测试点输出文件")
+    @RequireRole({Role.TEACHER, Role.ADMIN})
+    @GetMapping("/test-cases/{testCaseId}/output")
+    public org.springframework.http.ResponseEntity<org.springframework.core.io.Resource> downloadOutput(@PathVariable Long testCaseId) {
+        org.springframework.core.io.Resource resource = questionService.getTestCaseOutputResource(testCaseId);
+        if (resource == null || !resource.exists()) {
+            return org.springframework.http.ResponseEntity.notFound().build();
+        }
+        return org.springframework.http.ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + testCaseId + ".out\"")
+                .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
+                .body(resource);
+    }
 }

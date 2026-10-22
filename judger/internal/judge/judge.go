@@ -4,8 +4,10 @@ package judge
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/zheco68-collab/KECE/judger/internal/compare"
@@ -134,9 +136,45 @@ func (j *Judge) runCase(ctx context.Context, task model.Task, ws string, tc mode
 
 // runCaseWithSession 在指定沙箱会话（若无则兜底新建容器）中运行单个测试点。
 func (j *Judge) runCaseWithSession(ctx context.Context, task model.Task, ws string, tc model.TestCase, sess *sandbox.Session) (model.CaseResult, error) {
-	if err := os.WriteFile(filepath.Join(ws, "input.txt"), []byte(tc.Input), 0o666); err != nil {
-		return model.CaseResult{}, err
+	targetInPath := filepath.Join(ws, "input.txt")
+	var expectedOutput string
+
+	// 1. 准备输入数据（优先读文件，若无或读取失败则降级为 tc.Input 字符串）
+	if tc.InputPath != "" {
+		srcIn := tc.InputPath
+		if !filepath.IsAbs(srcIn) {
+			srcIn = filepath.Join(j.cfg.TestcaseDir, tc.InputPath)
+		}
+		if data, err := os.ReadFile(srcIn); err == nil {
+			if err := os.WriteFile(targetInPath, data, 0o666); err != nil {
+				return model.CaseResult{}, err
+			}
+		} else if tc.Input != "" {
+			_ = os.WriteFile(targetInPath, []byte(tc.Input), 0o666)
+		} else {
+			return model.CaseResult{}, fmt.Errorf("read input file %s: %w", srcIn, err)
+		}
+	} else {
+		if err := os.WriteFile(targetInPath, []byte(tc.Input), 0o666); err != nil {
+			return model.CaseResult{}, err
+		}
 	}
+
+	// 2. 准备期望输出（优先读文件，若无或读取失败则降级为 tc.ExpectedOutput 字符串）
+	if tc.OutputPath != "" {
+		srcOut := tc.OutputPath
+		if !filepath.IsAbs(srcOut) {
+			srcOut = filepath.Join(j.cfg.TestcaseDir, tc.OutputPath)
+		}
+		if data, err := os.ReadFile(srcOut); err == nil {
+			expectedOutput = string(data)
+		} else {
+			expectedOutput = tc.ExpectedOutput
+		}
+	} else {
+		expectedOutput = tc.ExpectedOutput
+	}
+
 	var (
 		res sandbox.RunResult
 		err error
@@ -157,12 +195,12 @@ func (j *Judge) runCaseWithSession(ctx context.Context, task model.Task, ws stri
 	}
 	switch status := sandbox.ClassifyExit(res.ExitCode); status {
 	case "":
-		if compare.Equal(res.Stdout, tc.ExpectedOutput) {
+		if compare.Equal(res.Stdout, expectedOutput) {
 			cr.Status = sandbox.StatusAccepted
 		} else {
 			cr.Status = sandbox.StatusWrongAnswer
-			cr.ExpectedOutput = strPtr(tc.ExpectedOutput)
-			cr.ActualOutput = strPtr(res.Stdout)
+			cr.ExpectedOutput = strPtr(truncateStr(expectedOutput, 512))
+			cr.ActualOutput = strPtr(truncateStr(res.Stdout, 512))
 		}
 	case sandbox.StatusMemoryLimitExceeded:
 		cr.Status = status
@@ -274,3 +312,10 @@ func extractCode(task model.Task, filename string) string {
 
 func intPtr(v int) *int       { return &v }
 func strPtr(v string) *string { return &v }
+
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "... [已截断，总长度: " + strconv.Itoa(len(s)) + " 字符]"
+}

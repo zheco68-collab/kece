@@ -9,6 +9,12 @@ public class TestCase {
 
     private Long id;
     private Long questionId;
+    private String inputPath;
+    private String outputPath;
+    private Long inputSize;
+    private Long outputSize;
+    private Integer caseNum;
+    private Integer scoreWeight;
     private String input;
     private String expectedOutput;
 

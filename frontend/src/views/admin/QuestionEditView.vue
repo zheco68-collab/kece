@@ -94,9 +94,16 @@ const formErrors = reactive({
 interface CaseRow {
   clientId: number
   id?: number
+  caseNum?: number
+  scoreWeight?: number
+  inputPath?: string | null
+  outputPath?: string | null
+  inputSize?: number
+  outputSize?: number
   input: string
   expectedOutput: string
   isSample: boolean
+  isLarge?: boolean
 }
 
 const cases = ref<CaseRow[]>([])
@@ -105,13 +112,111 @@ let caseSeq = 0
 const removedCaseIds: number[] = []
 
 function addCase() {
-  cases.value.push({ clientId: ++caseSeq, input: '', expectedOutput: '', isSample: false })
+  const nextNum = cases.value.length > 0 ? (cases.value[cases.value.length - 1].caseNum || cases.value.length) + 1 : 1
+  cases.value.push({
+    clientId: ++caseSeq,
+    caseNum: nextNum,
+    scoreWeight: 10,
+    input: '',
+    expectedOutput: '',
+    isSample: false,
+    inputSize: 0,
+    outputSize: 0,
+    isLarge: false
+  })
 }
 
 function removeCase(clientId: number) {
   const target = cases.value.find((c) => c.clientId === clientId)
   if (target?.id !== undefined) removedCaseIds.push(target.id)
   cases.value = cases.value.filter((c) => c.clientId !== clientId)
+}
+
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '0 B'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+}
+
+const totalDataBytes = computed(() => {
+  return cases.value.reduce((acc, c) => acc + (c.inputSize || 0) + (c.outputSize || 0), 0)
+})
+
+const sampleCasesCount = computed(() => {
+  return cases.value.filter((c) => c.isSample).length
+})
+
+// === Zip 批量导入/导出状态与方法 ===
+const showZipModal = ref(false)
+const zipFile = ref<File | null>(null)
+const zipReplace = ref(true)
+const zipFirstAsSample = ref(true)
+const zipUploading = ref(false)
+const isZipDragOver = ref(false)
+
+function openZipModal() {
+  if (!questionId.value) {
+    toast.error('请先保存题目基本信息后再导入测试集 Zip')
+    return
+  }
+  zipFile.value = null
+  showZipModal.value = true
+}
+
+function handleZipFileSelect(e: Event) {
+  const target = e.target as HTMLInputElement
+  if (target.files && target.files.length > 0) {
+    zipFile.value = target.files[0]
+  }
+}
+
+function handleZipDrop(e: DragEvent) {
+  isZipDragOver.value = false
+  if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+    const f = e.dataTransfer.files[0]
+    if (f.name.toLowerCase().endsWith('.zip')) {
+      zipFile.value = f
+    } else {
+      toast.error('仅支持上传 .zip 格式的压缩包')
+    }
+  }
+}
+
+async function submitZipImport() {
+  if (!zipFile.value || !questionId.value || zipUploading.value) return
+  zipUploading.value = true
+  try {
+    const imported = await questionApi.importTestCasesZip(
+      questionId.value,
+      zipFile.value,
+      zipReplace.value,
+      zipFirstAsSample.value
+    )
+    toast.success(`成功导入 ${imported.length} 组测试点！`)
+    showZipModal.value = false
+    await loadQuestion()
+  } catch (err) {
+    toast.error(err instanceof ApiError ? err.message : 'Zip 导入失败，请检查文件格式')
+  } finally {
+    zipUploading.value = false
+  }
+}
+
+function exportZip() {
+  if (!questionId.value) return
+  const url = questionApi.exportTestCasesZipUrl(questionId.value)
+  window.open(url, '_blank')
+}
+
+function downloadInput(id?: number) {
+  if (!id) return
+  window.open(questionApi.downloadInputUrl(id), '_blank')
+}
+
+function downloadOutput(id?: number) {
+  if (!id) return
+  window.open(questionApi.downloadOutputUrl(id), '_blank')
 }
 
 async function loadQuestion() {
@@ -135,9 +240,16 @@ async function loadQuestion() {
     cases.value = testCases.map((tc) => ({
       clientId: ++caseSeq,
       id: tc.id,
+      caseNum: tc.caseNum,
+      scoreWeight: tc.scoreWeight ?? 10,
+      inputPath: tc.inputPath,
+      outputPath: tc.outputPath,
+      inputSize: tc.inputSize ?? 0,
+      outputSize: tc.outputSize ?? 0,
       input: tc.input ?? '',
-      expectedOutput: tc.expectedOutput,
+      expectedOutput: tc.expectedOutput ?? '',
       isSample: tc.isSample === 1,
+      isLarge: tc.isLarge ?? false,
     }))
   } catch (e) {
     pageError.value = e instanceof ApiError ? e.message : '加载失败，请稍后重试'
@@ -158,7 +270,7 @@ function validate(): boolean {
     toast.error('请至少勾选一种支持的评测机语言')
     return false
   }
-  const badCase = cases.value.find((c) => !c.expectedOutput.trim())
+  const badCase = cases.value.find((c) => !c.isLarge && !c.expectedOutput.trim())
   if (badCase) {
     toast.error('测试用例的期望输出不能为空')
     return false
@@ -196,9 +308,23 @@ async function save() {
     }
     // 用例逐条同步：老用例更新、新用例创建、删除掉的逐个移除。
     for (const c of cases.value) {
+      if (c.isLarge) {
+        // 大文件测试点已经由文件系统维护，只更新元数据
+        if (c.id !== undefined) {
+          await questionApi.updateTestCase(c.id, {
+            caseNum: c.caseNum,
+            scoreWeight: c.scoreWeight ?? 10,
+            isSample: c.isSample ? 1 : 0,
+            expectedOutput: c.expectedOutput || 'LARGE_FILE',
+          })
+        }
+        continue
+      }
       const caseBody = {
         input: c.input || undefined,
         expectedOutput: c.expectedOutput,
+        caseNum: c.caseNum,
+        scoreWeight: c.scoreWeight ?? 10,
         isSample: c.isSample ? 1 : 0,
       }
       if (c.id !== undefined) {
@@ -316,29 +442,163 @@ onMounted(() => {
         </FormField>
       </div>
 
-      <div class="card form-card">
-        <div class="card-head">
-          <h2 class="card-title">测试用例</h2>
-          <button class="btn btn-ghost btn-sm" type="button" @click="addCase">添加测试点</button>
-        </div>
-        <p v-if="cases.length === 0" class="muted">暂无测试点，请添加。</p>
-        <div v-for="c in cases" :key="c.clientId" class="case-card">
-          <div class="case-head">
-            <span class="muted">测试点 #{{ c.clientId }}</span>
-            <label class="sample-check">
-              <input v-model="c.isSample" type="checkbox" />
-              样例用例
-            </label>
-            <button class="btn btn-ghost btn-sm case-remove" type="button" @click="removeCase(c.clientId)">
-              删除
+      <!-- 测试用例与评测点管理 -->
+      <div class="card form-card testcase-panel">
+        <div class="card-head testcase-head">
+          <div class="testcase-title-area">
+            <h2 class="card-title">测试用例与评测点</h2>
+            <div class="testcase-stats-pills">
+              <span class="stat-pill">
+                <span class="stat-label">总测试点</span>
+                <span class="stat-val">{{ cases.length }} 组</span>
+              </span>
+              <span class="stat-pill" v-if="sampleCasesCount > 0">
+                <span class="stat-label">公开样例</span>
+                <span class="stat-val sample-val">{{ sampleCasesCount }} 组</span>
+              </span>
+              <span class="stat-pill" v-if="totalDataBytes > 0">
+                <span class="stat-label">数据集总体积</span>
+                <span class="stat-val">{{ formatBytes(totalDataBytes) }}</span>
+              </span>
+            </div>
+          </div>
+          <div class="testcase-actions">
+            <button
+              v-if="isEdit"
+              class="btn btn-secondary btn-sm btn-icon"
+              type="button"
+              @click="openZipModal"
+            >
+              <span class="icon">📦</span> 批量导入 Zip
+            </button>
+            <button
+              v-if="isEdit && cases.length > 0"
+              class="btn btn-ghost btn-sm btn-icon"
+              type="button"
+              @click="exportZip"
+            >
+              <span class="icon">📥</span> 导出测试包
+            </button>
+            <button class="btn btn-primary btn-sm btn-icon" type="button" @click="addCase">
+              <span class="icon">➕</span> 添加测试点
             </button>
           </div>
-          <FormField label="输入" hint="可为空">
-            <textarea v-model="c.input" class="input textarea" placeholder="标准输入" />
-          </FormField>
-          <FormField label="期望输出" required>
-            <textarea v-model="c.expectedOutput" class="input textarea" placeholder="期望输出" />
-          </FormField>
+        </div>
+
+        <!-- 存储说明条 -->
+        <div class="testcase-banner">
+          <span class="banner-icon">💡</span>
+          <span class="banner-text">
+            系统已全面升级为<b>本地文件流式存储架构</b>。评测点数据独立保存在服务器磁盘中，无论测试点多大都不会拖慢数据库与消息队列。支持单文件测试或上传 Zip 压缩包（成对的 <code>*.in</code> 与 <code>*.out</code>）一键导入。
+          </span>
+        </div>
+
+        <p v-if="cases.length === 0" class="muted empty-tip">
+          暂无测试点，你可以点击上方“批量导入 Zip”或“添加测试点”创建。
+        </p>
+
+        <div
+          v-for="(c, idx) in cases"
+          :key="c.clientId"
+          class="case-card"
+          :class="{ 'is-sample-card': c.isSample, 'is-large-card': c.isLarge }"
+        >
+          <div class="case-head">
+            <div class="case-num-badge">
+              <span class="case-seq-tag">#{{ c.caseNum || idx + 1 }}</span>
+            </div>
+
+            <label class="sample-toggle" title="勾选后此用例将作为示例展示在学生题目详情页中">
+              <input v-model="c.isSample" type="checkbox" class="toggle-checkbox" />
+              <span class="toggle-label" :class="{ active: c.isSample }">
+                {{ c.isSample ? '🌟 题面公开样例' : '🔒 隐藏评测点' }}
+              </span>
+            </label>
+
+            <div class="case-meta-group">
+              <div class="score-input-wrap" title="该测试点评测分值">
+                <span class="score-label">分值</span>
+                <input
+                  v-model.number="c.scoreWeight"
+                  type="number"
+                  min="1"
+                  max="100"
+                  class="input score-input"
+                />
+              </div>
+
+              <div class="file-size-badge" v-if="c.inputSize || c.outputSize">
+                <span>In: {{ formatBytes(c.inputSize) }}</span>
+                <span class="sep">|</span>
+                <span>Out: {{ formatBytes(c.outputSize) }}</span>
+              </div>
+
+              <span v-if="c.isLarge" class="large-file-tag">
+                ⚡ 超大数据集
+              </span>
+            </div>
+
+            <div class="case-ops">
+              <button
+                v-if="c.id"
+                class="btn btn-ghost btn-xs file-dl-btn"
+                type="button"
+                title="下载输入文件"
+                @click="downloadInput(c.id)"
+              >
+                📥 输入 (.in)
+              </button>
+              <button
+                v-if="c.id"
+                class="btn btn-ghost btn-xs file-dl-btn"
+                type="button"
+                title="下载输出文件"
+                @click="downloadOutput(c.id)"
+              >
+                📥 输出 (.out)
+              </button>
+              <button class="btn btn-ghost btn-sm case-remove" type="button" @click="removeCase(c.clientId)">
+                删除
+              </button>
+            </div>
+          </div>
+
+          <!-- 大文件提示区 -->
+          <div v-if="c.isLarge" class="large-case-notice">
+            <div class="notice-info">
+              <span class="notice-icon">💾</span>
+              <div>
+                <div class="notice-title">该测试点数据量庞大（{{ formatBytes(Math.max(c.inputSize || 0, c.outputSize || 0)) }}），已由服务器文件系统直接托管</div>
+                <div class="notice-desc">为避免浏览器主线程由于加载数万行文本而卡死崩溃，网页端不作全量渲染。评测机将在判题时通过文件流管道直接接入。</div>
+              </div>
+            </div>
+            <div class="notice-actions" v-if="c.id">
+              <button class="btn btn-secondary btn-sm" type="button" @click="downloadInput(c.id)">
+                📥 查看完整输入文件
+              </button>
+              <button class="btn btn-secondary btn-sm" type="button" @click="downloadOutput(c.id)">
+                📥 查看完整输出文件
+              </button>
+            </div>
+          </div>
+
+          <!-- 常规文本编辑区 -->
+          <div v-else class="case-inputs-grid">
+            <FormField label="标准输入 (stdin)" hint="可为空">
+              <textarea
+                v-model="c.input"
+                class="input textarea mono-area"
+                placeholder="测试用例标准输入数据（若为空表示该测试点无输入）"
+              />
+            </FormField>
+            <FormField label="期望输出 (stdout)" required>
+              <textarea
+                v-model="c.expectedOutput"
+                class="input textarea mono-area"
+                placeholder="标准预期输出数据（判题机将忽略末尾空格与空行换行）"
+              />
+            </FormField>
+          </div>
         </div>
       </div>
 
@@ -349,6 +609,95 @@ onMounted(() => {
         <button class="btn btn-ghost" type="button" :disabled="submitting" @click="router.back()">
           取消
         </button>
+      </div>
+    </div>
+
+    <!-- Zip 批量导入测试点弹窗 -->
+    <div v-if="showZipModal" class="modal-backdrop" @click.self="showZipModal = false">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div class="modal-title-row">
+            <span class="modal-icon">📦</span>
+            <h3 class="modal-title">批量导入测试点压缩包 (Zip)</h3>
+          </div>
+          <button class="btn-close" type="button" @click="showZipModal = false">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- 拖拽上传区域 -->
+          <div
+            class="drop-zone"
+            :class="{ 'is-dragover': isZipDragOver, 'has-file': !!zipFile }"
+            @dragover.prevent="isZipDragOver = true"
+            @dragleave.prevent="isZipDragOver = false"
+            @drop="handleZipDrop"
+            @click="($refs.zipFileInput as HTMLInputElement)?.click()"
+          >
+            <input
+              ref="zipFileInput"
+              type="file"
+              accept=".zip"
+              class="hidden-file-input"
+              @change="handleZipFileSelect"
+            />
+            <div v-if="!zipFile" class="drop-prompt">
+              <span class="upload-icon">📁</span>
+              <span class="upload-main-text">点击选择文件，或将 Zip 压缩包拖拽至此</span>
+              <span class="upload-sub-text">支持任意大小的测试数据压缩包（.zip 格式）</span>
+            </div>
+            <div v-else class="file-selected-box">
+              <span class="zip-tag">ZIP</span>
+              <div class="file-selected-info">
+                <span class="file-selected-name">{{ zipFile.name }}</span>
+                <span class="file-selected-size">{{ formatBytes(zipFile.size) }}</span>
+              </div>
+              <button class="btn btn-ghost btn-xs remove-file-btn" type="button" @click.stop="zipFile = null">
+                重新选择
+              </button>
+            </div>
+          </div>
+
+          <!-- 导入选项 -->
+          <div class="import-options">
+            <label class="opt-row">
+              <input v-model="zipReplace" type="checkbox" class="opt-checkbox" />
+              <span class="opt-text">
+                <b>覆盖已有测试点</b>（清空该题目原有旧测试集，以本次上传的 Zip 文件完全重建）
+              </span>
+            </label>
+
+            <label class="opt-row">
+              <input v-model="zipFirstAsSample" type="checkbox" class="opt-checkbox" />
+              <span class="opt-text">
+                <b>首组测试点设为公开样例</b>（或文件名含有 sample 的用例自动公开供题面展示）
+              </span>
+            </label>
+          </div>
+
+          <!-- 说明帮助 -->
+          <div class="zip-help-card">
+            <div class="help-title">💡 压缩包文件命名规范：</div>
+            <ul class="help-list">
+              <li>成对包含输入与期望输出文件，例如：<code>1.in</code> 与 <code>1.out</code>（或 <code>1.ans</code>）。</li>
+              <li>亦支持标准命名：<code>input1.txt</code> 与 <code>output1.txt</code>，或 <code>data1.in</code> 与 <code>data1.out</code>。</li>
+              <li>支持嵌套在子文件夹内，系统会自动提取并按文件名数字自然排序（1, 2, ... 10）。</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="modal-foot">
+          <button class="btn btn-ghost" type="button" :disabled="zipUploading" @click="showZipModal = false">
+            取消
+          </button>
+          <button
+            class="btn btn-primary"
+            type="button"
+            :disabled="!zipFile || zipUploading"
+            @click="submitZipImport"
+          >
+            {{ zipUploading ? '正在解压并解析中…' : '确认上传并导入' }}
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -393,28 +742,277 @@ onMounted(() => {
 .field-row > * {
   flex: 1;
 }
-.case-card {
-  border: 1px solid var(--line);
-  padding: 14px 16px;
-  margin-bottom: 14px;
-  background: var(--bg);
+/* 测试用例与评测点模块增强样式 */
+.testcase-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
-.case-head {
+.testcase-head {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 12px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 0;
 }
-.sample-check {
+.testcase-title-area {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.testcase-stats-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.stat-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
   color: var(--ink-secondary);
 }
-.case-remove {
+.stat-label {
+  opacity: 0.75;
+}
+.stat-val {
+  font-weight: 600;
+  color: var(--ink);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+}
+.stat-val.sample-val {
+  color: #10b981;
+}
+.testcase-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.testcase-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.banner-icon {
+  font-size: 16px;
+  line-height: 1.2;
+}
+.banner-text code {
+  padding: 1px 4px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  font-family: monospace;
+}
+.empty-tip {
+  padding: 32px 16px;
+  text-align: center;
+  background: var(--bg);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.case-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
+}
+.case-card:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+.case-card.is-sample-card {
+  border-left: 3.5px solid #10b981;
+}
+.case-card.is-large-card {
+  border-left: 3.5px solid #f59e0b;
+}
+
+.case-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.case-num-badge {
+  display: flex;
+  align-items: center;
+}
+.case-seq-tag {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  padding: 2px 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+}
+.sample-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.toggle-checkbox {
+  width: 15px;
+  height: 15px;
+  accent-color: #10b981;
+  cursor: pointer;
+}
+.toggle-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+.toggle-label.active {
+  color: #10b981;
+}
+
+.case-meta-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.score-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+.score-input {
+  width: 58px;
+  padding: 2px 6px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  height: 28px;
+}
+.file-size-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--ink-secondary);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+}
+.file-size-badge .sep {
+  opacity: 0.4;
+}
+.large-file-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.case-ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
 }
+.file-dl-btn {
+  font-size: 12px;
+  padding: 2px 8px;
+  height: 26px;
+  color: var(--ink-secondary);
+}
+.file-dl-btn:hover {
+  color: var(--button);
+}
+
+.case-inputs-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 768px) {
+  .case-inputs-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.mono-area {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 13px;
+  min-height: 96px;
+}
+
+.large-case-notice {
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.notice-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+}
+.notice-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+.notice-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+.notice-desc {
+  font-size: 12px;
+  color: var(--ink-secondary);
+  line-height: 1.4;
+}
+.notice-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .textarea {
   height: auto;
   min-height: 88px;
@@ -426,6 +1024,226 @@ onMounted(() => {
 .form-actions {
   display: flex;
   gap: 12px;
+}
+
+/* Modal 弹窗样式 */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.15s ease-out;
+}
+.modal-card {
+  width: 100%;
+  max-width: 580px;
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: scaleUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes scaleUp {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.modal-icon {
+  font-size: 20px;
+}
+.modal-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.btn-close {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  color: var(--ink-tertiary);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+.btn-close:hover {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.drop-zone {
+  border: 2px dashed var(--line);
+  border-radius: 12px;
+  padding: 32px 20px;
+  text-align: center;
+  background: var(--bg);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.drop-zone:hover,
+.drop-zone.is-dragover {
+  border-color: var(--button);
+  background: rgba(99, 102, 241, 0.04);
+}
+.drop-zone.has-file {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.04);
+  padding: 18px 20px;
+}
+.hidden-file-input {
+  display: none;
+}
+.drop-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.upload-icon {
+  font-size: 36px;
+}
+.upload-main-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.upload-sub-text {
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+.file-selected-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.zip-tag {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 8px;
+  background: #10b981;
+  color: #fff;
+  border-radius: 6px;
+  font-family: monospace;
+}
+.file-selected-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+.file-selected-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.file-selected-size {
+  font-size: 12px;
+  color: var(--ink-secondary);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+}
+.remove-file-btn {
+  font-size: 12px;
+}
+
+.import-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+.opt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.opt-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--button);
+  cursor: pointer;
+}
+.opt-text {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.zip-help-card {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.help-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.help-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+  line-height: 1.6;
+}
+.help-list code {
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  font-family: monospace;
+}
+
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
 }
 
 /* 测评机多选卡片样式 */

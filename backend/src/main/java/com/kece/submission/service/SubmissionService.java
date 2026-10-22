@@ -386,8 +386,15 @@ public class SubmissionService {
                                 tc -> {
                                     Map<String, Object> c = new HashMap<>();
                                     c.put("caseId", tc.getId());
-                                    c.put("input", tc.getInput());
-                                    c.put("expectedOutput", tc.getExpectedOutput());
+                                    c.put("caseNum", tc.getCaseNum() != null ? tc.getCaseNum() : 1);
+                                    c.put("scoreWeight", tc.getScoreWeight() != null ? tc.getScoreWeight() : 10);
+                                    if (tc.getInputPath() != null && !tc.getInputPath().isBlank()) {
+                                        c.put("inputPath", tc.getInputPath());
+                                        c.put("outputPath", tc.getOutputPath());
+                                    } else {
+                                        c.put("input", tc.getInput() != null ? tc.getInput() : "");
+                                        c.put("expectedOutput", tc.getExpectedOutput() != null ? tc.getExpectedOutput() : "");
+                                    }
                                     return c;
                                 })
                         .toList();
