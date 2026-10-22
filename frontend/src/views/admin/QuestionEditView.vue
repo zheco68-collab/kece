@@ -492,17 +492,6 @@ onMounted(() => {
               样例用例
             </label>
 
-            <label class="score-field">
-              <span class="muted">分值</span>
-              <input
-                v-model.number="c.scoreWeight"
-                type="number"
-                min="1"
-                max="100"
-                class="input score-input"
-              />
-            </label>
-
             <span v-if="c.inputSize || c.outputSize" class="case-size-info muted">
               In: {{ formatBytes(c.inputSize) }} / Out: {{ formatBytes(c.outputSize) }}
             </span>
@@ -730,18 +719,6 @@ onMounted(() => {
   font-size: 13px;
   color: var(--ink-secondary);
   cursor: pointer;
-}
-.score-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-}
-.score-input {
-  width: 52px;
-  padding: 2px 6px;
-  text-align: center;
-  font-size: 13px;
 }
 .case-size-info {
   font-size: 12px;
