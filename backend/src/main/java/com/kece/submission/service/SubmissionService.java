@@ -22,7 +22,9 @@ import com.kece.submission.dto.SubmitRequest;
 import com.kece.submission.entity.Submission;
 import com.kece.submission.enums.SubmissionStatus;
 import com.kece.submission.mapper.SubmissionMapper;
+import com.kece.user.service.UserDailyAcService;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -55,6 +57,7 @@ public class SubmissionService {
     private final TestCaseMapper testCaseMapper;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
+    private final UserDailyAcService userDailyAcService;
 
     /** 提交代码：入库、压队列、写 Redis 初始状态，返回任务 ID 与 PENDING。 */
     @Transactional
@@ -343,6 +346,11 @@ public class SubmissionService {
             return;
         }
         SubmissionResultVO result = vo.getResult();
+        Submission sub = submissionMapper.findById(submissionId);
+        boolean newlyAccepted = sub != null
+                && !"ACCEPTED".equals(sub.getStatus())
+                && SubmissionStatus.ACCEPTED.name().equals(vo.getStatus());
+
         submissionMapper.updateResult(
                 submissionId,
                 vo.getStatus(),
@@ -351,6 +359,11 @@ public class SubmissionService {
                 result == null ? null : result.getMemoryUsedKb(),
                 result == null ? null : result.getCompileErrorLog(),
                 result == null ? null : writeJson(result));
+
+        if (newlyAccepted) {
+            LocalDate date = sub.getCreatedAt() != null ? sub.getCreatedAt().toLocalDate() : LocalDate.now();
+            userDailyAcService.recordAlgoAc(sub.getUserId(), date);
+        }
     }
 
     private Map<String, Object> buildTask(

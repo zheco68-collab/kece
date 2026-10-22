@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kece.user.mapper.UserDailyAcMapper">
+
+    <resultMap id="UserDailyAcMap" type="com.kece.user.entity.UserDailyAc">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="acDate" column="ac_date"/>
+        <result property="algoCount" column="algo_count"/>
+        <result property="dbCount" column="db_count"/>
+        <result property="totalCount" column="total_count"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="incrementAlgoAc">
+        INSERT INTO `user_daily_ac` (`user_id`, `ac_date`, `algo_count`, `db_count`, `total_count`)
+        VALUES (#{userId}, #{acDate}, 1, 0, 1)
+        ON DUPLICATE KEY UPDATE
+            `algo_count` = `algo_count` + 1,
+            `total_count` = `total_count` + 1
+    </insert>
+
+    <insert id="incrementDbAc">
+        INSERT INTO `user_daily_ac` (`user_id`, `ac_date`, `algo_count`, `db_count`, `total_count`)
+        VALUES (#{userId}, #{acDate}, 0, 1, 1)
+        ON DUPLICATE KEY UPDATE
+            `db_count` = `db_count` + 1,
+            `total_count` = `total_count` + 1
+    </insert>
+
+    <select id="findByUserAndStartDate" resultMap="UserDailyAcMap">
+        SELECT `id`, `user_id`, `ac_date`, `algo_count`, `db_count`, `total_count`, `created_at`, `updated_at`
+        FROM `user_daily_ac`
+        WHERE `user_id` = #{userId}
+          AND `ac_date` &gt;= #{startDate}
+        ORDER BY `ac_date` ASC
+    </select>
+
+    <insert id="upsert">
+        INSERT INTO `user_daily_ac` (`user_id`, `ac_date`, `algo_count`, `db_count`, `total_count`)
+        VALUES (#{userId}, #{acDate}, #{algoCount}, #{dbCount}, #{totalCount})
+        ON DUPLICATE KEY UPDATE
+            `algo_count` = VALUES(`algo_count`),
+            `db_count` = VALUES(`db_count`),
+            `total_count` = VALUES(`total_count`)
+    </insert>
+
+    <delete id="deleteByUserId">
+        DELETE FROM `user_daily_ac` WHERE `user_id` = #{userId}
+    </delete>
+
+</mapper>

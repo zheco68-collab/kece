@@ -21,6 +21,7 @@ import com.kece.user.dto.UserExamRecordVO;
 import com.kece.user.dto.UserProfileVO;
 import com.kece.user.dto.UserTimelineItemVO;
 import com.kece.user.entity.User;
+import com.kece.user.entity.UserDailyAc;
 import com.kece.user.mapper.UserMapper;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -61,6 +62,7 @@ public class ProfileService {
     private final ExamSubmissionMapper examSubmissionMapper;
     private final ExamRankService examRankService;
     private final PasswordEncoder passwordEncoder;
+    private final UserDailyAcService userDailyAcService;
 
     /** 获取用户资料（传 null 默认获取本人）。 */
     public UserProfileVO getProfile(Long targetUserId) {
@@ -136,27 +138,19 @@ public class ProfileService {
         userMapper.updatePassword(userId, newHash);
     }
 
-    /** 近 365 天每日 AC 活跃打卡热力图统计。 */
+    /** 近 365 天每日 AC 活跃打卡热力图统计（查询预聚合表 user_daily_ac，毫秒级响应）。 */
     public HeatmapVO getHeatmap(Long targetUserId) {
         Long userId = targetUserId != null ? targetUserId : requireUserId();
         LocalDate today = LocalDate.now();
         LocalDate startDate = today.minusDays(364);
 
         Map<String, Integer> acMap = new HashMap<>();
-        List<Map<String, Object>> algoDaily = submissionMapper.countAcDaily(userId, startDate);
-        if (algoDaily != null) {
-            for (Map<String, Object> row : algoDaily) {
-                String d = String.valueOf(row.get("date"));
-                int c = ((Number) row.get("count")).intValue();
-                acMap.put(d, acMap.getOrDefault(d, 0) + c);
-            }
-        }
-        List<Map<String, Object>> dbDaily = dbSubmissionMapper.countAcDaily(userId, startDate);
-        if (dbDaily != null) {
-            for (Map<String, Object> row : dbDaily) {
-                String d = String.valueOf(row.get("date"));
-                int c = ((Number) row.get("count")).intValue();
-                acMap.put(d, acMap.getOrDefault(d, 0) + c);
+        List<UserDailyAc> dailyList = userDailyAcService.findByUserAndStartDate(userId, startDate);
+        if (dailyList != null) {
+            for (UserDailyAc r : dailyList) {
+                if (r.getAcDate() != null) {
+                    acMap.put(r.getAcDate().toString(), r.getTotalCount() != null ? r.getTotalCount() : 0);
+                }
             }
         }
 
