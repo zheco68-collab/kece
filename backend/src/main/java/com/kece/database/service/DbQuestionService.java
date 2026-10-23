@@ -72,9 +72,8 @@ public class DbQuestionService {
                 questionMapper.findPage(
                         type, keyword, status, null, includeIds, excludeIds, offset, safeSize);
         long total = questionMapper.count(type, keyword, status, null, includeIds, excludeIds);
-        boolean privileged = isPrivileged();
         return new PageResult<>(
-                items.stream().map(q -> toVO(q, privileged, false)).toList(),
+                items.stream().map(this::toListVO).toList(),
                 total,
                 safePage,
                 safeSize);
@@ -96,7 +95,7 @@ public class DbQuestionService {
                         type, keyword, status, targetCreatedBy, null, null, offset, safeSize);
         long total = questionMapper.count(type, keyword, status, targetCreatedBy, null, null);
         return new PageResult<>(
-                items.stream().map(q -> toVO(q, true, false)).toList(), total, safePage, safeSize);
+                items.stream().map(this::toListVO).toList(), total, safePage, safeSize);
     }
 
     public DbQuestionVO detail(Long id) {
@@ -208,6 +207,21 @@ public class DbQuestionService {
             tc.setIsSample(c.getIsSample() != null && c.getIsSample() == 1 ? 1 : 0);
             testCaseMapper.insert(tc);
         }
+    }
+
+    private DbQuestionVO toListVO(DbQuestion question) {
+        return DbQuestionVO.builder()
+                .id(question.getId())
+                .title(question.getTitle())
+                .dialect(question.getDialect())
+                .type(question.getType())
+                .orderSensitive(
+                        question.getOrderSensitive() != null && question.getOrderSensitive() == 1)
+                .status(question.getStatus())
+                .createdBy(question.getCreatedBy())
+                .createdAt(question.getCreatedAt())
+                .updatedAt(question.getUpdatedAt())
+                .build();
     }
 
     private DbQuestionVO toVO(DbQuestion question, boolean privileged, boolean withCases) {

@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import { objectiveApi } from '@/api/objective'
 import { useUserStore } from '@/stores/user'
 import type { ObjectiveQuestion, ObjectiveType } from '@/types'
-
-const router = useRouter()
 
 const keyword = ref('')
 const type = ref<ObjectiveType | ''>('')
@@ -111,26 +109,6 @@ onMounted(() => {
         <span class="badge" :class="`type-${q.type.toLowerCase()}`">{{ typeLabels[q.type] }}</span>
         <p class="obj-content">{{ q.content }}</p>
         <span class="obj-score">{{ q.score }} 分</span>
-        <span
-          v-if="q.createdBy"
-          class="meta-tag author-meta"
-          :title="`出题人：${q.authorName || '出题教师'} · 点击进入个人主页`"
-          @click.stop.prevent="router.push(`/profile/${q.createdBy}`)"
-        >
-          <img
-            v-if="q.authorAvatarUrl"
-            :src="q.authorAvatarUrl"
-            class="author-mini-avatar"
-            alt="头像"
-          />
-          <span v-else class="author-mini-fallback">
-            <svg class="author-mini-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
-          </span>
-          <span class="author-mini-name">{{ q.authorName || '出题教师' }}</span>
-        </span>
         <span class="solved-slot">
           <span v-if="solved.has(q.id)" class="solved-mark" title="已通过">✓</span>
         </span>
@@ -228,50 +206,6 @@ onMounted(() => {
   padding: 1px 7px;
   line-height: 1.4;
   border-radius: 0;
-}
-.meta-tag.author-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  color: var(--ink-secondary);
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  flex-shrink: 0;
-}
-.meta-tag.author-meta:hover {
-  border-color: var(--ink);
-  color: var(--ink);
-  background: var(--surface);
-  box-shadow: 1px 1px 0 var(--ink);
-}
-.author-mini-avatar {
-  width: 14px;
-  height: 14px;
-  object-fit: cover;
-  border-radius: 0;
-}
-.author-mini-fallback {
-  width: 14px;
-  height: 14px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  color: var(--ink-secondary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.author-mini-svg {
-  width: 10px;
-  height: 10px;
-}
-.author-mini-name {
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .solved-slot {
   width: 20px;

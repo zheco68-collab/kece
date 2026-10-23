@@ -43,10 +43,8 @@ public class ObjectiveQuestionService {
         int offset = (safePage - 1) * safeSize;
         List<ObjectiveQuestion> items = mapper.findPage(type, keyword, 1, null, offset, safeSize);
         long total = mapper.count(type, keyword, 1, null);
-        AuthUser user = AuthContextHolder.get();
-        java.util.Map<Long, User> authorMap = getAuthorMap(items);
         return new PageResult<>(
-                items.stream().map(q -> toVO(q, isPrivileged(q, user), authorMap.get(q.getCreatedBy()))).toList(),
+                items.stream().map(this::toListVO).toList(),
                 total,
                 safePage,
                 safeSize);
@@ -74,9 +72,8 @@ public class ObjectiveQuestionService {
         List<ObjectiveQuestion> items =
                 mapper.findPage(type, keyword, status, targetCreatedBy, offset, safeSize);
         long total = mapper.count(type, keyword, status, targetCreatedBy);
-        java.util.Map<Long, User> authorMap = getAuthorMap(items);
         return new PageResult<>(
-                items.stream().map(q -> toVO(q, isPrivileged(q, user), authorMap.get(q.getCreatedBy()))).toList(),
+                items.stream().map(this::toListVO).toList(),
                 total,
                 safePage,
                 safeSize);
@@ -276,22 +273,17 @@ public class ObjectiveQuestionService {
         return java.util.Objects.equals(question.getCreatedBy(), user.getId());
     }
 
-    private java.util.Map<Long, User> getAuthorMap(List<ObjectiveQuestion> items) {
-        java.util.Set<Long> authorIds = items.stream()
-                .map(ObjectiveQuestion::getCreatedBy)
-                .filter(java.util.Objects::nonNull)
-                .collect(java.util.stream.Collectors.toSet());
-        java.util.Map<Long, User> authorMap = new java.util.HashMap<>();
-        for (Long uid : authorIds) {
-            try {
-                User u = userMapper.findById(uid);
-                if (u != null) {
-                    authorMap.put(uid, u);
-                }
-            } catch (Exception ignored) {
-            }
-        }
-        return authorMap;
+    private ObjectiveQuestionVO toListVO(ObjectiveQuestion question) {
+        return ObjectiveQuestionVO.builder()
+                .id(question.getId())
+                .type(question.getType())
+                .content(question.getContent())
+                .score(question.getScore())
+                .status(question.getStatus())
+                .createdBy(question.getCreatedBy())
+                .createdAt(question.getCreatedAt())
+                .updatedAt(question.getUpdatedAt())
+                .build();
     }
 
     private void applyRequest(ObjectiveQuestion question, ObjectiveQuestionRequest request) {

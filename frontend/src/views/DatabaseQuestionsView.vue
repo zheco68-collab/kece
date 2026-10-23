@@ -239,27 +239,6 @@ onMounted(() => {
               <span v-if="q.testCases?.length" class="meta-tag cases mono">
                 {{ q.testCases.length }} 组测试集
               </span>
-              <!-- 出题人徽标 -->
-              <span
-                v-if="q.createdBy"
-                class="meta-tag author-meta"
-                :title="`出题人：${q.authorName || '出题教师'} · 点击进入个人主页`"
-                @click.stop.prevent="router.push(`/profile/${q.createdBy}`)"
-              >
-                <img
-                  v-if="q.authorAvatarUrl"
-                  :src="q.authorAvatarUrl"
-                  class="author-mini-avatar"
-                  alt="头像"
-                />
-                <span v-else class="author-mini-fallback">
-                  <svg class="author-mini-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                    <circle cx="12" cy="7" r="4" />
-                  </svg>
-                </span>
-                <span class="author-mini-name">{{ q.authorName || '出题教师' }}</span>
-              </span>
             </div>
           </div>
         </div>
@@ -576,49 +555,6 @@ onMounted(() => {
   background: var(--bg);
   border: 1px solid var(--line);
   color: var(--ink-secondary);
-}
-.meta-tag.author-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  color: var(--ink-secondary);
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.meta-tag.author-meta:hover {
-  border-color: var(--ink);
-  color: var(--ink);
-  background: var(--surface);
-  box-shadow: 1px 1px 0 var(--ink);
-}
-.author-mini-avatar {
-  width: 14px;
-  height: 14px;
-  object-fit: cover;
-  border-radius: 0;
-}
-.author-mini-fallback {
-  width: 14px;
-  height: 14px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  color: var(--ink-secondary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.author-mini-svg {
-  width: 10px;
-  height: 10px;
-}
-.author-mini-name {
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* 右侧：题型纯色徽标与操作入口 */

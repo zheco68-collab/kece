@@ -78,7 +78,7 @@ public class QuestionService {
                         keyword, difficulty, status, null, includeIds, excludeIds, offset, safeSize);
         long total = questionMapper.count(keyword, difficulty, status, null, includeIds, excludeIds);
         return new PageResult<>(
-                questions.stream().map(this::toVO).toList(), total, safePage, safeSize);
+                questions.stream().map(this::toListVO).toList(), total, safePage, safeSize);
     }
 
     /** 后台算法题列表：ADMIN 可按 createdBy 筛选，非 ADMIN 仅见自己出的题。 */
@@ -97,7 +97,7 @@ public class QuestionService {
                         keyword, difficulty, status, targetCreatedBy, null, null, offset, safeSize);
         long total = questionMapper.count(keyword, difficulty, status, targetCreatedBy, null, null);
         return new PageResult<>(
-                questions.stream().map(this::toVO).toList(), total, safePage, safeSize);
+                questions.stream().map(this::toListVO).toList(), total, safePage, safeSize);
     }
 
     public QuestionVO detail(Long id) {
@@ -360,6 +360,21 @@ public class QuestionService {
         question.setLanguages(
                 request.getLanguages() == null ? "cpp,java,python" : request.getLanguages());
         question.setStatus(request.getStatus() == null ? 1 : request.getStatus());
+    }
+
+    private QuestionVO toListVO(Question question) {
+        return QuestionVO.builder()
+                .id(question.getId())
+                .title(question.getTitle())
+                .difficulty(question.getDifficulty())
+                .timeLimit(question.getTimeLimit())
+                .memoryLimit(question.getMemoryLimit())
+                .languages(splitLanguages(question.getLanguages()))
+                .status(question.getStatus())
+                .createdBy(question.getCreatedBy())
+                .createdAt(question.getCreatedAt())
+                .updatedAt(question.getUpdatedAt())
+                .build();
     }
 
     private QuestionVO toVO(Question question) {
