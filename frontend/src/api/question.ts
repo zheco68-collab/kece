@@ -72,7 +72,10 @@ export const questionApi = {
     return http.post<TestCase[]>(
       `/questions/${questionId}/test-cases/import-zip?replace=${replace}&firstAsSample=${firstAsSample}`,
       formData,
-      { headers: { 'Content-Type': 'multipart/form-data' } }
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 300000,
+      }
     )
   },
   exportTestCasesZipUrl: (questionId: number | string) => {

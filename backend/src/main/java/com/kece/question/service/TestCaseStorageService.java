@@ -243,7 +243,7 @@ public class TestCaseStorageService {
                 // 只取文件名本身，忽略子目录路径
                 String fileName = Paths.get(name).getFileName().toString();
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                byte[] buf = new byte[8192];
+                byte[] buf = new byte[65536];
                 int len;
                 while ((len = zis.read(buf)) != -1) {
                     baos.write(buf, 0, len);
@@ -328,8 +328,11 @@ public class TestCaseStorageService {
                 tc.setExpectedOutput(null);
             }
 
-            testCaseMapper.insert(tc);
             newCases.add(tc);
+        }
+
+        if (!newCases.isEmpty()) {
+            testCaseMapper.batchInsert(newCases);
         }
 
         return newCases;

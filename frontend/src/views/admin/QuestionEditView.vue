@@ -213,8 +213,8 @@ async function submitZipImport() {
     toast.success(`成功导入 ${imported.length} 组测试点！`)
     showZipModal.value = false
     await loadQuestion()
-  } catch (err) {
-    toast.error(err instanceof ApiError ? err.message : 'Zip 导入失败，请检查文件格式')
+  } catch (err: any) {
+    toast.error(err instanceof ApiError ? err.message : (err?.message || 'Zip 导入失败，请检查文件格式或网络连接'))
   } finally {
     zipUploading.value = false
   }
