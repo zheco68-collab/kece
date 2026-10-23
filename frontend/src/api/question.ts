@@ -55,6 +55,10 @@ export const questionApi = {
     http.post<TestCase>(`/questions/${questionId}/test-cases`, body),
   updateTestCase: (testCaseId: number | string, body: TestCaseWriteRequest) =>
     http.put<TestCase>(`/questions/test-cases/${testCaseId}`, body),
+  toggleTestCaseSample: (questionId: number | string, testCaseId: number | string, isSample: boolean) =>
+    http.put<void>(`/questions/${questionId}/test-cases/${testCaseId}/sample?isSample=${isSample}`),
+  setSampleCaseIds: (questionId: number | string, sampleCaseIds: number[]) =>
+    http.put<void>(`/questions/${questionId}/test-cases/sample-ids`, sampleCaseIds),
   removeTestCase: (testCaseId: number | string) =>
     http.delete<void>(`/questions/test-cases/${testCaseId}`),
   importTestCasesZip: (

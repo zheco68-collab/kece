@@ -18,7 +18,11 @@ import com.kece.submission.mapper.SubmissionMapper;
 import com.kece.user.entity.User;
 import com.kece.user.mapper.UserMapper;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -212,6 +216,48 @@ public class QuestionService {
         }
         testCaseMapper.update(testCase);
         return toTestCaseVO(testCase);
+    }
+
+    @Transactional
+    public void toggleTestCaseSample(Long questionId, Long testCaseId, boolean isSample) {
+        Question question = getQuestionOrThrow(questionId);
+        checkOwnerOrAdmin(question);
+        TestCase testCase = getTestCaseOrThrow(testCaseId);
+        if (!testCase.getQuestionId().equals(questionId)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "测试点不属于该题目");
+        }
+        testCase.setIsSample(isSample ? 1 : 0);
+        if (isSample) {
+            testCase.setInput(testCaseStorageService.readInputText(testCase));
+            testCase.setExpectedOutput(testCaseStorageService.readOutputText(testCase));
+        } else {
+            testCase.setInput(null);
+            testCase.setExpectedOutput(null);
+        }
+        testCaseMapper.update(testCase);
+    }
+
+    @Transactional
+    public void setSampleCaseIds(Long questionId, List<Long> sampleCaseIds) {
+        Question question = getQuestionOrThrow(questionId);
+        checkOwnerOrAdmin(question);
+        List<TestCase> cases = testCaseMapper.findByQuestionId(questionId);
+        Set<Long> targetIds = sampleCaseIds != null ? new HashSet<>(sampleCaseIds) : Collections.emptySet();
+        for (TestCase tc : cases) {
+            boolean shouldBeSample = targetIds.contains(tc.getId());
+            int newVal = shouldBeSample ? 1 : 0;
+            if (!Objects.equals(tc.getIsSample(), newVal)) {
+                tc.setIsSample(newVal);
+                if (shouldBeSample) {
+                    tc.setInput(testCaseStorageService.readInputText(tc));
+                    tc.setExpectedOutput(testCaseStorageService.readOutputText(tc));
+                } else {
+                    tc.setInput(null);
+                    tc.setExpectedOutput(null);
+                }
+                testCaseMapper.update(tc);
+            }
+        }
     }
 
     @Transactional

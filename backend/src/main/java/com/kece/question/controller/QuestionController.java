@@ -104,6 +104,27 @@ public class QuestionController {
         return ApiResponse.success(questionService.updateTestCase(testCaseId, request));
     }
 
+    @Operation(summary = "设置单个测试点是否为公开样例")
+    @RequireRole({Role.TEACHER, Role.ADMIN})
+    @PutMapping("/{id}/test-cases/{testCaseId}/sample")
+    public ApiResponse<Void> toggleTestCaseSample(
+            @PathVariable Long id,
+            @PathVariable Long testCaseId,
+            @RequestParam boolean isSample) {
+        questionService.toggleTestCaseSample(id, testCaseId, isSample);
+        return ApiResponse.success();
+    }
+
+    @Operation(summary = "批量设置题目的公开样例ID集合")
+    @RequireRole({Role.TEACHER, Role.ADMIN})
+    @PutMapping("/{id}/test-cases/sample-ids")
+    public ApiResponse<Void> setSampleCaseIds(
+            @PathVariable Long id,
+            @RequestBody List<Long> sampleCaseIds) {
+        questionService.setSampleCaseIds(id, sampleCaseIds);
+        return ApiResponse.success();
+    }
+
     @Operation(summary = "删除测试用例")
     @RequireRole({Role.TEACHER, Role.ADMIN})
     @DeleteMapping("/test-cases/{testCaseId}")

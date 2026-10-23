@@ -7,7 +7,7 @@ import AdminNav from '@/components/AdminNav.vue'
 import FormField from '@/components/FormField.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import { useToast } from '@/composables/useToast'
-import type { Difficulty } from '@/types'
+import type { Difficulty, TestCase } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -93,12 +93,75 @@ const formErrors = reactive({
 const testCaseCount = ref(0)
 const sampleCasesCount = ref(0)
 const totalDataBytes = ref(0)
+const testCases = ref<TestCase[]>([])
+const loadingCases = ref(false)
+const togglingCaseId = ref<number | null>(null)
+const settingSamples = ref(false)
 
 function formatBytes(bytes?: number): string {
   if (!bytes || bytes <= 0) return '0 B'
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+}
+
+async function loadTestCases() {
+  if (!questionId.value) return
+  loadingCases.value = true
+  try {
+    const list = await questionApi.listTestCases(questionId.value)
+    testCases.value = list || []
+    testCaseCount.value = testCases.value.length
+    sampleCasesCount.value = testCases.value.filter((c) => c.isSample === 1).length
+  } catch (err) {
+    console.error('加载测试点列表失败', err)
+  } finally {
+    loadingCases.value = false
+  }
+}
+
+async function toggleSample(item: TestCase) {
+  if (!questionId.value || togglingCaseId.value !== null) return
+  const targetSample = item.isSample === 1 ? false : true
+  togglingCaseId.value = item.id
+  try {
+    await questionApi.toggleTestCaseSample(questionId.value, item.id, targetSample)
+    item.isSample = targetSample ? 1 : 0
+    sampleCasesCount.value = testCases.value.filter((c) => c.isSample === 1).length
+    toast.success(`测试点 #${item.caseNum} 已${targetSample ? '设为' : '取消'}公开样例`)
+  } catch (err: any) {
+    toast.error(err.message || '修改样例状态失败')
+  } finally {
+    togglingCaseId.value = null
+  }
+}
+
+async function applySamplePreset(preset: 'first1' | 'first2' | 'all' | 'none') {
+  if (!questionId.value || testCases.value.length === 0 || settingSamples.value) return
+  settingSamples.value = true
+  let targetIds: number[] = []
+  if (preset === 'first1') {
+    targetIds = [testCases.value[0].id]
+  } else if (preset === 'first2') {
+    targetIds = testCases.value.slice(0, 2).map((c) => c.id)
+  } else if (preset === 'all') {
+    targetIds = testCases.value.map((c) => c.id)
+  } else if (preset === 'none') {
+    targetIds = []
+  }
+  try {
+    await questionApi.setSampleCaseIds(questionId.value, targetIds)
+    const targetSet = new Set(targetIds)
+    testCases.value.forEach((c) => {
+      c.isSample = targetSet.has(c.id) ? 1 : 0
+    })
+    sampleCasesCount.value = targetIds.length
+    toast.success('样例设置已生效')
+  } catch (err: any) {
+    toast.error(err.message || '更新样例设置失败')
+  } finally {
+    settingSamples.value = false
+  }
 }
 
 // === Zip 批量导入/导出状态与方法 ===
@@ -193,6 +256,7 @@ async function loadQuestion() {
     testCaseCount.value = summary.totalCount || 0
     sampleCasesCount.value = summary.sampleCount || 0
     totalDataBytes.value = summary.totalBytes || 0
+    await loadTestCases()
   } catch (e) {
     pageError.value = e instanceof ApiError ? e.message : '加载失败，请稍后重试'
   } finally {
@@ -389,12 +453,103 @@ onMounted(() => {
         <div v-else class="testcase-status-box">
           <div class="testcase-meta-line">
             <span>托管测试点：<strong>{{ testCaseCount }}</strong> 组</span>
-            <span v-if="sampleCasesCount > 0">公开样例：<strong>{{ sampleCasesCount }}</strong> 组</span>
+            <span>公开样例：<strong>{{ sampleCasesCount }}</strong> 组</span>
             <span v-if="totalDataBytes > 0">数据总体积：<strong>{{ formatBytes(totalDataBytes) }}</strong></span>
           </div>
           <p class="muted testcase-desc">
             测试点数据已统一由服务器文件系统直接托管。为提升后台响应与编辑性能，页面不展示详细用例文本；如需查看或编辑测试用例，请点击右上角「导出 Zip」下载数据包在本地查看，编辑后点击「导入 Zip」重新上传即可。
           </p>
+
+          <!-- 题面公开样例配置面板 -->
+          <div class="sample-manage-panel">
+            <div class="sample-toolbar">
+              <div class="sample-title-wrap">
+                <span class="sample-title">题面公开样例配置</span>
+                <span class="sample-hint muted">勾选的测试点将作为参考样例公开展示在学生端题面中</span>
+              </div>
+              <div class="sample-presets">
+                <span class="preset-label muted">快捷设置：</span>
+                <button
+                  type="button"
+                  class="btn-preset"
+                  :disabled="settingSamples"
+                  @click="applySamplePreset('first1')"
+                >
+                  仅首组
+                </button>
+                <button
+                  type="button"
+                  class="btn-preset"
+                  :disabled="settingSamples"
+                  @click="applySamplePreset('first2')"
+                >
+                  前 2 组
+                </button>
+                <button
+                  type="button"
+                  class="btn-preset"
+                  :disabled="settingSamples"
+                  @click="applySamplePreset('all')"
+                >
+                  全部设为样例
+                </button>
+                <button
+                  type="button"
+                  class="btn-preset btn-preset-danger"
+                  :disabled="settingSamples"
+                  @click="applySamplePreset('none')"
+                >
+                  清空样例
+                </button>
+              </div>
+            </div>
+
+            <div v-if="loadingCases" class="muted sample-loading">
+              正在加载测试点列表…
+            </div>
+
+            <div v-else class="sample-grid">
+              <div
+                v-for="tc in testCases"
+                :key="tc.id"
+                class="sample-item-card"
+                :class="{ 'is-active-sample': tc.isSample === 1 }"
+              >
+                <label class="sample-checkbox-label">
+                  <input
+                    type="checkbox"
+                    class="sample-checkbox"
+                    :checked="tc.isSample === 1"
+                    :disabled="togglingCaseId === tc.id"
+                    @change="toggleSample(tc)"
+                  />
+                  <span class="sample-case-num">#{{ tc.caseNum }}</span>
+                </label>
+
+                <div class="sample-item-info">
+                  <span
+                    class="sample-status-tag"
+                    :class="tc.isSample === 1 ? 'tag-sample' : 'tag-private'"
+                  >
+                    {{ tc.isSample === 1 ? '公开样例' : '私有评测点' }}
+                  </span>
+                  <span class="sample-item-size muted">
+                    {{ formatBytes(tc.inputSize) }} / {{ formatBytes(tc.outputSize) }}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  class="btn-sample-toggle"
+                  :class="{ 'btn-sample-active': tc.isSample === 1 }"
+                  :disabled="togglingCaseId === tc.id"
+                  @click="toggleSample(tc)"
+                >
+                  {{ togglingCaseId === tc.id ? '同步中…' : (tc.isSample === 1 ? '取消' : '设为样例') }}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -746,18 +901,23 @@ onMounted(() => {
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink-secondary);
-  border-radius: var(--pill);
+  border-radius: 0;
+  cursor: pointer;
   transition: all 0.15s ease;
 }
-.btn-preset:hover {
+.btn-preset:hover:not(:disabled) {
   background: var(--button);
   color: #fff;
   border-color: var(--button);
 }
-.btn-preset-danger:hover {
+.btn-preset-danger:hover:not(:disabled) {
   background: var(--danger);
   color: #fff;
   border-color: var(--danger);
+}
+.btn-preset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .judger-grid {
   display: grid;
@@ -826,5 +986,148 @@ onMounted(() => {
   font-size: 12px;
   color: var(--ink-tertiary);
   line-height: 1.3;
+}
+
+/* 题面公开样例管理面板（无大文本，极简直角设计） */
+.sample-manage-panel {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sample-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.sample-title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sample-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.sample-hint {
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+.sample-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.preset-label {
+  font-size: 12px;
+}
+.sample-loading {
+  font-size: 13px;
+  padding: 12px 0;
+}
+.sample-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.sample-item-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  transition: all 0.15s ease;
+}
+.sample-item-card:hover {
+  border-color: var(--ink-secondary);
+}
+.sample-item-card.is-active-sample {
+  border-color: var(--ink);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.sample-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.sample-checkbox {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--button);
+  cursor: pointer;
+}
+.sample-case-num {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--ink);
+}
+.sample-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.sample-status-tag {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 0;
+  line-height: 1.2;
+}
+.sample-status-tag.tag-sample {
+  background: var(--button);
+  color: #fff;
+}
+.sample-status-tag.tag-private {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--ink-tertiary);
+}
+.sample-item-size {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.btn-sample-toggle {
+  padding: 3px 8px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink-secondary);
+  border-radius: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.btn-sample-toggle:hover:not(:disabled) {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.btn-sample-toggle.btn-sample-active {
+  background: var(--button);
+  color: #fff;
+  border-color: var(--button);
+}
+.btn-sample-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>
