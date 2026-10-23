@@ -90,47 +90,9 @@ const formErrors = reactive({
   languages: '',
 })
 
-/** 测试用例：clientId 区分本地条目，id 存在表示后端已有记录。 */
-interface CaseRow {
-  clientId: number
-  id?: number
-  caseNum?: number
-  scoreWeight?: number
-  inputPath?: string | null
-  outputPath?: string | null
-  inputSize?: number
-  outputSize?: number
-  input: string
-  expectedOutput: string
-  isSample: boolean
-  isLarge?: boolean
-}
-
-const cases = ref<CaseRow[]>([])
-let caseSeq = 0
-/** 编辑态下被删除的既有用例 id，保存时逐个调删除接口。 */
-const removedCaseIds: number[] = []
-
-function addCase() {
-  const nextNum = cases.value.length > 0 ? (cases.value[cases.value.length - 1].caseNum || cases.value.length) + 1 : 1
-  cases.value.push({
-    clientId: ++caseSeq,
-    caseNum: nextNum,
-    scoreWeight: 10,
-    input: '',
-    expectedOutput: '',
-    isSample: false,
-    inputSize: 0,
-    outputSize: 0,
-    isLarge: false
-  })
-}
-
-function removeCase(clientId: number) {
-  const target = cases.value.find((c) => c.clientId === clientId)
-  if (target?.id !== undefined) removedCaseIds.push(target.id)
-  cases.value = cases.value.filter((c) => c.clientId !== clientId)
-}
+const testCaseCount = ref(0)
+const sampleCasesCount = ref(0)
+const totalDataBytes = ref(0)
 
 function formatBytes(bytes?: number): string {
   if (!bytes || bytes <= 0) return '0 B'
@@ -138,11 +100,6 @@ function formatBytes(bytes?: number): string {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
 }
-
-
-const sampleCasesCount = computed(() => {
-  return cases.value.filter((c) => c.isSample).length
-})
 
 // === Zip 批量导入/导出状态与方法 ===
 const showZipModal = ref(false)
@@ -206,16 +163,6 @@ function exportZip() {
   window.open(url, '_blank')
 }
 
-function downloadInput(id?: number) {
-  if (!id) return
-  window.open(questionApi.downloadInputUrl(id), '_blank')
-}
-
-function downloadOutput(id?: number) {
-  if (!id) return
-  window.open(questionApi.downloadOutputUrl(id), '_blank')
-}
-
 async function loadQuestion() {
   if (!questionId.value) return
   loading.value = true
@@ -234,20 +181,12 @@ async function loadQuestion() {
       selectedLanguages.value = ['cpp', 'java', 'python', 'arkts']
     }
     const testCases = await questionApi.listTestCases(questionId.value)
-    cases.value = testCases.map((tc) => ({
-      clientId: ++caseSeq,
-      id: tc.id,
-      caseNum: tc.caseNum,
-      scoreWeight: tc.scoreWeight ?? 10,
-      inputPath: tc.inputPath,
-      outputPath: tc.outputPath,
-      inputSize: tc.inputSize ?? 0,
-      outputSize: tc.outputSize ?? 0,
-      input: tc.input ?? '',
-      expectedOutput: tc.expectedOutput ?? '',
-      isSample: tc.isSample === 1,
-      isLarge: tc.isLarge ?? false,
-    }))
+    testCaseCount.value = testCases.length
+    sampleCasesCount.value = testCases.filter((tc) => tc.isSample === 1).length
+    totalDataBytes.value = testCases.reduce(
+      (acc, tc) => acc + (tc.inputSize || 0) + (tc.outputSize || 0),
+      0
+    )
   } catch (e) {
     pageError.value = e instanceof ApiError ? e.message : '加载失败，请稍后重试'
   } finally {
@@ -265,11 +204,6 @@ function validate(): boolean {
   formErrors.languages = selectedLanguages.value.length > 0 ? '' : '请至少勾选一种评测机语言'
   if (selectedLanguages.value.length === 0) {
     toast.error('请至少勾选一种支持的评测机语言')
-    return false
-  }
-  const badCase = cases.value.find((c) => !c.isLarge && !c.expectedOutput.trim())
-  if (badCase) {
-    toast.error('测试用例的期望输出不能为空')
     return false
   }
   return (
@@ -295,43 +229,10 @@ async function save() {
       memoryLimit: form.memoryLimit,
       languages: selectedLanguages.value.join(','),
     }
-    let targetId: number
     if (questionId.value) {
       await questionApi.update(questionId.value, body)
-      targetId = questionId.value
     } else {
-      const created = await questionApi.create(body)
-      targetId = created.id
-    }
-    // 用例逐条同步：老用例更新、新用例创建、删除掉的逐个移除。
-    for (const c of cases.value) {
-      if (c.isLarge) {
-        // 大文件测试点已经由文件系统维护，只更新元数据
-        if (c.id !== undefined) {
-          await questionApi.updateTestCase(c.id, {
-            caseNum: c.caseNum,
-            scoreWeight: c.scoreWeight ?? 10,
-            isSample: c.isSample ? 1 : 0,
-            expectedOutput: c.expectedOutput || 'LARGE_FILE',
-          })
-        }
-        continue
-      }
-      const caseBody = {
-        input: c.input || undefined,
-        expectedOutput: c.expectedOutput,
-        caseNum: c.caseNum,
-        scoreWeight: c.scoreWeight ?? 10,
-        isSample: c.isSample ? 1 : 0,
-      }
-      if (c.id !== undefined) {
-        await questionApi.updateTestCase(c.id, caseBody)
-      } else {
-        await questionApi.addTestCase(targetId, caseBody)
-      }
-    }
-    for (const id of removedCaseIds) {
-      await questionApi.removeTestCase(id)
+      await questionApi.create(body)
     }
     toast.success(isEdit.value ? '题目已更新' : '题目已创建')
     router.push('/admin/questions')
@@ -444,8 +345,8 @@ onMounted(() => {
         <div class="card-head">
           <div class="card-title-group">
             <h2 class="card-title">测试用例</h2>
-            <span v-if="cases.length > 0" class="muted case-count-tag">
-              共 {{ cases.length }} 组用例<span v-if="sampleCasesCount > 0">（含 {{ sampleCasesCount }} 组公开样例）</span>
+            <span v-if="testCaseCount > 0" class="muted case-count-tag">
+              共 {{ testCaseCount }} 组测试点<span v-if="sampleCasesCount > 0">（含 {{ sampleCasesCount }} 组公开样例）</span>
             </span>
           </div>
           <div class="card-head-actions">
@@ -458,97 +359,35 @@ onMounted(() => {
               导入 Zip
             </button>
             <button
-              v-if="isEdit && cases.length > 0"
+              v-if="isEdit && testCaseCount > 0"
               class="btn btn-ghost btn-sm"
               type="button"
               @click="exportZip"
             >
               导出 Zip
             </button>
-            <button class="btn btn-ghost btn-sm" type="button" @click="addCase">
-              添加测试点
-            </button>
           </div>
         </div>
 
-        <p class="muted testcase-hint">
-          测试点数据由服务器文件系统独立存储。支持在此逐组编辑或通过 Zip 压缩包（成对的 *.in 与 *.out 文件）批量导入。
-        </p>
+        <div v-if="!isEdit" class="muted testcase-empty">
+          请先创建并保存题目基本信息，随后即可上传测试点 Zip 压缩包。
+        </div>
 
-        <p v-if="cases.length === 0" class="muted">
-          暂无测试点，请点击上方“添加测试点”或“导入 Zip”创建。
-        </p>
+        <div v-else-if="testCaseCount === 0" class="testcase-empty-box">
+          <p class="muted">
+            暂未上传测试点。请点击右上角「导入 Zip」上传成对的测试数据包（*.in / *.out）。
+          </p>
+        </div>
 
-        <div
-          v-for="(c, idx) in cases"
-          :key="c.clientId"
-          class="case-card"
-        >
-          <div class="case-head">
-            <span class="case-seq muted">测试点 #{{ c.caseNum || idx + 1 }}</span>
-
-            <label class="sample-check">
-              <input v-model="c.isSample" type="checkbox" />
-              样例用例
-            </label>
-
-            <span v-if="c.inputSize || c.outputSize" class="case-size-info muted">
-              In: {{ formatBytes(c.inputSize) }} / Out: {{ formatBytes(c.outputSize) }}
-            </span>
-
-            <span v-if="c.isLarge" class="badge">大文件托管</span>
-
-            <div class="case-actions">
-              <button
-                v-if="c.id"
-                class="btn btn-ghost btn-xs"
-                type="button"
-                @click="downloadInput(c.id)"
-              >
-                下载 .in
-              </button>
-              <button
-                v-if="c.id"
-                class="btn btn-ghost btn-xs"
-                type="button"
-                @click="downloadOutput(c.id)"
-              >
-                下载 .out
-              </button>
-              <button
-                class="btn btn-ghost btn-sm btn-danger case-remove"
-                type="button"
-                @click="removeCase(c.clientId)"
-              >
-                删除
-              </button>
-            </div>
+        <div v-else class="testcase-status-box">
+          <div class="testcase-meta-line">
+            <span>托管测试点：<strong>{{ testCaseCount }}</strong> 组</span>
+            <span v-if="sampleCasesCount > 0">公开样例：<strong>{{ sampleCasesCount }}</strong> 组</span>
+            <span v-if="totalDataBytes > 0">数据总体积：<strong>{{ formatBytes(totalDataBytes) }}</strong></span>
           </div>
-
-          <div v-if="c.isLarge" class="large-notice">
-            <span class="muted">
-              该测试点数据量庞大（{{ formatBytes(Math.max(c.inputSize || 0, c.outputSize || 0)) }}），已由服务器文件系统直接托管。网页端仅展示预览，保存时不会覆盖原始文件。
-            </span>
-          </div>
-
-          <div class="case-inputs-grid">
-            <FormField label="标准输入 (stdin)" hint="可为空">
-              <textarea
-                v-model="c.input"
-                class="input textarea mono-area"
-                :disabled="c.isLarge"
-                placeholder="标准输入数据"
-              />
-            </FormField>
-            <FormField label="期望输出 (stdout)" required>
-              <textarea
-                v-model="c.expectedOutput"
-                class="input textarea mono-area"
-                :disabled="c.isLarge"
-                placeholder="期望输出数据"
-              />
-            </FormField>
-          </div>
+          <p class="muted testcase-desc">
+            测试点数据已统一由服务器文件系统直接托管。为提升后台响应与编辑性能，页面不展示详细用例文本；如需查看或编辑测试用例，请点击右上角「导出 Zip」下载数据包在本地查看，编辑后点击「导入 Zip」重新上传即可。
+          </p>
         </div>
       </div>
 
@@ -689,29 +528,6 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
 }
-.testcase-hint {
-  font-size: 13px;
-  margin: -4px 0 16px;
-  line-height: 1.5;
-}
-.case-card {
-  border: 1px solid var(--line);
-  padding: 14px 16px;
-  margin-bottom: 14px;
-  background: var(--bg);
-}
-.case-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-bottom: 12px;
-}
-.case-seq {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-}
 .sample-check {
   display: inline-flex;
   align-items: center;
@@ -720,45 +536,41 @@ onMounted(() => {
   color: var(--ink-secondary);
   cursor: pointer;
 }
-.case-size-info {
-  font-size: 12px;
-  font-family: 'SFMono-Regular', Consolas, monospace;
+.testcase-empty {
+  font-size: 13px;
+  line-height: 1.6;
 }
-.case-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
+.testcase-empty-box {
+  border: 1px dashed var(--line);
+  padding: 24px;
+  text-align: center;
+  background: var(--bg);
 }
-.large-notice {
-  padding: 8px 12px;
-  background: var(--surface);
+.testcase-empty-box p {
+  margin: 0;
+  font-size: 13px;
+}
+.testcase-status-box {
   border: 1px solid var(--line);
+  padding: 16px 20px;
+  background: var(--bg);
+}
+.testcase-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
   font-size: 13px;
-  margin-bottom: 12px;
+  color: var(--ink);
+  margin-bottom: 10px;
 }
-.case-inputs-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+.testcase-meta-line strong {
+  font-weight: 600;
 }
-@media (max-width: 768px) {
-  .case-inputs-grid {
-    grid-template-columns: 1fr;
-  }
-}
-.textarea {
-  height: auto;
-  min-height: 88px;
-  padding: 10px 12px;
-  resize: vertical;
-  line-height: 1.5;
-  font-family: inherit;
-}
-.mono-area {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+.testcase-desc {
+  margin: 0;
   font-size: 13px;
-  min-height: 96px;
+  line-height: 1.6;
 }
 .form-actions {
   display: flex;
