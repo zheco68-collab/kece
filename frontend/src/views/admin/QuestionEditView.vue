@@ -157,10 +157,19 @@ async function submitZipImport() {
   }
 }
 
-function exportZip() {
-  if (!questionId.value) return
-  const url = questionApi.exportTestCasesZipUrl(questionId.value)
-  window.open(url, '_blank')
+const zipExporting = ref(false)
+
+async function exportZip() {
+  if (!questionId.value || zipExporting.value) return
+  zipExporting.value = true
+  try {
+    await questionApi.exportTestCasesZip(questionId.value)
+    toast.success('测试点 Zip 导出成功')
+  } catch (err: any) {
+    toast.error(err.message || '导出 Zip 失败，请检查登录状态')
+  } finally {
+    zipExporting.value = false
+  }
 }
 
 async function loadQuestion() {
@@ -359,9 +368,10 @@ onMounted(() => {
               v-if="isEdit && testCaseCount > 0"
               class="btn btn-ghost btn-sm"
               type="button"
+              :disabled="zipExporting"
               @click="exportZip"
             >
-              导出 Zip
+              {{ zipExporting ? '导出中…' : '导出 Zip' }}
             </button>
           </div>
         </div>

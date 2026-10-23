@@ -71,10 +71,46 @@ export const questionApi = {
       { headers: { 'Content-Type': 'multipart/form-data' } }
     )
   },
-  exportTestCasesZipUrl: (questionId: number | string) =>
-    `/api/v1/questions/${questionId}/test-cases/export-zip`,
-  downloadInputUrl: (testCaseId: number | string) =>
-    `/api/v1/questions/test-cases/${testCaseId}/input`,
-  downloadOutputUrl: (testCaseId: number | string) =>
-    `/api/v1/questions/test-cases/${testCaseId}/output`,
+  exportTestCasesZipUrl: (questionId: number | string) => {
+    let url = `/api/v1/questions/${questionId}/test-cases/export-zip`
+    const token = localStorage.getItem('token')
+    if (token) {
+      url += `?token=${encodeURIComponent(token)}`
+    }
+    return url
+  },
+  exportTestCasesZip: async (questionId: number | string) => {
+    const token = localStorage.getItem('token')
+    const url = `/api/v1/questions/${questionId}/test-cases/export-zip${token ? `?token=${encodeURIComponent(token)}` : ''}`
+    const response = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('未登录或登录已过期，请重新登录')
+      }
+      throw new Error('测试用例 Zip 导出失败')
+    }
+    const blob = await response.blob()
+    const blobUrl = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = `testcases_q${questionId}.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(blobUrl)
+  },
+  downloadInputUrl: (testCaseId: number | string) => {
+    let url = `/api/v1/questions/test-cases/${testCaseId}/input`
+    const token = localStorage.getItem('token')
+    if (token) url += `?token=${encodeURIComponent(token)}`
+    return url
+  },
+  downloadOutputUrl: (testCaseId: number | string) => {
+    let url = `/api/v1/questions/test-cases/${testCaseId}/output`
+    const token = localStorage.getItem('token')
+    if (token) url += `?token=${encodeURIComponent(token)}`
+    return url
+  },
 }
