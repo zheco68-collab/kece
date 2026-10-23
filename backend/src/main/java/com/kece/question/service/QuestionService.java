@@ -139,11 +139,27 @@ public class QuestionService {
         questionMapper.deleteById(id);
     }
 
+    public com.kece.question.dto.TestCaseSummaryVO getTestCaseSummary(Long questionId) {
+        Question question = getQuestionOrThrow(questionId);
+        checkOwnerOrAdmin(question);
+        com.kece.question.dto.TestCaseSummaryVO summary = testCaseMapper.getSummaryByQuestionId(questionId);
+        if (summary == null) {
+            return com.kece.question.dto.TestCaseSummaryVO.builder()
+                    .totalCount(0)
+                    .sampleCount(0)
+                    .totalInputBytes(0L)
+                    .totalOutputBytes(0L)
+                    .totalBytes(0L)
+                    .build();
+        }
+        return summary;
+    }
+
     public List<TestCaseVO> listTestCases(Long questionId) {
         Question question = getQuestionOrThrow(questionId);
         checkOwnerOrAdmin(question);
         return testCaseMapper.findByQuestionId(questionId).stream()
-                .map(this::toTestCaseVO)
+                .map(this::toTestCaseMetadataVO)
                 .toList();
     }
 
@@ -303,7 +319,7 @@ public class QuestionService {
     private QuestionVO toVO(Question question) {
         List<TestCaseVO> samples =
                 testCaseMapper.findSamplesByQuestionId(question.getId()).stream()
-                        .map(this::toTestCaseVO)
+                        .map(this::toSampleTestCaseVO)
                         .toList();
         User author = question.getCreatedBy() != null ? userMapper.findById(question.getCreatedBy()) : null;
         return QuestionVO.builder()
@@ -334,7 +350,32 @@ public class QuestionService {
                 .toList();
     }
 
+    private TestCaseVO toTestCaseMetadataVO(TestCase testCase) {
+        long inSize = testCase.getInputSize() != null ? testCase.getInputSize() : 0L;
+        long outSize = testCase.getOutputSize() != null ? testCase.getOutputSize() : 0L;
+        boolean isLarge = inSize > TestCaseStorageService.MAX_PREVIEW_BYTES || outSize > TestCaseStorageService.MAX_PREVIEW_BYTES;
+
+        return TestCaseVO.builder()
+                .id(testCase.getId())
+                .questionId(testCase.getQuestionId())
+                .caseNum(testCase.getCaseNum() != null ? testCase.getCaseNum() : 1)
+                .inputPath(testCase.getInputPath())
+                .outputPath(testCase.getOutputPath())
+                .inputSize(inSize)
+                .outputSize(outSize)
+                .scoreWeight(testCase.getScoreWeight() != null ? testCase.getScoreWeight() : 10)
+                .input(null)
+                .expectedOutput(null)
+                .isSample(testCase.getIsSample())
+                .isLarge(isLarge)
+                .build();
+    }
+
     private TestCaseVO toTestCaseVO(TestCase testCase) {
+        return toTestCaseMetadataVO(testCase);
+    }
+
+    private TestCaseVO toSampleTestCaseVO(TestCase testCase) {
         long inSize = testCase.getInputSize() != null ? testCase.getInputSize() : 0L;
         long outSize = testCase.getOutputSize() != null ? testCase.getOutputSize() : 0L;
         boolean isLarge = inSize > TestCaseStorageService.MAX_PREVIEW_BYTES || outSize > TestCaseStorageService.MAX_PREVIEW_BYTES;

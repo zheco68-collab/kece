@@ -388,8 +388,13 @@ public class ExamSubmissionService {
                                 tc -> {
                                     Map<String, Object> c = new HashMap<>();
                                     c.put("caseId", tc.getId());
-                                    c.put("input", tc.getInput());
-                                    c.put("expectedOutput", tc.getExpectedOutput());
+                                    if (tc.getInputPath() != null && !tc.getInputPath().isBlank()) {
+                                        c.put("inputPath", tc.getInputPath());
+                                        c.put("outputPath", tc.getOutputPath());
+                                    } else {
+                                        c.put("input", tc.getInput() != null ? tc.getInput() : "");
+                                        c.put("expectedOutput", tc.getExpectedOutput() != null ? tc.getExpectedOutput() : "");
+                                    }
                                     return c;
                                 })
                         .toList());

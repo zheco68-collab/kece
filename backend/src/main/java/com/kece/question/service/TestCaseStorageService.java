@@ -202,8 +202,8 @@ public class TestCaseStorageService {
 
             writeCaseFiles(tc, tc.getInput(), tc.getExpectedOutput());
 
-            // 非公开样例且内容已安全落盘，清空数据库大文本以减负
-            if (Objects.equals(tc.getIsSample(), 0) && (tc.getInputSize() > 2048 || tc.getOutputSize() > 2048)) {
+            // 非公开样例且内容已安全落盘，清空数据库文本以彻底卸载 MySQL 存储与传输负担
+            if (Objects.equals(tc.getIsSample(), 0)) {
                 tc.setInput(null);
                 tc.setExpectedOutput(null);
             }
@@ -319,10 +319,13 @@ public class TestCaseStorageService {
             boolean isSample = (firstAsSample && i == 0 && startSeq == 1) || pair.getBaseName().toLowerCase().contains("sample");
             tc.setIsSample(isSample ? 1 : 0);
 
-            // 小于 64KB 保留一份到 DB 便于样例前端直接拿
-            if (isSample || (tc.getInputSize() <= MAX_PREVIEW_BYTES && tc.getOutputSize() <= MAX_PREVIEW_BYTES)) {
+            // 仅公开样例（前端题目详情 Markdown 预览需要）在 DB 中保留一份文本副本；其余非公开测试点纯文件系统托管，DB 中不存文本，彻底卸载 MySQL 性能负担
+            if (isSample) {
                 tc.setInput(new String(pair.getInBytes(), StandardCharsets.UTF_8));
                 tc.setExpectedOutput(new String(pair.getOutBytes(), StandardCharsets.UTF_8));
+            } else {
+                tc.setInput(null);
+                tc.setExpectedOutput(null);
             }
 
             testCaseMapper.insert(tc);
@@ -333,7 +336,7 @@ public class TestCaseStorageService {
     }
 
     /**
-     * 导出该题所有测试用例为 Zip 压缩包流
+     * 导出该题所有测试用例为 Zip 压缩包流（流式传输，避免将大文件读取为 byte 数组占用堆内存）
      */
     public void exportZip(Long questionId, ZipOutputStream zos) throws IOException {
         List<TestCase> cases = testCaseMapper.findByQuestionId(questionId);
@@ -346,39 +349,36 @@ public class TestCaseStorageService {
             String inName = num + ".in";
             String outName = num + ".out";
 
-            byte[] inBytes = null;
-            byte[] outBytes = null;
-
+            // 写入 in
+            zos.putNextEntry(new ZipEntry(inName));
             if (tc.getInputPath() != null) {
                 Path p = resolvePath(tc.getInputPath());
                 if (p != null && Files.exists(p)) {
-                    inBytes = Files.readAllBytes(p);
+                    try (InputStream in = Files.newInputStream(p)) {
+                        in.transferTo(zos);
+                    }
+                } else if (tc.getInput() != null) {
+                    zos.write(tc.getInput().getBytes(StandardCharsets.UTF_8));
                 }
+            } else if (tc.getInput() != null) {
+                zos.write(tc.getInput().getBytes(StandardCharsets.UTF_8));
             }
-            if (inBytes == null && tc.getInput() != null) {
-                inBytes = tc.getInput().getBytes(StandardCharsets.UTF_8);
-            }
-            if (inBytes == null) inBytes = new byte[0];
-
-            if (tc.getOutputPath() != null) {
-                Path p = resolvePath(tc.getOutputPath());
-                if (p != null && Files.exists(p)) {
-                    outBytes = Files.readAllBytes(p);
-                }
-            }
-            if (outBytes == null && tc.getExpectedOutput() != null) {
-                outBytes = tc.getExpectedOutput().getBytes(StandardCharsets.UTF_8);
-            }
-            if (outBytes == null) outBytes = new byte[0];
-
-            // 写入 in
-            zos.putNextEntry(new ZipEntry(inName));
-            zos.write(inBytes);
             zos.closeEntry();
 
             // 写入 out
             zos.putNextEntry(new ZipEntry(outName));
-            zos.write(outBytes);
+            if (tc.getOutputPath() != null) {
+                Path p = resolvePath(tc.getOutputPath());
+                if (p != null && Files.exists(p)) {
+                    try (InputStream in = Files.newInputStream(p)) {
+                        in.transferTo(zos);
+                    }
+                } else if (tc.getExpectedOutput() != null) {
+                    zos.write(tc.getExpectedOutput().getBytes(StandardCharsets.UTF_8));
+                }
+            } else if (tc.getExpectedOutput() != null) {
+                zos.write(tc.getExpectedOutput().getBytes(StandardCharsets.UTF_8));
+            }
             zos.closeEntry();
         }
     }

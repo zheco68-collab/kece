@@ -180,13 +180,10 @@ async function loadQuestion() {
     } else {
       selectedLanguages.value = ['cpp', 'java', 'python', 'arkts']
     }
-    const testCases = await questionApi.listTestCases(questionId.value)
-    testCaseCount.value = testCases.length
-    sampleCasesCount.value = testCases.filter((tc) => tc.isSample === 1).length
-    totalDataBytes.value = testCases.reduce(
-      (acc, tc) => acc + (tc.inputSize || 0) + (tc.outputSize || 0),
-      0
-    )
+    const summary = await questionApi.getTestCaseSummary(questionId.value)
+    testCaseCount.value = summary.totalCount || 0
+    sampleCasesCount.value = summary.sampleCount || 0
+    totalDataBytes.value = summary.totalBytes || 0
   } catch (e) {
     pageError.value = e instanceof ApiError ? e.message : '加载失败，请稍后重试'
   } finally {

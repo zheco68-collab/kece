@@ -32,6 +32,14 @@ export interface TestCaseWriteRequest {
   isSample?: number
 }
 
+export interface TestCaseSummaryVO {
+  totalCount: number
+  sampleCount: number
+  totalInputBytes: number
+  totalOutputBytes: number
+  totalBytes: number
+}
+
 export const questionApi = {
   list: (params: QuestionListParams) => http.get<PageResult<Question>>('/questions', { params }),
   detail: (id: number | string) => http.get<Question>(`/questions/${id}`),
@@ -39,6 +47,8 @@ export const questionApi = {
   update: (id: number | string, body: QuestionWriteRequest) =>
     http.put<Question>(`/questions/${id}`, body),
   remove: (id: number | string) => http.delete<void>(`/questions/${id}`),
+  getTestCaseSummary: (questionId: number | string) =>
+    http.get<TestCaseSummaryVO>(`/questions/${questionId}/test-cases/summary`),
   listTestCases: (questionId: number | string) =>
     http.get<TestCase[]>(`/questions/${questionId}/test-cases`),
   addTestCase: (questionId: number | string, body: TestCaseWriteRequest) =>

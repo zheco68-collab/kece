@@ -74,6 +74,13 @@ public class QuestionController {
         return ApiResponse.success();
     }
 
+    @Operation(summary = "题目测试用例轻量统计汇总（出题人/管理员）")
+    @RequireRole({Role.TEACHER, Role.ADMIN})
+    @GetMapping("/{id}/test-cases/summary")
+    public ApiResponse<com.kece.question.dto.TestCaseSummaryVO> getTestCaseSummary(@PathVariable Long id) {
+        return ApiResponse.success(questionService.getTestCaseSummary(id));
+    }
+
     @Operation(summary = "题目测试用例列表（出题人/管理员）")
     @RequireRole({Role.TEACHER, Role.ADMIN})
     @GetMapping("/{id}/test-cases")

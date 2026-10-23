@@ -22,7 +22,8 @@
     </select>
 
     <select id="findByQuestionId" resultMap="BaseResultMap">
-        SELECT * FROM `test_case` WHERE question_id = #{questionId} ORDER BY case_num ASC, id ASC
+        SELECT id, question_id, input_path, output_path, input_size, output_size, case_num, score_weight, is_sample, created_at
+        FROM `test_case` WHERE question_id = #{questionId} ORDER BY case_num ASC, id ASC
     </select>
 
     <select id="findSamplesByQuestionId" resultMap="BaseResultMap">
@@ -31,6 +32,17 @@
 
     <select id="findUnmigrated" resultMap="BaseResultMap">
         SELECT * FROM `test_case` WHERE input_path IS NULL OR input_path = '' ORDER BY id ASC
+    </select>
+
+    <select id="getSummaryByQuestionId" resultType="com.kece.question.dto.TestCaseSummaryVO">
+        SELECT 
+            COUNT(*) AS totalCount,
+            COALESCE(SUM(CASE WHEN is_sample = 1 THEN 1 ELSE 0 END), 0) AS sampleCount,
+            COALESCE(SUM(input_size), 0) AS totalInputBytes,
+            COALESCE(SUM(output_size), 0) AS totalOutputBytes,
+            COALESCE(SUM(COALESCE(input_size, 0) + COALESCE(output_size, 0)), 0) AS totalBytes
+        FROM `test_case`
+        WHERE question_id = #{questionId}
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">

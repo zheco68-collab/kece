@@ -25,4 +25,6 @@ public interface TestCaseMapper {
     List<TestCase> findSamplesByQuestionId(Long questionId);
 
     List<TestCase> findUnmigrated();
+
+    com.kece.question.dto.TestCaseSummaryVO getSummaryByQuestionId(Long questionId);
 }
