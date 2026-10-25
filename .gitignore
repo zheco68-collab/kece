@@ -63,12 +63,15 @@ logs/
 coverage/
 *.lcov
 
-# MinIO / local object storage / Uploads
+# MinIO / local object storage / Uploads / Testcases
 data/
 minio-data/
 uploads/
 **/uploads/
+testcases/
+**/testcases/
 
 # Docker volumes
 mysql-data/
 redis-data/
+

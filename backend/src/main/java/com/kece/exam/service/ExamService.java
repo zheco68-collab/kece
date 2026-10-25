@@ -3,6 +3,7 @@ package com.kece.exam.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kece.common.exception.BusinessException;
+import com.kece.common.response.PageParam;
 import com.kece.common.response.PageResult;
 import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
@@ -73,11 +74,9 @@ public class ExamService {
     /** 公开列表：仅公开考试；all=true 时特权角色可见私有考试。 */
     public PageResult<ExamVO> list(
             String keyword, Integer status, int page, int size, boolean all) {
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        int offset = (safePage - 1) * safeSize;
+        PageParam p = PageParam.of(page, size);
         Integer effectiveStatus = (all && isPrivileged()) ? status : 1;
-        List<Exam> items = examMapper.findPage(keyword, effectiveStatus, null, offset, safeSize);
+        List<Exam> items = examMapper.findPage(keyword, effectiveStatus, null, p.offset(), p.size());
         long total = examMapper.count(keyword, effectiveStatus, null);
 
         AuthUser currentUser = AuthContextHolder.get();
@@ -94,22 +93,20 @@ public class ExamService {
                         .map(e -> toVO(e, false, finalSubmittedExamIds.contains(e.getId())))
                         .toList(),
                 total,
-                safePage,
-                safeSize);
+                p.page(),
+                p.size());
     }
 
     /** 后台列表：ADMIN 可按 createdBy 筛选，其余角色仅见自己创建的考试。 */
     public PageResult<ExamVO> listAdmin(
             String keyword, Integer status, Long createdBy, int page, int size) {
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        int offset = (safePage - 1) * safeSize;
+        PageParam p = PageParam.of(page, size);
         AuthUser user = AuthContextHolder.get();
         Long targetCreatedBy =
                 (user != null && user.hasRole(Role.ADMIN))
                         ? createdBy
                         : (user == null ? null : user.getId());
-        List<Exam> items = examMapper.findPage(keyword, status, targetCreatedBy, offset, safeSize);
+        List<Exam> items = examMapper.findPage(keyword, status, targetCreatedBy, p.offset(), p.size());
         long total = examMapper.count(keyword, status, targetCreatedBy);
 
         Set<Long> submittedExamIds = Collections.emptySet();
@@ -124,8 +121,8 @@ public class ExamService {
                         .map(e -> toVO(e, false, finalSubmittedExamIds.contains(e.getId())))
                         .toList(),
                 total,
-                safePage,
-                safeSize);
+                p.page(),
+                p.size());
     }
 
     public ExamVO detail(Long id) {
@@ -351,10 +348,8 @@ public class ExamService {
 
     /** 公开可进入考试列表（公开且未结束/未取消）。 */
     public PageResult<ExamSessionVO> listOpen(String keyword, int page, int size) {
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        int offset = (safePage - 1) * safeSize;
-        List<Exam> items = examMapper.findPage(keyword, 1, null, offset, safeSize);
+        PageParam p = PageParam.of(page, size);
+        List<Exam> items = examMapper.findPage(keyword, 1, null, p.offset(), p.size());
         // 过滤掉已结束/已取消的（状态需惰性推进后判断，但列表场景直接按时间窗口过滤）
         LocalDateTime now = LocalDateTime.now();
         List<ExamSessionVO> list =
@@ -373,7 +368,7 @@ public class ExamService {
                         .map(this::toSessionVO)
                         .toList();
         long total = examMapper.count(keyword, 1, null);
-        return new PageResult<>(list, total, safePage, safeSize);
+        return new PageResult<>(list, total, p.page(), p.size());
     }
 
     /** 取消考试（有作答记录则不可取消）。 */

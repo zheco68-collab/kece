@@ -5,7 +5,8 @@ import { examApi, type ExamSessionQuestion, type SessionEnter } from '@/api/exam
 import { questionApi } from '@/api/question'
 import { renderMarkdown } from '@/utils/markdown'
 import { useToast } from '@/composables/useToast'
-import type { Difficulty, Question } from '@/types'
+import type { Question } from '@/types'
+import { DIFFICULTY_LABELS as difficultyLabels } from '@/utils/submission'
 import { copyToClipboard } from '@/utils/clipboard'
 
 const route = useRoute()
@@ -39,11 +40,7 @@ const mySavedAnswer = computed(() => {
 
 const isSolved = computed(() => mySavedAnswer.value?.status === 'ACCEPTED')
 
-const difficultyLabels: Record<Difficulty, string> = {
-  EASY: '简单',
-  MEDIUM: '中等',
-  HARD: '困难',
-}
+
 
 const descriptionHtml = computed(() =>
   renderMarkdown(examQuestion.value?.content || question.value?.description || ''),

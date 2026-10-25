@@ -60,6 +60,8 @@ if (Get-Process -Name judger -ErrorAction SilentlyContinue) {
     $env:JUDGE_MYSQL_USER     = if ($env:JUDGE_MYSQL_USER)     { $env:JUDGE_MYSQL_USER }     else { "root" }
     $env:JUDGE_MYSQL_PASSWORD = if ($env:JUDGE_MYSQL_PASSWORD) { $env:JUDGE_MYSQL_PASSWORD } else { "judge123" }
 
+    $env:TESTCASE_DIR         = if ($env:TESTCASE_DIR)         { $env:TESTCASE_DIR }         else { "$RootDir\backend\testcases" }
+
     Start-Process -FilePath "$RootDir\judger\judger.exe" -WorkingDirectory "$RootDir\judger" `
       -RedirectStandardOutput (Join-Path $LogDir "judger.log") `
       -RedirectStandardError  (Join-Path $LogDir "judger.err.log") -WindowStyle Hidden
@@ -69,7 +71,8 @@ if (Get-Process -Name judger -ErrorAction SilentlyContinue) {
 # ---- 3. 后端 ----
 if (Test-Port 8080) {
     Write-Host "后端已在运行 (8080)，跳过" -ForegroundColor Yellow
-    $BackendCmd = "set JAVA_HOME=$env:JAVA_HOME&& set PATH=$env:JAVA_HOME\bin;%PATH%&& call `"$RootDir\backend\mvnw.cmd`" spring-boot:run"
+} else {
+    $BackendCmd = "set `"JAVA_HOME=$env:JAVA_HOME`" & set `"PATH=$env:JAVA_HOME\bin;%PATH%`" & call `"$RootDir\backend\mvnw.cmd`" spring-boot:run"
     Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$BackendCmd`"" `
       -WorkingDirectory "$RootDir\backend" `
       -RedirectStandardOutput (Join-Path $LogDir "backend.log") `

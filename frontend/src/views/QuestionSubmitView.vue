@@ -7,8 +7,14 @@ import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import CodeEditor from '@/components/CodeEditor.vue'
-import type { Difficulty, Question } from '@/types'
-import { LANGUAGE_LABELS } from '@/utils/submission'
+import type { Question } from '@/types'
+import {
+  DIFFICULTY_LABELS as difficultyLabels,
+  FILENAMES,
+  LANGUAGE_LABELS,
+  SUPPORTED_LANGUAGES,
+  TEMPLATES,
+} from '@/utils/submission'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,44 +28,6 @@ const question = ref<Question | null>(null)
 const loading = ref(true)
 const error = ref('')
 
-const difficultyLabels: Record<Difficulty, string> = {
-  EASY: '简单',
-  MEDIUM: '中等',
-  HARD: '困难',
-}
-
-const SUPPORTED_LANGUAGES = ['cpp', 'java', 'python', 'arkts']
-const TEMPLATES: Record<string, string> = {
-  cpp: `#include <iostream>
-using namespace std;
-
-int main() {
-    // 在此编写代码
-    return 0;
-}
-`,
-  java: `import java.util.*;
-
-public class Main {
-    public static void main(String[] args) {
-        // 在此编写代码
-    }
-}
-`,
-  python: `# 在此编写代码
-`,
-  arkts: `import * as fs from 'fs';
-
-function main(): void {
-    const input: string = fs.readFileSync(0, 'utf-8').trim();
-    if (!input) return;
-    // 在此编写代码
-}
-
-main();
-`,
-}
-const FILENAMES: Record<string, string> = { cpp: 'main.cpp', java: 'Main.java', python: 'main.py', arkts: 'main.ets' }
 
 const languages = computed(() =>
   (question.value?.languages ?? []).filter((l) => SUPPORTED_LANGUAGES.includes(l)),

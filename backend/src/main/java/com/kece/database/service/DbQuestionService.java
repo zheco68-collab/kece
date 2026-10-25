@@ -1,6 +1,7 @@
 package com.kece.database.service;
 
 import com.kece.common.exception.BusinessException;
+import com.kece.common.response.PageParam;
 import com.kece.common.response.PageResult;
 import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
@@ -40,9 +41,7 @@ public class DbQuestionService {
 
     public PageResult<DbQuestionVO> list(
             String type, String keyword, String userStatus, int page, int size, boolean all) {
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        int offset = (safePage - 1) * safeSize;
+        PageParam p = PageParam.of(page, size);
         Integer status = (all && isPrivileged()) ? null : 1;
 
         List<Long> includeIds = null;
@@ -51,13 +50,13 @@ public class DbQuestionService {
             Long userId = AuthContextHolder.currentUserId();
             if (userId == null) {
                 if ("SOLVED".equalsIgnoreCase(userStatus)) {
-                    return new PageResult<>(List.of(), 0, safePage, safeSize);
+                    return new PageResult<>(List.of(), 0, p.page(), p.size());
                 }
             } else {
                 List<Long> solvedIds = submissionMapper.findAcceptedQuestionIds(userId);
                 if ("SOLVED".equalsIgnoreCase(userStatus)) {
                     if (solvedIds == null || solvedIds.isEmpty()) {
-                        return new PageResult<>(List.of(), 0, safePage, safeSize);
+                        return new PageResult<>(List.of(), 0, p.page(), p.size());
                     }
                     includeIds = solvedIds;
                 } else if ("UNSOLVED".equalsIgnoreCase(userStatus)) {
@@ -70,21 +69,19 @@ public class DbQuestionService {
 
         List<DbQuestion> items =
                 questionMapper.findPage(
-                        type, keyword, status, null, includeIds, excludeIds, offset, safeSize);
+                        type, keyword, status, null, includeIds, excludeIds, p.offset(), p.size());
         long total = questionMapper.count(type, keyword, status, null, includeIds, excludeIds);
         return new PageResult<>(
                 items.stream().map(this::toListVO).toList(),
                 total,
-                safePage,
-                safeSize);
+                p.page(),
+                p.size());
     }
 
     /** 后台数据库题列表：ADMIN 可按 createdBy 筛选，非 ADMIN 仅见自己出的题。 */
     public PageResult<DbQuestionVO> listAdmin(
             String type, String keyword, Integer status, Long createdBy, int page, int size) {
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        int offset = (safePage - 1) * safeSize;
+        PageParam p = PageParam.of(page, size);
         Long targetCreatedBy = createdBy;
         AuthUser user = AuthContextHolder.get();
         if (user == null || !user.hasRole(Role.ADMIN)) {
@@ -92,10 +89,10 @@ public class DbQuestionService {
         }
         List<DbQuestion> items =
                 questionMapper.findPage(
-                        type, keyword, status, targetCreatedBy, null, null, offset, safeSize);
+                        type, keyword, status, targetCreatedBy, null, null, p.offset(), p.size());
         long total = questionMapper.count(type, keyword, status, targetCreatedBy, null, null);
         return new PageResult<>(
-                items.stream().map(this::toListVO).toList(), total, safePage, safeSize);
+                items.stream().map(this::toListVO).toList(), total, p.page(), p.size());
     }
 
     public DbQuestionVO detail(Long id) {

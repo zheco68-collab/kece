@@ -33,6 +33,7 @@ else
         JUDGE_MYSQL_PORT="${JUDGE_MYSQL_PORT:-3307}" \
         JUDGE_MYSQL_USER="${JUDGE_MYSQL_USER:-root}" \
         JUDGE_MYSQL_PASSWORD="${JUDGE_MYSQL_PASSWORD:-judge123}" \
+        TESTCASE_DIR="${TESTCASE_DIR:-$ROOT_DIR/backend/testcases}" \
         nohup ./judger > "$LOG_DIR/judger.log" 2>&1 &)
     echo "判题机已启动（日志：$LOG_DIR/judger.log）"
 fi

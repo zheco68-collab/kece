@@ -5,6 +5,7 @@ import com.kece.admin.dto.ResetPasswordRequest;
 import com.kece.admin.dto.UpdateRolesRequest;
 import com.kece.admin.dto.UpdateStatusRequest;
 import com.kece.common.exception.BusinessException;
+import com.kece.common.response.PageParam;
 import com.kece.common.response.PageResult;
 import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
@@ -37,15 +38,13 @@ public class AdminService {
         if (status != null && status != 0 && status != 1) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "状态参数不合法");
         }
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        int offset = (safePage - 1) * safeSize;
+        PageParam p = PageParam.of(page, size);
         List<AdminUserVO> list =
-                userMapper.findPage(keyword, role, status, offset, safeSize).stream()
+                userMapper.findPage(keyword, role, status, p.offset(), p.size()).stream()
                         .map(this::toVO)
                         .toList();
         long total = userMapper.count(keyword, role, status);
-        return new PageResult<>(list, total, safePage, safeSize);
+        return new PageResult<>(list, total, p.page(), p.size());
     }
 
     @Transactional

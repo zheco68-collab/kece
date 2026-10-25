@@ -1,4 +1,57 @@
-import type { SubmissionStatus } from '@/types'
+import type { Difficulty, SubmissionStatus } from '@/types'
+
+/** 各难度中文标签 */
+export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
+  EASY: '简单',
+  MEDIUM: '中等',
+  HARD: '困难',
+}
+
+/** 算法题支持评测的语言列表 */
+export const SUPPORTED_LANGUAGES = ['cpp', 'java', 'python', 'arkts']
+
+/** 各语言默认文件名映射 */
+export const CODE_FILENAMES: Record<string, string> = {
+  cpp: 'main.cpp',
+  java: 'Main.java',
+  python: 'main.py',
+  arkts: 'main.ets',
+}
+export const FILENAMES = CODE_FILENAMES
+
+/** 各语言做答默认样板代码 */
+export const CODE_TEMPLATES: Record<string, string> = {
+  cpp: `#include <iostream>
+using namespace std;
+
+int main() {
+    // 在此编写代码
+    return 0;
+}
+`,
+  java: `import java.util.*;
+
+public class Main {
+    public static void main(String[] args) {
+        // 在此编写代码
+    }
+}
+`,
+  python: `# 在此编写代码
+`,
+  arkts: `import * as fs from 'fs';
+
+function main(): void {
+    const input: string = fs.readFileSync(0, 'utf-8').trim();
+    if (!input) return;
+    // 在此编写代码
+}
+
+main();
+`,
+}
+export const TEMPLATES = CODE_TEMPLATES
+
 
 /** 各评测状态的缩写（节点/徽章展示用）。 */
 export const STATUS_ABBR: Record<SubmissionStatus, string> = {

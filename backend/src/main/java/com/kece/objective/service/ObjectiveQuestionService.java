@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kece.admin.dto.RejudgeResultVO;
 import com.kece.common.exception.BusinessException;
+import com.kece.common.response.PageParam;
 import com.kece.common.response.PageResult;
 import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
@@ -36,18 +37,15 @@ public class ObjectiveQuestionService {
     private final ObjectMapper objectMapper;
     private final UserMapper userMapper;
 
-    /** 做题侧公开列表：只显示公开题。 */
     public PageResult<ObjectiveQuestionVO> list(String type, String keyword, int page, int size) {
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        int offset = (safePage - 1) * safeSize;
-        List<ObjectiveQuestion> items = mapper.findPage(type, keyword, 1, null, offset, safeSize);
+        PageParam p = PageParam.of(page, size);
+        List<ObjectiveQuestion> items = mapper.findPage(type, keyword, 1, null, p.offset(), p.size());
         long total = mapper.count(type, keyword, 1, null);
         return new PageResult<>(
                 items.stream().map(this::toListVO).toList(),
                 total,
-                safePage,
-                safeSize);
+                p.page(),
+                p.size());
     }
 
     public ObjectiveQuestionVO detail(Long id) {
@@ -58,25 +56,22 @@ public class ObjectiveQuestionService {
         return toVO(question, isPrivileged(question));
     }
 
-    /** 后台客观题列表：ADMIN 可按 createdBy 筛选，其余角色只能看到自己出的题。 */
     public PageResult<ObjectiveQuestionVO> listAdmin(
             String type, String keyword, Integer status, Long createdBy, int page, int size) {
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        int offset = (safePage - 1) * safeSize;
+        PageParam p = PageParam.of(page, size);
         AuthUser user = AuthContextHolder.get();
         Long targetCreatedBy =
                 (user != null && user.hasRole(Role.ADMIN))
                         ? createdBy
                         : (user == null ? null : user.getId());
         List<ObjectiveQuestion> items =
-                mapper.findPage(type, keyword, status, targetCreatedBy, offset, safeSize);
+                mapper.findPage(type, keyword, status, targetCreatedBy, p.offset(), p.size());
         long total = mapper.count(type, keyword, status, targetCreatedBy);
         return new PageResult<>(
                 items.stream().map(this::toListVO).toList(),
                 total,
-                safePage,
-                safeSize);
+                p.page(),
+                p.size());
     }
 
     @Transactional
@@ -191,11 +186,9 @@ public class ObjectiveQuestionService {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权查看其他用户的客观题作答记录");
         }
         Long userId = targetUserId != null ? targetUserId : user.getId();
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        int offset = (safePage - 1) * safeSize;
+        PageParam p = PageParam.of(page, size);
         List<ObjectiveSubmissionListVO> list =
-                submissionMapper.findPage(userId, null, correct, offset, safeSize);
+                submissionMapper.findPage(userId, null, correct, p.offset(), p.size());
         // 安全防抄袭：前台客观题作答列表仅答题者本人可见作答原文，其他人一律脱敏置空
         if (!userId.equals(user.getId())) {
             for (ObjectiveSubmissionListVO item : list) {
@@ -203,7 +196,7 @@ public class ObjectiveQuestionService {
             }
         }
         long total = submissionMapper.count(userId, null, correct);
-        return new PageResult<>(list, total, safePage, safeSize);
+        return new PageResult<>(list, total, p.page(), p.size());
     }
 
     public PageResult<ObjectiveSubmissionListVO> listSubmissions(
@@ -219,13 +212,11 @@ public class ObjectiveQuestionService {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
         Long targetUserId = user.hasRole(Role.ADMIN) ? userId : user.getId();
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        int offset = (safePage - 1) * safeSize;
+        PageParam p = PageParam.of(page, size);
         List<ObjectiveSubmissionListVO> list =
-                submissionMapper.findPage(targetUserId, questionId, correct, offset, safeSize);
+                submissionMapper.findPage(targetUserId, questionId, correct, p.offset(), p.size());
         long total = submissionMapper.count(targetUserId, questionId, correct);
-        return new PageResult<>(list, total, safePage, safeSize);
+        return new PageResult<>(list, total, p.page(), p.size());
     }
 
     private ObjectiveQuestion getQuestionOrThrow(Long id) {

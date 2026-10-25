@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kece.admin.dto.RejudgeResultVO;
 import com.kece.common.exception.BusinessException;
+import com.kece.common.response.PageParam;
 import com.kece.common.response.PageResult;
 import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
@@ -120,13 +121,11 @@ public class SubmissionService {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权查看其他用户的提交记录");
         }
         Long userId = targetUserId != null ? targetUserId : user.getId();
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        int offset = (safePage - 1) * safeSize;
+        PageParam p = PageParam.of(page, size);
         String statusFilter =
                 (status == null || status.isBlank()) ? null : status.trim().toUpperCase();
         List<SubmissionListVO> list =
-                submissionMapper.findPage(userId, null, statusFilter, null, offset, safeSize);
+                submissionMapper.findPage(userId, null, statusFilter, null, p.offset(), p.size());
         // 安全防抄袭：前台提交列表仅提交者本人可见代码原文，其他人一律脱敏置空
         if (!userId.equals(user.getId())) {
             for (SubmissionListVO item : list) {
@@ -134,7 +133,7 @@ public class SubmissionService {
             }
         }
         long total = submissionMapper.count(userId, null, statusFilter, null);
-        return new PageResult<>(list, total, safePage, safeSize);
+        return new PageResult<>(list, total, p.page(), p.size());
     }
 
     public PageResult<SubmissionListVO> list(String status, int page, int size) {
@@ -148,17 +147,15 @@ public class SubmissionService {
         if (user == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        int offset = (safePage - 1) * safeSize;
+        PageParam p = PageParam.of(page, size);
         String statusFilter =
                 (status == null || status.isBlank()) ? null : status.trim().toUpperCase();
         Long targetCreatedBy = user.hasRole(Role.ADMIN) ? null : user.getId();
         List<SubmissionListVO> list =
                 submissionMapper.findPage(
-                        userId, questionId, statusFilter, targetCreatedBy, offset, safeSize);
+                        userId, questionId, statusFilter, targetCreatedBy, p.offset(), p.size());
         long total = submissionMapper.count(userId, questionId, statusFilter, targetCreatedBy);
-        return new PageResult<>(list, total, safePage, safeSize);
+        return new PageResult<>(list, total, p.page(), p.size());
     }
 
     /** 当前用户已 AC 的题目 id（去重），供题目列表标记「已通过」。 */

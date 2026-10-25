@@ -5,6 +5,7 @@ import { questionApi } from '@/api/question'
 import { submissionApi } from '@/api/submission'
 import { useUserStore } from '@/stores/user'
 import type { Difficulty, Question } from '@/types'
+import { DIFFICULTY_LABELS as difficultyLabels } from '@/utils/submission'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -22,11 +23,7 @@ const error = ref('')
 
 const solved = ref<Set<number>>(new Set())
 
-const difficultyLabels: Record<Difficulty, string> = {
-  EASY: '简单',
-  MEDIUM: '中等',
-  HARD: '困难',
-}
+
 const difficultyLevels: Array<Difficulty | ''> = ['', 'EASY', 'MEDIUM', 'HARD']
 
 const LANGUAGE_MAP: Record<string, string> = {
