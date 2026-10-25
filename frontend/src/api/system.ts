@@ -23,6 +23,16 @@ export interface ClusterStatus {
   timestamp: number
 }
 
+export interface DemoSnippet {
+  filename: string
+  langBadge: string
+  code: string
+  sourcePath?: string
+  updatedAt?: number
+}
+
 export const systemApi = {
   getClusterStatus: () => http.get<ClusterStatus>('/system/judgers'),
+  getDemoSnippet: () => http.get<DemoSnippet>('/system/demo-snippet'),
 }
+

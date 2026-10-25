@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import ClusterConsole from '@/components/ClusterConsole.vue'
+import { systemApi } from '@/api/system'
 
 const router = useRouter()
 
@@ -21,31 +22,31 @@ interface DemoContent {
   }
 }
 
-const demos: Record<DemoMode, DemoContent> = {
+const demos = reactive<Record<DemoMode, DemoContent>>({
   algo: {
-    filename: 'solution.cpp',
-    langBadge: 'C++ 17',
-    code: `#include <iostream>
-#include <vector>
-using namespace std;
-
-// 二分查找目标值
-int search(const vector<int>& nums, int target) {
-    int left = 0, right = nums.size() - 1;
-    while (left <= right) {
-        int mid = left + (right - left) / 2;
-        if (nums[mid] == target) return mid;
-        if (nums[mid] < target) left = mid + 1;
-        else right = mid - 1;
+    filename: 'Solution.java',
+    langBadge: 'Java 17',
+    code: `// ==========================================
+// 算法模板 · 二分查找与边界判定 (Java 17)
+// ==========================================
+public class Solution {
+    public int search(int[] nums, int target) {
+        int left = 0, right = nums.length - 1;
+        while (left <= right) {
+            int mid = left + (right - left) / 2;
+            if (nums[mid] == target) return mid;
+            if (nums[mid] < target) left = mid + 1;
+            else right = mid - 1;
+        }
+        return -1;
     }
-    return -1;
 }`,
     verdict: {
       status: 'ACCEPTED (AC)',
       statusClass: 'status-ac',
       metrics: [
-        { label: '运行耗时', value: '12 ms' },
-        { label: '内存消耗', value: '4.2 MB' },
+        { label: '运行耗时', value: '15 ms' },
+        { label: '内存消耗', value: '38.4 MB' },
         { label: '测试点通过', value: '10 / 10' },
       ],
       details: 'Docker Cgroups v2 强隔离沙箱运行 · 资源严格受控',
@@ -98,7 +99,7 @@ LIMIT 3;`,
       details: 'ACM 实时榜单结算 · 客观题 + 编程题自动折算分值',
     },
   },
-}
+})
 
 function start() {
   router.push('/questions')
@@ -144,6 +145,20 @@ function handleTitleMouseLeave() {
   if (glitchTimer) clearTimeout(glitchTimer)
   isGlitching.value = false
 }
+
+// 动态拉取后端每日更新的随机 Java 算法模板（秒级响应，离线/超时高可用保底）
+onMounted(async () => {
+  try {
+    const res = await systemApi.getDemoSnippet()
+    if (res && res.code && res.code.trim()) {
+      demos.algo.filename = res.filename || 'Solution.java'
+      demos.algo.langBadge = res.langBadge || 'Java 17'
+      demos.algo.code = res.code
+    }
+  } catch (err) {
+    console.warn('Failed to fetch dynamic demo snippet, using fallback template:', err)
+  }
+})
 </script>
 
 <template>
@@ -339,7 +354,7 @@ function handleTitleMouseLeave() {
               :class="{ active: activeTab === 'algo' }"
               @click="activeTab = 'algo'"
             >
-              C++ 算法 OJ
+              Java 算法 OJ
             </button>
             <button
               class="terminal-tab"
