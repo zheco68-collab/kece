@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { systemApi, type ClusterStatus } from '@/api/system'
 
 const loading = ref(false)
@@ -97,13 +97,131 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
   if (countdownTimer) clearInterval(countdownTimer)
+  if (rafId) cancelAnimationFrame(rafId)
+})
+
+// =========================================
+// 3D 俯仰微倾与跟随光标的径向镜面高光 (3D Tilt & Specular Glare)
+// =========================================
+const wrapperRef = ref<HTMLElement | null>(null)
+const isTilting = ref(false)
+
+const rotX = ref(0)
+const rotY = ref(0)
+const glareX = ref(0)
+const glareY = ref(0)
+const shadowX = ref(0)
+const shadowY = ref(12)
+const shadowBlur = ref(32)
+const shadowAlpha = ref(0.05)
+
+let rafId: number | null = null
+
+function handleMouseEnter(e: MouseEvent) {
+  isTilting.value = true
+  updateTilt(e)
+}
+
+function handleMouseMove(e: MouseEvent) {
+  if (!wrapperRef.value) return
+  isTilting.value = true
+  updateTilt(e)
+}
+
+function updateTilt(e: MouseEvent) {
+  if (!wrapperRef.value) return
+  const rect = wrapperRef.value.getBoundingClientRect()
+  const x = e.clientX - rect.left
+  const y = e.clientY - rect.top
+
+  // 坐标归一化到 [-1, 1]，中心点为 (0, 0)
+  const normX = Math.min(Math.max((x / rect.width) * 2 - 1, -1), 1)
+  const normY = Math.min(Math.max((y / rect.height) * 2 - 1, -1), 1)
+
+  if (rafId) cancelAnimationFrame(rafId)
+  rafId = requestAnimationFrame(() => {
+    // 3D 俯仰微倾：触点受力向内/倾角微偏，X 轴俯仰 6.5°，Y 轴侧倾 7.5°
+    rotX.value = -normY * 6.5
+    rotY.value = normX * 7.5
+
+    // 镜面高光焦点跟随光标坐标
+    glareX.value = x
+    glareY.value = y
+
+    // 光影投射逆向偏转，制造逼真的 3D 景深与真实光照感
+    shadowX.value = -normX * 18
+    shadowY.value = -normY * 16 + 18
+    shadowBlur.value = 38
+    shadowAlpha.value = 0.12
+  })
+}
+
+function handleMouseLeave() {
+  if (rafId) cancelAnimationFrame(rafId)
+  isTilting.value = false
+  // 阻尼弹性复位归零
+  rotX.value = 0
+  rotY.value = 0
+  shadowX.value = 0
+  shadowY.value = 12
+  shadowBlur.value = 32
+  shadowAlpha.value = 0.05
+}
+
+const consoleStyle = computed(() => {
+  if (isTilting.value) {
+    return {
+      transform: `perspective(1000px) rotateX(${rotX.value.toFixed(2)}deg) rotateY(${rotY.value.toFixed(2)}deg) translateZ(8px) scale3d(1.012, 1.012, 1.012)`,
+      boxShadow: `${shadowX.value.toFixed(1)}px ${shadowY.value.toFixed(1)}px ${shadowBlur.value}px rgba(17, 17, 17, ${shadowAlpha.value})`,
+      transition: 'transform 0.08s ease-out, box-shadow 0.08s ease-out',
+    }
+  }
+  return {
+    transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateZ(0) scale3d(1, 1, 1)',
+    boxShadow: '0 12px 32px rgba(17, 17, 17, 0.05)',
+    // 离开面板阻尼弹性复位（Spring Damped Oscillation 回弹过渡）
+    transition: 'transform 0.85s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.85s cubic-bezier(0.34, 1.56, 0.64, 1)',
+  }
+})
+
+const glareStyle = computed(() => {
+  return {
+    opacity: isTilting.value ? 1 : 0,
+    background: `radial-gradient(circle 420px at ${glareX.value}px ${glareY.value}px, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.28) 26%, rgba(240, 248, 255, 0.08) 52%, transparent 72%)`,
+    transition: isTilting.value ? 'opacity 0.2s ease-out' : 'opacity 0.65s cubic-bezier(0.25, 1, 0.5, 1)',
+  }
+})
+
+const rimStyle = computed(() => {
+  return {
+    opacity: isTilting.value ? 1 : 0,
+    background: `radial-gradient(circle 320px at ${glareX.value}px ${glareY.value}px, rgba(255, 255, 255, 0.95) 0%, rgba(180, 210, 240, 0.5) 35%, transparent 75%) border-box`,
+    transition: isTilting.value ? 'opacity 0.2s ease-out' : 'opacity 0.65s cubic-bezier(0.25, 1, 0.5, 1)',
+  }
 })
 </script>
 
 <template>
-  <div class="cluster-console">
-    <!-- 控制台顶栏：状态指示灯与全局遥测 -->
-    <div class="console-head">
+  <div
+    ref="wrapperRef"
+    class="cluster-console-wrapper"
+    @mouseenter="handleMouseEnter"
+    @mousemove="handleMouseMove"
+    @mouseleave="handleMouseLeave"
+  >
+    <div
+      class="cluster-console"
+      :class="{ 'is-tilting': isTilting }"
+      :style="consoleStyle"
+    >
+      <!-- 表面掠过的径向镜面高光 (Radial Specular Glare) -->
+      <div class="console-glare" :style="glareStyle"></div>
+
+      <!-- 边缘镜面微光反射 (Specular Rim Glow) -->
+      <div class="console-rim" :style="rimStyle"></div>
+
+      <!-- 控制台顶栏：状态指示灯与全局遥测 -->
+      <div class="console-head">
       <div class="head-left">
         <span class="live-dot" :class="{ 'is-online': cluster.onlineNodes > 0 }"></span>
         <span class="head-title mono">// CLUSTER TELEMETRY</span>
@@ -189,9 +307,17 @@ onBeforeUnmount(() => {
       <span class="foot-queue">QUEUE: 0 PENDING</span>
     </div>
   </div>
+</div>
 </template>
 
 <style scoped>
+.cluster-console-wrapper {
+  width: 100%;
+  perspective: 1200px;
+  display: flex;
+  position: relative;
+}
+
 .cluster-console {
   width: 100%;
   background: #ffffff;
@@ -201,6 +327,32 @@ onBeforeUnmount(() => {
   flex-direction: column;
   box-shadow: 0 12px 32px rgba(17, 17, 17, 0.05);
   user-select: none;
+  position: relative;
+  overflow: hidden;
+  transform-style: preserve-3d;
+  will-change: transform, box-shadow;
+}
+
+/* 表面掠过的径向镜面高光 */
+.console-glare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 25;
+  border-radius: 0;
+}
+
+/* 边缘镜面微光反射 */
+.console-rim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 26;
+  border-radius: 0;
+  padding: 1px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
 }
 
 .mono {
