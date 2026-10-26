@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import ClusterConsole from '@/components/ClusterConsole.vue'
 import { systemApi } from '@/api/system'
@@ -309,6 +309,60 @@ function handleTitleMouseLeave() {
   isGlitching.value = false
 }
 
+// =========================================
+// 首屏副标题打字机效果 (Typewriter Effect)
+// =========================================
+const HERO_SUB_LINE_1 = '无缝集成算法 OJ、数据库 OJ、前端 AI 智能评测及标准客观题系统。'
+const HERO_SUB_LINE_2 = '基于高可用强隔离沙箱与独立临时库，提供确定性、防作弊的全真技术考核。'
+
+const typedLine1 = ref('')
+const typedLine2 = ref('')
+const activeTypingLine = ref<1 | 2>(1)
+let typewriterTimer: ReturnType<typeof setTimeout> | null = null
+
+function startTypewriter() {
+  if (typewriterTimer) clearTimeout(typewriterTimer)
+  typedLine1.value = ''
+  typedLine2.value = ''
+  activeTypingLine.value = 1
+
+  let i = 0
+  let j = 0
+
+  const stepLine1 = () => {
+    if (i < HERO_SUB_LINE_1.length) {
+      i += 1
+      typedLine1.value = HERO_SUB_LINE_1.slice(0, i)
+      const ch = HERO_SUB_LINE_1[i - 1]
+      const delay = ch === '、' || ch === '。' ? 110 : 42
+      typewriterTimer = setTimeout(stepLine1, delay)
+    } else {
+      activeTypingLine.value = 2
+      typewriterTimer = setTimeout(stepLine2, 240)
+    }
+  }
+
+  const stepLine2 = () => {
+    if (j < HERO_SUB_LINE_2.length) {
+      j += 1
+      typedLine2.value = HERO_SUB_LINE_2.slice(0, j)
+      const ch = HERO_SUB_LINE_2[j - 1]
+      const delay = ch === '，' || ch === '、' || ch === '。' ? 110 : 42
+      typewriterTimer = setTimeout(stepLine2, delay)
+    } else {
+      // 完整打出后保持展示 6 秒，再循环重播打字动效
+      typewriterTimer = setTimeout(startTypewriter, 6000)
+    }
+  }
+
+  typewriterTimer = setTimeout(stepLine1, 200)
+}
+
+onBeforeUnmount(() => {
+  if (glitchTimer) clearTimeout(glitchTimer)
+  if (typewriterTimer) clearTimeout(typewriterTimer)
+})
+
 // 针对首页沙箱评测终端演示代码的代码与关键字高亮（支持 Java / SQL / JSON）
 const highlightedCode = computed(() => {
   const current = demos[activeTab.value]
@@ -337,6 +391,7 @@ const highlightedCode = computed(() => {
 
 // 动态拉取后端每日更新的随机 Java 算法模板（秒级响应，离线/超时高可用保底）
 onMounted(async () => {
+  startTypewriter()
   try {
     const res = await systemApi.getDemoSnippet()
     if (res && res.code && res.code.trim()) {
@@ -367,8 +422,17 @@ onMounted(async () => {
           <span class="trae-glitch" data-text="技能评测平台">技能评测平台</span>
         </h1>
         <p class="hero-sub">
-          无缝集成算法 OJ、数据库 OJ、前端 AI 智能评测及标准客观题系统。<br />
-          基于高可用强隔离沙箱与独立临时库，提供确定性、防作弊的全真技术考核。
+          <!-- 隐形占位层：锁定段落高度，防止打字换行过程中下方按钮跳动 -->
+          <span class="hero-sub-ghost" aria-hidden="true">
+            {{ HERO_SUB_LINE_1 }}<br />
+            {{ HERO_SUB_LINE_2 }}
+          </span>
+          <!-- 实时打字机渲染层 -->
+          <span class="hero-sub-typed">
+            <span>{{ typedLine1 }}</span><span v-if="activeTypingLine === 1" class="typewriter-cursor"></span>
+            <br v-if="activeTypingLine === 2 || typedLine2.length > 0" />
+            <span>{{ typedLine2 }}</span><span v-if="activeTypingLine === 2" class="typewriter-cursor"></span>
+          </span>
         </p>
 
         <div class="hero-actions">
@@ -680,11 +744,46 @@ onMounted(async () => {
 }
 
 .hero-sub {
+  position: relative;
   font-size: 15.5px;
   line-height: 1.65;
   color: var(--ink-secondary);
   margin: 0 0 32px;
   font-weight: 400;
+}
+
+.hero-sub-ghost {
+  display: block;
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.hero-sub-typed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.typewriter-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  background-color: var(--ink);
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  animation: typewriter-blink 0.85s step-end infinite;
+}
+
+@keyframes typewriter-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 
 .hero-actions {
