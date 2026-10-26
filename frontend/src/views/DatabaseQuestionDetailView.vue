@@ -516,23 +516,6 @@ onMounted(async () => {
   color: inherit;
 }
 
-.schema-content {
-  padding: 20px 24px;
-}
-.sql-code {
-  margin: 0;
-  padding: 16px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--ink);
-  border-radius: 0;
-}
-
 /* 评测与比对规范卡片 */
 .spec-card {
   padding: 20px 24px;

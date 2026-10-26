@@ -4,7 +4,6 @@ import { RouterLink, useRouter } from 'vue-router'
 import { adminApi } from '@/api/admin'
 import { databaseApi } from '@/api/database'
 import { ApiError } from '@/api/request'
-import AdminNav from '@/components/AdminNav.vue'
 import DataTable from '@/components/DataTable.vue'
 import Pagination from '@/components/Pagination.vue'
 import { useConfirm } from '@/composables/useConfirm'
@@ -152,7 +151,6 @@ onBeforeUnmount(() => {
 <template>
   <div class="admin container">
     <h1 class="page-title">数据库题管理</h1>
-    <AdminNav />
 
     <div class="filter-bar card">
       <label class="filter">

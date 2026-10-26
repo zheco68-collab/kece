@@ -187,33 +187,44 @@
     <!-- ==================== 3. 客观题积分榜 (OBJECTIVE) ==================== -->
 
     <select id="findObjectiveRankings" resultType="com.kece.rank.dto.RankUserVO">
-        WITH ranked AS (
+        WITH per_question AS (
+            SELECT
+                user_id,
+                question_id,
+                MAX(score) AS best_score,
+                MAX(CASE WHEN correct = 1 THEN 1 ELSE 0 END) AS is_solved,
+                COUNT(id) AS sub_count,
+                COUNT(CASE WHEN correct = 1 THEN 1 END) AS ac_count,
+                MAX(CASE WHEN correct = 1 THEN created_at END) AS last_ac_at
+            FROM `objective_submission`
+            GROUP BY user_id, question_id
+        ),
+        ranked AS (
             SELECT 
                 u.id AS userId,
                 u.username AS username,
                 u.avatar_url AS avatarUrl,
                 u.bio AS bio,
                 u.roles AS roles,
-                COUNT(DISTINCT CASE WHEN s.correct = 1 THEN s.question_id END) AS solvedCount,
-                COALESCE(SUM(s.score), 0) AS totalScore,
-                COUNT(s.id) AS totalSubmissions,
-                COUNT(CASE WHEN s.correct = 1 THEN 1 END) AS acSubmissions,
-                ROUND(COUNT(CASE WHEN s.correct = 1 THEN 1 END) * 100.0 / NULLIF(COUNT(s.id), 0), 1) AS acceptRate,
-                MAX(CASE WHEN s.correct = 1 THEN s.created_at END) AS lastAcceptedAt,
+                COALESCE(SUM(pq.is_solved), 0) AS solvedCount,
+                COALESCE(SUM(pq.best_score), 0) AS totalScore,
+                COALESCE(SUM(pq.sub_count), 0) AS totalSubmissions,
+                COALESCE(SUM(pq.ac_count), 0) AS acSubmissions,
+                ROUND(COALESCE(SUM(pq.ac_count), 0) * 100.0 / NULLIF(SUM(pq.sub_count), 0), 1) AS acceptRate,
+                MAX(pq.last_ac_at) AS lastAcceptedAt,
                 ROW_NUMBER() OVER (
                     ORDER BY 
-                        COUNT(DISTINCT CASE WHEN s.correct = 1 THEN s.question_id END) DESC,
-                        COALESCE(SUM(s.score), 0) DESC,
-                        COUNT(CASE WHEN s.correct = 1 THEN 1 END) DESC,
-                        COUNT(s.id) ASC,
-                        MAX(CASE WHEN s.correct = 1 THEN s.created_at END) ASC,
+                        COALESCE(SUM(pq.is_solved), 0) DESC,
+                        COALESCE(SUM(pq.best_score), 0) DESC,
+                        COALESCE(SUM(pq.ac_count), 0) DESC,
+                        COALESCE(SUM(pq.sub_count), 0) ASC,
+                        MAX(pq.last_ac_at) ASC,
                         u.id ASC
                 ) AS `rank`
             FROM `user` u
-            LEFT JOIN `objective_submission` s ON u.id = s.user_id
+            INNER JOIN per_question pq ON u.id = pq.user_id
             WHERE u.status = 1
             GROUP BY u.id, u.username, u.avatar_url, u.bio, u.roles
-            HAVING totalSubmissions &gt; 0
         )
         SELECT * FROM ranked
         <where>
@@ -246,33 +257,44 @@
     </select>
 
     <select id="findUserObjectiveRank" resultType="com.kece.rank.dto.RankUserVO">
-        WITH ranked AS (
+        WITH per_question AS (
+            SELECT
+                user_id,
+                question_id,
+                MAX(score) AS best_score,
+                MAX(CASE WHEN correct = 1 THEN 1 ELSE 0 END) AS is_solved,
+                COUNT(id) AS sub_count,
+                COUNT(CASE WHEN correct = 1 THEN 1 END) AS ac_count,
+                MAX(CASE WHEN correct = 1 THEN created_at END) AS last_ac_at
+            FROM `objective_submission`
+            GROUP BY user_id, question_id
+        ),
+        ranked AS (
             SELECT 
                 u.id AS userId,
                 u.username AS username,
                 u.avatar_url AS avatarUrl,
                 u.bio AS bio,
                 u.roles AS roles,
-                COUNT(DISTINCT CASE WHEN s.correct = 1 THEN s.question_id END) AS solvedCount,
-                COALESCE(SUM(s.score), 0) AS totalScore,
-                COUNT(s.id) AS totalSubmissions,
-                COUNT(CASE WHEN s.correct = 1 THEN 1 END) AS acSubmissions,
-                ROUND(COUNT(CASE WHEN s.correct = 1 THEN 1 END) * 100.0 / NULLIF(COUNT(s.id), 0), 1) AS acceptRate,
-                MAX(CASE WHEN s.correct = 1 THEN s.created_at END) AS lastAcceptedAt,
+                COALESCE(SUM(pq.is_solved), 0) AS solvedCount,
+                COALESCE(SUM(pq.best_score), 0) AS totalScore,
+                COALESCE(SUM(pq.sub_count), 0) AS totalSubmissions,
+                COALESCE(SUM(pq.ac_count), 0) AS acSubmissions,
+                ROUND(COALESCE(SUM(pq.ac_count), 0) * 100.0 / NULLIF(SUM(pq.sub_count), 0), 1) AS acceptRate,
+                MAX(pq.last_ac_at) AS lastAcceptedAt,
                 ROW_NUMBER() OVER (
                     ORDER BY 
-                        COUNT(DISTINCT CASE WHEN s.correct = 1 THEN s.question_id END) DESC,
-                        COALESCE(SUM(s.score), 0) DESC,
-                        COUNT(CASE WHEN s.correct = 1 THEN 1 END) DESC,
-                        COUNT(s.id) ASC,
-                        MAX(CASE WHEN s.correct = 1 THEN s.created_at END) ASC,
+                        COALESCE(SUM(pq.is_solved), 0) DESC,
+                        COALESCE(SUM(pq.best_score), 0) DESC,
+                        COALESCE(SUM(pq.ac_count), 0) DESC,
+                        COALESCE(SUM(pq.sub_count), 0) ASC,
+                        MAX(pq.last_ac_at) ASC,
                         u.id ASC
                 ) AS `rank`
             FROM `user` u
-            LEFT JOIN `objective_submission` s ON u.id = s.user_id
+            INNER JOIN per_question pq ON u.id = pq.user_id
             WHERE u.status = 1
             GROUP BY u.id, u.username, u.avatar_url, u.bio, u.roles
-            HAVING totalSubmissions &gt; 0
         )
         SELECT * FROM ranked WHERE userId = #{userId}
     </select>

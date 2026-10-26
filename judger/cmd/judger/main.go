@@ -44,6 +44,7 @@ func main() {
 		ImageArkTS:      cfg.Images.ArkTS,
 	}
 	j := judge.New(cfg, q, runner)
+	defer j.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

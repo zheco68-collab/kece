@@ -1,17 +1,12 @@
 package com.kece.practice.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kece.common.exception.BusinessException;
 import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
 import com.kece.common.security.AuthUser;
 import com.kece.common.security.Role;
-import com.kece.database.dto.DbSubmissionListVO;
-import com.kece.database.entity.DbQuestion;
-import com.kece.database.mapper.DbQuestionMapper;
-import com.kece.database.mapper.DbSubmissionMapper;
 import com.kece.objective.dto.AnswerResultVO;
 import com.kece.objective.entity.ObjectiveQuestion;
 import com.kece.objective.mapper.ObjectiveQuestionMapper;
@@ -19,14 +14,9 @@ import com.kece.objective.service.ObjectiveGrader;
 import com.kece.practice.dto.*;
 import com.kece.practice.entity.*;
 import com.kece.practice.mapper.*;
-import com.kece.question.entity.Question;
-import com.kece.question.mapper.QuestionMapper;
-import com.kece.submission.dto.SubmissionListVO;
-import com.kece.question.strategy.JudgeResultDTO;
 import com.kece.question.strategy.QuestionMeta;
 import com.kece.question.strategy.QuestionStrategyFactory;
 import com.kece.question.strategy.QuestionTypeStrategy;
-import com.kece.submission.mapper.SubmissionMapper;
 import com.kece.user.entity.User;
 import com.kece.user.mapper.UserMapper;
 import java.security.SecureRandom;
@@ -36,7 +26,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,14 +42,9 @@ public class LessonPracticeService {
     private final LessonPracticeMemberMapper memberMapper;
     private final LessonPracticeSubmissionMapper submissionMapper;
     private final ObjectiveQuestionMapper objectiveQuestionMapper;
-    private final QuestionMapper algoQuestionMapper;
-    private final DbQuestionMapper dbQuestionMapper;
-    private final SubmissionMapper algoSubmissionMapper;
-    private final DbSubmissionMapper dbSubmissionMapper;
     private final UserMapper userMapper;
     private final ObjectiveGrader objectiveGrader;
     private final ObjectMapper objectMapper;
-    private final StringRedisTemplate redis;
     private final QuestionStrategyFactory strategyFactory;
 
     /** 生成唯一 6 位大写房间口令。 */
@@ -108,13 +92,17 @@ public class LessonPracticeService {
             List<LessonPracticeQuestion> qList = new ArrayList<>();
             int sort = 1;
             for (PracticeQuestionItem item : req.getQuestions()) {
-                String type = item.getQuestionType() != null ? item.getQuestionType().toUpperCase() : "";
+                String type =
+                        item.getQuestionType() != null ? item.getQuestionType().toUpperCase() : "";
                 String title = item.getTitle();
                 QuestionTypeStrategy strategy = strategyFactory.getStrategy(type);
                 QuestionMeta meta = strategy.resolveQuestionMeta(item.getQuestionId());
-                if (!isAdmin && (meta.getCreatedBy() == null || !meta.getCreatedBy().equals(teacherId))) {
+                if (!isAdmin
+                        && (meta.getCreatedBy() == null
+                                || !meta.getCreatedBy().equals(teacherId))) {
                     throw new BusinessException(
-                            ResultCode.PARAM_ERROR, "教师只能选择自己出的" + strategy.getDisplayName() + "（" + meta.getTitle() + "）");
+                            ResultCode.PARAM_ERROR,
+                            "教师只能选择自己出的" + strategy.getDisplayName() + "（" + meta.getTitle() + "）");
                 }
                 if (title == null || title.isBlank()) {
                     title = meta.getTitle();
@@ -232,8 +220,14 @@ public class LessonPracticeService {
                                         LessonPracticeSubmission::getPracticeQuestionId,
                                         s -> s,
                                         (existing, replacement) -> {
-                                            int eScore = existing.getScore() != null ? existing.getScore() : 0;
-                                            int rScore = replacement.getScore() != null ? replacement.getScore() : 0;
+                                            int eScore =
+                                                    existing.getScore() != null
+                                                            ? existing.getScore()
+                                                            : 0;
+                                            int rScore =
+                                                    replacement.getScore() != null
+                                                            ? replacement.getScore()
+                                                            : 0;
                                             return eScore >= rScore ? existing : replacement;
                                         }));
 
@@ -265,14 +259,14 @@ public class LessonPracticeService {
                 QuestionTypeStrategy strategy = strategyFactory.getStrategy(pq.getQuestionType());
                 if (strategy.isPractical()) {
                     strategy.buildPracticePracticalVO(
-                            pq.getQuestionId(),
-                            pq.getId(),
-                            pq.getScore(),
-                            pq.getSortOrder(),
-                            sub != null ? sub.getStatus() : "UNATTEMPTED",
-                            sub != null && sub.getScore() != null ? sub.getScore() : 0,
-                            sub != null ? sub.getSubmissionId() : null
-                    ).ifPresent(practicalList::add);
+                                    pq.getQuestionId(),
+                                    pq.getId(),
+                                    pq.getScore(),
+                                    pq.getSortOrder(),
+                                    sub != null ? sub.getStatus() : "UNATTEMPTED",
+                                    sub != null && sub.getScore() != null ? sub.getScore() : 0,
+                                    sub != null ? sub.getSubmissionId() : null)
+                            .ifPresent(practicalList::add);
                 }
             }
         }
@@ -377,9 +371,10 @@ public class LessonPracticeService {
                 correctCount++;
             }
 
-            String status = gradeResult.isCorrect()
-                    ? "ACCEPTED"
-                    : (questionScore > 0 ? "PARTIAL" : "WRONG_ANSWER");
+            String status =
+                    gradeResult.isCorrect()
+                            ? "ACCEPTED"
+                            : (questionScore > 0 ? "PARTIAL" : "WRONG_ANSWER");
 
             // 保存或更新提交
             LessonPracticeSubmission existSub =
@@ -455,11 +450,18 @@ public class LessonPracticeService {
         // 根据判题记录校验真实得分与测试用例部分分，必须严格校验归属防止伪造
         JudgeInfo info = null;
         if (submissionId != null) {
-            info = verifyAndExtractJudgeInfo(questionType, submissionId, userId, pq.getQuestionId());
+            info =
+                    verifyAndExtractJudgeInfo(
+                            questionType, submissionId, userId, pq.getQuestionId());
         }
 
         int judgeRawScore = info != null && info.score() != null ? info.score() : 0;
-        String judgeStatus = info != null && info.status() != null ? info.status() : (status != null && "PENDING".equalsIgnoreCase(status) ? "PENDING" : "UNATTEMPTED");
+        String judgeStatus =
+                info != null && info.status() != null
+                        ? info.status()
+                        : (status != null && "PENDING".equalsIgnoreCase(status)
+                                ? "PENDING"
+                                : "UNATTEMPTED");
 
         int calculatedScore = calculateEarnedScore(judgeRawScore, fullScore, judgeStatus);
         String finalStatus = resolvePracticeStatus(judgeStatus, calculatedScore, fullScore);
@@ -471,9 +473,10 @@ public class LessonPracticeService {
             // 保留历史最高得分与最优状态，避免后续错误提交覆盖已有得分
             int currentScore = exist.getScore() != null ? exist.getScore() : 0;
             int bestScore = Math.max(currentScore, calculatedScore);
-            String bestStatus = "ACCEPTED".equals(exist.getStatus()) || "ACCEPTED".equals(finalStatus)
-                    ? "ACCEPTED"
-                    : (bestScore > 0 ? "PARTIAL" : finalStatus);
+            String bestStatus =
+                    "ACCEPTED".equals(exist.getStatus()) || "ACCEPTED".equals(finalStatus)
+                            ? "ACCEPTED"
+                            : (bestScore > 0 ? "PARTIAL" : finalStatus);
             exist.setSubmissionId(submissionId != null ? submissionId : exist.getSubmissionId());
             exist.setStatus(bestStatus);
             exist.setScore(bestScore);
@@ -511,7 +514,8 @@ public class LessonPracticeService {
                     int earned = calculateEarnedScore(info.score(), fullScore, info.status());
                     String status = resolvePracticeStatus(info.status(), earned, fullScore);
                     int currentScore = s.getScore() != null ? s.getScore() : 0;
-                    if (earned > currentScore || (!"ACCEPTED".equals(s.getStatus()) && "ACCEPTED".equals(status))) {
+                    if (earned > currentScore
+                            || (!"ACCEPTED".equals(s.getStatus()) && "ACCEPTED".equals(status))) {
                         s.setScore(Math.max(currentScore, earned));
                         s.setStatus("ACCEPTED".equals(s.getStatus()) ? "ACCEPTED" : status);
                         submissionMapper.updateSubmission(s);
@@ -524,16 +528,23 @@ public class LessonPracticeService {
         Map<Long, LessonPracticeSubmission> bestMap = new HashMap<>();
         for (LessonPracticeSubmission s : subs) {
             if (s.getPracticeQuestionId() == null) continue;
-            bestMap.merge(s.getPracticeQuestionId(), s, (existing, current) -> {
-                int eScore = existing.getScore() != null ? existing.getScore() : 0;
-                int cScore = current.getScore() != null ? current.getScore() : 0;
-                if (cScore > eScore) return current;
-                if (cScore == eScore && "ACCEPTED".equals(current.getStatus())) return current;
-                return existing;
-            });
+            bestMap.merge(
+                    s.getPracticeQuestionId(),
+                    s,
+                    (existing, current) -> {
+                        int eScore = existing.getScore() != null ? existing.getScore() : 0;
+                        int cScore = current.getScore() != null ? current.getScore() : 0;
+                        if (cScore > eScore) return current;
+                        if (cScore == eScore && "ACCEPTED".equals(current.getStatus()))
+                            return current;
+                        return existing;
+                    });
         }
 
-        int totalScore = bestMap.values().stream().mapToInt(s -> s.getScore() != null ? s.getScore() : 0).sum();
+        int totalScore =
+                bestMap.values().stream()
+                        .mapToInt(s -> s.getScore() != null ? s.getScore() : 0)
+                        .sum();
         int solvedCount =
                 (int)
                         bestMap.values().stream()
@@ -551,8 +562,12 @@ public class LessonPracticeService {
     /** 校验提交记录是否真实归属于当前用户以及对应的题目，防止伪造其他学生的 submissionId。 */
     private JudgeInfo verifyAndExtractJudgeInfo(
             String questionType, Long submissionId, Long expectedUserId, Long expectedQuestionId) {
-        return strategyFactory.findStrategy(questionType)
-                .map(s -> s.verifyAndExtractJudgeInfo(submissionId, expectedUserId, expectedQuestionId))
+        return strategyFactory
+                .findStrategy(questionType)
+                .map(
+                        s ->
+                                s.verifyAndExtractJudgeInfo(
+                                        submissionId, expectedUserId, expectedQuestionId))
                 .map(r -> new JudgeInfo(r.status(), r.score()))
                 .orElse(null);
     }
@@ -560,7 +575,8 @@ public class LessonPracticeService {
     /** 提取评测结果：优先 Redis 实时状态缓存，缺失时回退 MySQL 及 resultJson 解析。 */
     private JudgeInfo extractJudgeInfo(String questionType, Long submissionId) {
         if (submissionId == null) return null;
-        return strategyFactory.findStrategy(questionType)
+        return strategyFactory
+                .findStrategy(questionType)
                 .map(s -> s.extractJudgeInfo(submissionId))
                 .map(r -> new JudgeInfo(r.status(), r.score()))
                 .orElse(null);
@@ -597,7 +613,8 @@ public class LessonPracticeService {
     /** 查找用户在指定题目上的最新提交（防客户端轮询中断导致未计分）。 */
     private Long findLatestUserSubmission(Long userId, LessonPracticeQuestion pq) {
         if (userId == null || pq == null || pq.getQuestionId() == null) return null;
-        return strategyFactory.findStrategy(pq.getQuestionType())
+        return strategyFactory
+                .findStrategy(pq.getQuestionType())
                 .map(s -> s.findLatestUserSubmissionId(userId, pq.getQuestionId()))
                 .orElse(null);
     }
@@ -625,7 +642,9 @@ public class LessonPracticeService {
             Long subId = exist != null ? exist.getSubmissionId() : null;
 
             // 若没有关联提交或当前分数为 0 且未 AC，尝试自动找回用户在该题上的最新提交
-            if (subId == null || ((exist.getScore() == null || exist.getScore() == 0) && !"ACCEPTED".equals(exist.getStatus()))) {
+            if (subId == null
+                    || ((exist.getScore() == null || exist.getScore() == 0)
+                            && !"ACCEPTED".equals(exist.getStatus()))) {
                 Long foundSubId = findLatestUserSubmission(userId, pq);
                 if (foundSubId != null) {
                     subId = foundSubId;
@@ -764,9 +783,22 @@ public class LessonPracticeService {
                                         LessonPracticeQuestion::getTitle,
                                         (a, b) -> a));
 
+        Set<Long> monitorUserIds = new HashSet<>();
+        for (LessonPracticeSubmission s : recentSubs) {
+            if (s.getUserId() != null) monitorUserIds.add(s.getUserId());
+        }
+        for (LessonPracticeMember m : members) {
+            if (m.getUserId() != null) monitorUserIds.add(m.getUserId());
+        }
+        Map<Long, User> userMap =
+                monitorUserIds.isEmpty()
+                        ? Map.of()
+                        : userMapper.findByIds(monitorUserIds).stream()
+                                .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
+
         List<PracticeMonitorVO.RecentActivityItem> recentActivities = new ArrayList<>();
         for (LessonPracticeSubmission s : recentSubs) {
-            User u = userMapper.findById(s.getUserId());
+            User u = userMap.get(s.getUserId());
             recentActivities.add(
                     PracticeMonitorVO.RecentActivityItem.builder()
                             .id(s.getId())
@@ -784,7 +816,7 @@ public class LessonPracticeService {
         List<PracticeMonitorVO.LeaderboardItem> leaderboard = new ArrayList<>();
         int rank = 1;
         for (LessonPracticeMember m : members) {
-            User u = userMapper.findById(m.getUserId());
+            User u = userMap.get(m.getUserId());
             leaderboard.add(
                     PracticeMonitorVO.LeaderboardItem.builder()
                             .rank(rank++)
@@ -821,7 +853,8 @@ public class LessonPracticeService {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
         User user = userMapper.findById(teacherId);
-        boolean isAdmin = user != null && user.getRoles() != null && user.getRoles().contains("ADMIN");
+        boolean isAdmin =
+                user != null && user.getRoles() != null && user.getRoles().contains("ADMIN");
         if (!isAdmin && !practice.getTeacherId().equals(teacherId)) {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权管理该课练");
         }

@@ -7,7 +7,6 @@ import com.kece.user.dto.HeatmapVO;
 import com.kece.user.dto.UpdateProfileRequest;
 import com.kece.user.dto.UserExamRecordVO;
 import com.kece.user.dto.UserProfileVO;
-import com.kece.user.dto.UserTimelineItemVO;
 import com.kece.user.service.ProfileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -78,13 +77,5 @@ public class ProfileController {
     public ApiResponse<List<UserExamRecordVO>> getExams(
             @RequestParam(required = false) Long userId) {
         return ApiResponse.success(profileService.getExams(userId));
-    }
-
-    @Operation(summary = "获取用户最近刷题动态时间线")
-    @RequireRole
-    @GetMapping("/timeline")
-    public ApiResponse<List<UserTimelineItemVO>> getTimeline(
-            @RequestParam(required = false) Long userId) {
-        return ApiResponse.success(profileService.getTimeline(userId));
     }
 }

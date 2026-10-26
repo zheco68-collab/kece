@@ -4,7 +4,6 @@ import { RouterLink, useRouter } from 'vue-router'
 import { adminApi } from '@/api/admin'
 import { objectiveApi } from '@/api/objective'
 import { ApiError } from '@/api/request'
-import AdminNav from '@/components/AdminNav.vue'
 import DataTable from '@/components/DataTable.vue'
 import Pagination from '@/components/Pagination.vue'
 import { useConfirm } from '@/composables/useConfirm'
@@ -158,7 +157,6 @@ onBeforeUnmount(() => {
 <template>
   <div class="admin container">
     <h1 class="page-title">客观题管理</h1>
-    <AdminNav />
 
     <!-- 题型独立分类切换栏（单选题、判断题、多选题、填空题） -->
     <div class="type-segment-tabs card">

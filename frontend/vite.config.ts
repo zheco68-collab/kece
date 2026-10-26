@@ -31,6 +31,20 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/monaco-editor')) {
+            return 'monaco-editor'
+          }
+          if (id.includes('node_modules/katex') || id.includes('node_modules/marked')) {
+            return 'markdown-katex'
+          }
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

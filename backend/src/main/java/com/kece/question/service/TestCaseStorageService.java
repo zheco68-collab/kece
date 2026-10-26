@@ -5,18 +5,14 @@ import com.kece.common.response.ResultCode;
 import com.kece.question.entity.TestCase;
 import com.kece.question.mapper.TestCaseMapper;
 import jakarta.annotation.PostConstruct;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -37,10 +33,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-/**
- * 编程题测试用例文件存储服务。
- * 负责用例落盘、历史数据平滑迁移、大文件流式读写与 Zip 压缩包批量导入导出。
- */
+/** 编程题测试用例文件存储服务。 负责用例落盘、历史数据平滑迁移、大文件流式读写与 Zip 压缩包批量导入导出。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -54,6 +47,8 @@ public class TestCaseStorageService {
     private Path rootPath;
 
     public static final long MAX_PREVIEW_BYTES = 64 * 1024; // 64KB 以上视为大文件预览截断
+    private static final long MAX_ZIP_TOTAL_BYTES = 100L * 1024 * 1024; // 100MB 解压总上限防 Zip Bomb
+    private static final int MAX_ZIP_ENTRIES = 1000; // 单次导入最大文件数上限
 
     @PostConstruct
     public void init() {
@@ -89,23 +84,51 @@ public class TestCaseStorageService {
         return path;
     }
 
-    /**
-     * 单用例写入文件
-     */
+    /** 删除指定题目的整个测试用例目录及文件 */
+    public void deleteQuestionDir(Long questionId) {
+        if (questionId == null) {
+            return;
+        }
+        try {
+            Path qDir = getQuestionDir(questionId);
+            if (Files.exists(qDir)) {
+                try (var stream = Files.walk(qDir)) {
+                    stream.sorted(Comparator.reverseOrder())
+                            .forEach(
+                                    p -> {
+                                        try {
+                                            Files.deleteIfExists(p);
+                                        } catch (IOException ignored) {
+                                        }
+                                    });
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to delete testcase directory for question {}", questionId, e);
+        }
+    }
+
+    /** 单用例写入文件 */
     public void writeCaseFiles(TestCase tc, String input, String expectedOutput) {
         Long qId = tc.getQuestionId();
         Path qDir = getQuestionDir(qId);
         try {
             Files.createDirectories(qDir);
-            String baseName = tc.getCaseNum() != null && tc.getCaseNum() > 0
-                    ? String.valueOf(tc.getCaseNum())
-                    : (tc.getId() != null ? String.valueOf(tc.getId()) : ("tmp_" + System.currentTimeMillis()));
+            String baseName =
+                    tc.getCaseNum() != null && tc.getCaseNum() > 0
+                            ? String.valueOf(tc.getCaseNum())
+                            : (tc.getId() != null
+                                    ? String.valueOf(tc.getId())
+                                    : ("tmp_" + System.currentTimeMillis()));
 
             Path inPath = qDir.resolve(baseName + ".in");
             Path outPath = qDir.resolve(baseName + ".out");
 
             byte[] inBytes = input != null ? input.getBytes(StandardCharsets.UTF_8) : new byte[0];
-            byte[] outBytes = expectedOutput != null ? expectedOutput.getBytes(StandardCharsets.UTF_8) : new byte[0];
+            byte[] outBytes =
+                    expectedOutput != null
+                            ? expectedOutput.getBytes(StandardCharsets.UTF_8)
+                            : new byte[0];
 
             Files.write(inPath, inBytes);
             Files.write(outPath, outBytes);
@@ -115,14 +138,13 @@ public class TestCaseStorageService {
             tc.setInputSize((long) inBytes.length);
             tc.setOutputSize((long) outBytes.length);
         } catch (IOException e) {
-            log.error("Failed to write testcase files for question {}, case {}", qId, tc.getId(), e);
+            log.error(
+                    "Failed to write testcase files for question {}, case {}", qId, tc.getId(), e);
             throw new BusinessException(ResultCode.SYSTEM_ERROR, "测试用例文件写入失败: " + e.getMessage());
         }
     }
 
-    /**
-     * 读取输入文本（小于 MAX_PREVIEW_BYTES 完整读取，大于则截断返回）
-     */
+    /** 读取输入文本（小于 MAX_PREVIEW_BYTES 完整读取，大于则截断返回） */
     public String readInputText(TestCase tc) {
         if (tc.getInputPath() != null) {
             Path path = resolvePath(tc.getInputPath());
@@ -133,9 +155,7 @@ public class TestCaseStorageService {
         return tc.getInput() != null ? tc.getInput() : "";
     }
 
-    /**
-     * 读取期望输出文本（小于 MAX_PREVIEW_BYTES 完整读取，大于则截断返回）
-     */
+    /** 读取期望输出文本（小于 MAX_PREVIEW_BYTES 完整读取，大于则截断返回） */
     public String readOutputText(TestCase tc) {
         if (tc.getOutputPath() != null) {
             Path path = resolvePath(tc.getOutputPath());
@@ -155,7 +175,9 @@ public class TestCaseStorageService {
                 try (InputStream in = Files.newInputStream(path)) {
                     int read = in.read(preview);
                     return new String(preview, 0, Math.max(read, 0), StandardCharsets.UTF_8)
-                            + "\n... [大文件已截断，总大小: " + (fileSize / 1024) + " KB]";
+                            + "\n... [大文件已截断，总大小: "
+                            + (fileSize / 1024)
+                            + " KB]";
                 }
             }
             return Files.readString(path, StandardCharsets.UTF_8);
@@ -177,16 +199,15 @@ public class TestCaseStorageService {
         return p != null && Files.exists(p) ? new FileSystemResource(p) : null;
     }
 
-    /**
-     * 自动平滑迁移未文件化的老用例
-     */
+    /** 自动平滑迁移未文件化的老用例 */
     @Transactional
     public void migrateLegacyCases() {
         List<TestCase> unmigrated = testCaseMapper.findUnmigrated();
         if (unmigrated == null || unmigrated.isEmpty()) {
             return;
         }
-        log.info("Starting migration of {} legacy test cases to file storage...", unmigrated.size());
+        log.info(
+                "Starting migration of {} legacy test cases to file storage...", unmigrated.size());
         Map<Long, Integer> questionSeq = new HashMap<>();
 
         int count = 0;
@@ -203,21 +224,24 @@ public class TestCaseStorageService {
             writeCaseFiles(tc, tc.getInput(), tc.getExpectedOutput());
 
             // 非公开样例且内容已安全落盘，清空数据库文本以彻底卸载 MySQL 存储与传输负担
-            if (Objects.equals(tc.getIsSample(), 0)) {
+            boolean clearInline = Objects.equals(tc.getIsSample(), 0);
+            if (clearInline) {
                 tc.setInput(null);
                 tc.setExpectedOutput(null);
             }
             testCaseMapper.update(tc);
+            if (clearInline) {
+                testCaseMapper.clearInlineContent(tc.getId());
+            }
             count++;
         }
         log.info("Successfully migrated {} legacy test cases to file storage!", count);
     }
 
-    /**
-     * Zip 压缩包批量导入测试用例
-     */
+    /** Zip 压缩包批量导入测试用例 */
     @Transactional
-    public List<TestCase> importZip(Long questionId, MultipartFile file, boolean replaceExisting, boolean firstAsSample) {
+    public List<TestCase> importZip(
+            Long questionId, MultipartFile file, boolean replaceExisting, boolean firstAsSample) {
         if (file == null || file.isEmpty()) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "请选择要上传的 Zip 压缩包");
         }
@@ -229,8 +253,10 @@ public class TestCaseStorageService {
             throw new BusinessException(ResultCode.SYSTEM_ERROR, "无法创建题目文件目录");
         }
 
-        // 读取 Zip 中所有文件条目
+        // 读取 Zip 中所有文件条目（带条目数量与解压总字节数上限，防止 Zip Bomb 导致 OOM）
         Map<String, byte[]> fileMap = new HashMap<>();
+        long totalUncompressedBytes = 0;
+        int entryCount = 0;
         try (ZipInputStream zis = new ZipInputStream(file.getInputStream())) {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
@@ -240,18 +266,27 @@ public class TestCaseStorageService {
                 if (name.contains("__MACOSX") || name.startsWith(".") || name.contains("/.")) {
                     continue;
                 }
+                if (++entryCount > MAX_ZIP_ENTRIES) {
+                    throw new BusinessException(
+                            ResultCode.PARAM_ERROR, "压缩包内文件数量过多（上限 " + MAX_ZIP_ENTRIES + " 个）");
+                }
                 // 只取文件名本身，忽略子目录路径
                 String fileName = Paths.get(name).getFileName().toString();
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 byte[] buf = new byte[65536];
                 int len;
                 while ((len = zis.read(buf)) != -1) {
+                    totalUncompressedBytes += len;
+                    if (totalUncompressedBytes > MAX_ZIP_TOTAL_BYTES) {
+                        throw new BusinessException(ResultCode.PARAM_ERROR, "压缩包解压后总大小超过 100MB 上限");
+                    }
                     baos.write(buf, 0, len);
                 }
                 fileMap.put(fileName, baos.toByteArray());
             }
         } catch (IOException e) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Zip 解压失败，请确保格式正确: " + e.getMessage());
+            throw new BusinessException(
+                    ResultCode.PARAM_ERROR, "Zip 解压失败，请确保格式正确: " + e.getMessage());
         }
 
         if (fileMap.isEmpty()) {
@@ -263,7 +298,8 @@ public class TestCaseStorageService {
         // 或 input*.txt 与 output*.txt / ans*.txt
         List<CasePair> pairs = matchPairs(fileMap);
         if (pairs.isEmpty()) {
-            throw new BusinessException(ResultCode.PARAM_ERROR,
+            throw new BusinessException(
+                    ResultCode.PARAM_ERROR,
                     "未能识别到成对的输入输出文件。命名建议: 1.in/1.out、input1.txt/output1.txt 等");
         }
 
@@ -275,12 +311,17 @@ public class TestCaseStorageService {
             try {
                 if (Files.exists(qDir)) {
                     try (var s = Files.list(qDir)) {
-                        s.forEach(p -> {
-                            try { Files.deleteIfExists(p); } catch (Exception ignored) {}
-                        });
+                        s.forEach(
+                                p -> {
+                                    try {
+                                        Files.deleteIfExists(p);
+                                    } catch (Exception ignored) {
+                                    }
+                                });
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
             testCaseMapper.deleteByQuestionId(questionId);
         }
 
@@ -314,9 +355,11 @@ public class TestCaseStorageService {
             tc.setInputSize((long) pair.getInBytes().length);
             tc.setOutputSize((long) pair.getOutBytes().length);
             tc.setScoreWeight(10);
-            
+
             // 是否判定为公开样例：第一条且启用勾选，或者文件名中包含 sample
-            boolean isSample = (firstAsSample && i == 0 && startSeq == 1) || pair.getBaseName().toLowerCase().contains("sample");
+            boolean isSample =
+                    (firstAsSample && i == 0 && startSeq == 1)
+                            || pair.getBaseName().toLowerCase().contains("sample");
             tc.setIsSample(isSample ? 1 : 0);
 
             // 仅公开样例（前端题目详情 Markdown 预览需要）在 DB 中保留一份文本副本；其余非公开测试点纯文件系统托管，DB 中不存文本，彻底卸载 MySQL 性能负担
@@ -338,9 +381,7 @@ public class TestCaseStorageService {
         return newCases;
     }
 
-    /**
-     * 导出该题所有测试用例为 Zip 压缩包流（流式传输，避免将大文件读取为 byte 数组占用堆内存）
-     */
+    /** 导出该题所有测试用例为 Zip 压缩包流（流式传输，避免将大文件读取为 byte 数组占用堆内存） */
     public void exportZip(Long questionId, ZipOutputStream zos) throws IOException {
         List<TestCase> cases = testCaseMapper.findByQuestionId(questionId);
         if (cases == null || cases.isEmpty()) {
@@ -407,8 +448,6 @@ public class TestCaseStorageService {
         Map<String, byte[]> inMap = new HashMap<>();
         Map<String, byte[]> outMap = new HashMap<>();
 
-        Pattern inPattern = Pattern.compile("^(.*?)(?:[._-]?in|[._-]?input)?\\.?(?:in|txt|data)?$", Pattern.CASE_INSENSITIVE);
-
         for (Map.Entry<String, byte[]> e : fileMap.entrySet()) {
             String name = e.getKey();
             String lower = name.toLowerCase();
@@ -441,10 +480,16 @@ public class TestCaseStorageService {
                 if (inName.toLowerCase().endsWith(".in") || inName.toLowerCase().contains("in")) {
                     String base = inName.replaceAll("[._-]?(in|input).*", "");
                     for (String outName : fileMap.keySet()) {
-                        if (outName.toLowerCase().endsWith(".out") || outName.toLowerCase().endsWith(".ans")) {
+                        if (outName.toLowerCase().endsWith(".out")
+                                || outName.toLowerCase().endsWith(".ans")) {
                             String outBase = outName.replaceAll("[._-]?(out|ans|output).*", "");
                             if (base.equalsIgnoreCase(outBase)) {
-                                pairs.add(new CasePair(base, base, fileMap.get(inName), fileMap.get(outName)));
+                                pairs.add(
+                                        new CasePair(
+                                                base,
+                                                base,
+                                                fileMap.get(inName),
+                                                fileMap.get(outName)));
                                 break;
                             }
                         }
@@ -476,7 +521,8 @@ public class TestCaseStorageService {
                         if (n1 != n2) {
                             return Long.compare(n1, n2);
                         }
-                    } catch (NumberFormatException ignored) {}
+                    } catch (NumberFormatException ignored) {
+                    }
                 }
                 int cmp = g1.compareToIgnoreCase(g2);
                 if (cmp != 0) {

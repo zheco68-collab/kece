@@ -59,8 +59,11 @@ public class ExamRankService {
         }
 
         List<ExamQuestion> examQuestions = examQuestionMapper.findByExamId(examId);
-        Map<Long, ExamQuestion> eqMap = examQuestions.stream()
-                .collect(java.util.stream.Collectors.toMap(ExamQuestion::getId, q -> q, (a, b) -> a));
+        Map<Long, ExamQuestion> eqMap =
+                examQuestions.stream()
+                        .collect(
+                                java.util.stream.Collectors.toMap(
+                                        ExamQuestion::getId, q -> q, (a, b) -> a));
         int examTotalFullScore =
                 examQuestions.stream().mapToInt(q -> q.getScore() == null ? 0 : q.getScore()).sum();
 
@@ -87,7 +90,8 @@ public class ExamRankService {
                     status = s.getStatus();
                     score = scaleScore(s.getScore(), eq.getScore(), status);
                 }
-            } else if ("DB".equals(eq.getQuestionType()) || "DATABASE".equals(eq.getQuestionType())) {
+            } else if ("DB".equals(eq.getQuestionType())
+                    || "DATABASE".equals(eq.getQuestionType())) {
                 DbSubmission s = latestDb.get(key(row.getUserId(), eq.getQuestionId()));
                 if (s != null) {
                     status = s.getStatus();
@@ -102,19 +106,43 @@ public class ExamRankService {
 
         // 标准 ACM 罚时统计：仅对最终通过的题目累计罚时；未通过题目不计罚时；首 AC 后的提交不计罚时
         if (acm) {
-            record ContestAttempt(Long userId, Long questionId, java.time.LocalDateTime createdAt, String status) {}
+            record ContestAttempt(
+                    String type,
+                    Long userId,
+                    Long questionId,
+                    java.time.LocalDateTime createdAt,
+                    String status) {}
             List<ContestAttempt> allAttempts = new ArrayList<>();
             for (Submission s : codeSubs) {
-                allAttempts.add(new ContestAttempt(s.getUserId(), s.getQuestionId(), s.getCreatedAt(), s.getStatus()));
+                allAttempts.add(
+                        new ContestAttempt(
+                                "ALGO",
+                                s.getUserId(),
+                                s.getQuestionId(),
+                                s.getCreatedAt(),
+                                s.getStatus()));
             }
             for (DbSubmission s : dbSubs) {
-                allAttempts.add(new ContestAttempt(s.getUserId(), s.getQuestionId(), s.getCreatedAt(), s.getStatus()));
+                allAttempts.add(
+                        new ContestAttempt(
+                                "DB",
+                                s.getUserId(),
+                                s.getQuestionId(),
+                                s.getCreatedAt(),
+                                s.getStatus()));
             }
-            allAttempts.sort(Comparator.comparing(ContestAttempt::createdAt, Comparator.nullsLast(Comparator.naturalOrder())));
+            allAttempts.sort(
+                    Comparator.comparing(
+                            ContestAttempt::createdAt,
+                            Comparator.nullsLast(Comparator.naturalOrder())));
 
             Map<String, List<ContestAttempt>> attemptsByProblem = new HashMap<>();
             for (ContestAttempt a : allAttempts) {
-                attemptsByProblem.computeIfAbsent(key(a.userId(), a.questionId()), k -> new ArrayList<>()).add(a);
+                attemptsByProblem
+                        .computeIfAbsent(
+                                typedKey(a.type(), a.userId(), a.questionId()),
+                                k -> new ArrayList<>())
+                        .add(a);
             }
 
             for (Map.Entry<Long, RankAgg> entry : aggByUser.entrySet()) {
@@ -125,19 +153,33 @@ public class ExamRankService {
 
                 for (ExamQuestion eq : examQuestions) {
                     if ("OBJECTIVE".equals(eq.getQuestionType())) {
-                        ExamSubmission sub = answers.stream()
-                                .filter(a -> a.getUserId().equals(uid) && a.getExamQuestionId().equals(eq.getId()))
-                                .findFirst().orElse(null);
+                        ExamSubmission sub =
+                                answers.stream()
+                                        .filter(
+                                                a ->
+                                                        a.getUserId().equals(uid)
+                                                                && a.getExamQuestionId()
+                                                                        .equals(eq.getId()))
+                                        .findFirst()
+                                        .orElse(null);
                         if (sub != null && isAccepted(sub.getStatus())) {
                             solvedCount++;
                             if (sub.getCreatedAt() != null && exam.getStartTime() != null) {
-                                totalPenalty += Math.max(0, Duration.between(exam.getStartTime(), sub.getCreatedAt()).toMinutes());
+                                totalPenalty +=
+                                        Math.max(
+                                                0,
+                                                Duration.between(
+                                                                exam.getStartTime(),
+                                                                sub.getCreatedAt())
+                                                        .toMinutes());
                             }
                         }
                         continue;
                     }
 
-                    List<ContestAttempt> attempts = attemptsByProblem.get(key(uid, eq.getQuestionId()));
+                    String normType = "ALGO".equals(eq.getQuestionType()) ? "ALGO" : "DB";
+                    List<ContestAttempt> attempts =
+                            attemptsByProblem.get(typedKey(normType, uid, eq.getQuestionId()));
                     if (attempts == null || attempts.isEmpty()) {
                         continue;
                     }
@@ -149,7 +191,13 @@ public class ExamRankService {
                         if (isAccepted(att.status())) {
                             ac = true;
                             if (att.createdAt() != null && exam.getStartTime() != null) {
-                                acMinutes = Math.max(0, Duration.between(exam.getStartTime(), att.createdAt()).toMinutes());
+                                acMinutes =
+                                        Math.max(
+                                                0,
+                                                Duration.between(
+                                                                exam.getStartTime(),
+                                                                att.createdAt())
+                                                        .toMinutes());
                             }
                             break;
                         } else {
@@ -167,9 +215,17 @@ public class ExamRankService {
             }
         }
 
+        Map<Long, User> userMap =
+                aggByUser.isEmpty()
+                        ? Map.of()
+                        : userMapper.findByIds(aggByUser.keySet()).stream()
+                                .collect(
+                                        java.util.stream.Collectors.toMap(
+                                                User::getId, u -> u, (a, b) -> a));
+
         List<ExamRankVO> result = new ArrayList<>();
         for (Map.Entry<Long, RankAgg> e : aggByUser.entrySet()) {
-            User user = userMapper.findById(e.getKey());
+            User user = userMap.get(e.getKey());
             RankAgg agg = e.getValue();
             result.add(
                     ExamRankVO.builder()
@@ -204,14 +260,22 @@ public class ExamRankService {
         if ("ACCEPTED".equals(status)) {
             return fullScore != null ? fullScore : 0;
         }
-        if (judgeScore == null || fullScore == null || judgeScore <= 0) {
+        if (judgeScore == null || fullScore == null || judgeScore <= 0 || fullScore <= 0) {
             return 0;
         }
-        return Math.min((int) Math.round((double) judgeScore * fullScore / 100.0), fullScore);
+        int earned = (int) Math.round((double) judgeScore * fullScore / 100.0);
+        if (earned == 0 && fullScore > 0 && judgeScore > 0) {
+            earned = 1;
+        }
+        return Math.min(earned, fullScore);
     }
 
     private String key(Long userId, Long questionId) {
         return userId + ":" + questionId;
+    }
+
+    private String typedKey(String type, Long userId, Long questionId) {
+        return type + ":" + userId + ":" + questionId;
     }
 
     /** 排名聚合中间态。 */

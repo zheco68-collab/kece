@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { practiceApi } from '@/api/practice'
 import { adminApi } from '@/api/admin'
 import { ApiError } from '@/api/request'
-import AdminNav from '@/components/AdminNav.vue'
 import FormField from '@/components/FormField.vue'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/user'
@@ -302,7 +301,6 @@ onMounted(loadSource)
 <template>
   <div class="practice-edit container">
     <h1 class="page-title">发起课堂练习</h1>
-    <AdminNav />
 
     <p v-if="pageError" class="submit-error">{{ pageError }}</p>
 

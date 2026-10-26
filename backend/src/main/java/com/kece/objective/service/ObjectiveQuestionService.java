@@ -39,10 +39,30 @@ public class ObjectiveQuestionService {
 
     public PageResult<ObjectiveQuestionVO> list(String type, String keyword, int page, int size) {
         PageParam p = PageParam.of(page, size);
-        List<ObjectiveQuestion> items = mapper.findPage(type, keyword, 1, null, p.offset(), p.size());
+        List<ObjectiveQuestion> items =
+                mapper.findPage(type, keyword, 1, null, p.offset(), p.size());
         long total = mapper.count(type, keyword, 1, null);
+        java.util.Map<Long, User> authorCache = new java.util.HashMap<>();
         return new PageResult<>(
-                items.stream().map(this::toListVO).toList(),
+                items.stream()
+                        .map(
+                                q -> {
+                                    User author = null;
+                                    if (q.getCreatedBy() != null) {
+                                        author =
+                                                authorCache.computeIfAbsent(
+                                                        q.getCreatedBy(),
+                                                        id -> {
+                                                            try {
+                                                                return userMapper.findById(id);
+                                                            } catch (Exception ignored) {
+                                                                return null;
+                                                            }
+                                                        });
+                                    }
+                                    return toVO(q, isPrivileged(q), author);
+                                })
+                        .toList(),
                 total,
                 p.page(),
                 p.size());
@@ -68,10 +88,7 @@ public class ObjectiveQuestionService {
                 mapper.findPage(type, keyword, status, targetCreatedBy, p.offset(), p.size());
         long total = mapper.count(type, keyword, status, targetCreatedBy);
         return new PageResult<>(
-                items.stream().map(this::toListVO).toList(),
-                total,
-                p.page(),
-                p.size());
+                items.stream().map(this::toListVO).toList(), total, p.page(), p.size());
     }
 
     @Transactional
@@ -175,15 +192,12 @@ public class ObjectiveQuestionService {
         return submissionMapper.findCorrectQuestionIds(userId);
     }
 
-    /** 客观题作答记录：默认本人记录，可指定 targetUserId 查看该用户作答，按 id 倒序分页；correct 为 null 表示不筛对错。 */
+    /** 客观题作答记录：默认本人记录，可指定 targetUserId 查看该用户作答（非本人自动脱敏作答原文），按 id 倒序分页；correct 为 null 表示不筛对错。 */
     public PageResult<ObjectiveSubmissionListVO> listSubmissions(
             Long targetUserId, Integer correct, int page, int size) {
         AuthUser user = AuthContextHolder.get();
         if (user == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
-        }
-        if (targetUserId != null && !targetUserId.equals(user.getId()) && !user.hasRole(Role.ADMIN) && !user.hasRole(Role.TEACHER)) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "无权查看其他用户的客观题作答记录");
         }
         Long userId = targetUserId != null ? targetUserId : user.getId();
         PageParam p = PageParam.of(page, size);
@@ -232,7 +246,8 @@ public class ObjectiveQuestionService {
         if (user == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
-        if (user.hasRole(Role.ADMIN) || java.util.Objects.equals(question.getCreatedBy(), user.getId())) {
+        if (user.hasRole(Role.ADMIN)
+                || java.util.Objects.equals(question.getCreatedBy(), user.getId())) {
             return;
         }
         throw new BusinessException(ResultCode.FORBIDDEN);
@@ -285,11 +300,19 @@ public class ObjectiveQuestionService {
             // 判断题固定只有对和错两个选项
             question.setOptions(toOptionsJson(List.of("对", "错")));
             String rawAns = request.getAnswer() != null ? request.getAnswer().trim() : "";
-            if (rawAns.equals("对") || rawAns.equals("正确") || rawAns.equalsIgnoreCase("TRUE")
-                    || rawAns.equalsIgnoreCase("T") || rawAns.equalsIgnoreCase("A") || rawAns.equals("1")) {
+            if (rawAns.equals("对")
+                    || rawAns.equals("正确")
+                    || rawAns.equalsIgnoreCase("TRUE")
+                    || rawAns.equalsIgnoreCase("T")
+                    || rawAns.equalsIgnoreCase("A")
+                    || rawAns.equals("1")) {
                 question.setAnswer("对");
-            } else if (rawAns.equals("错") || rawAns.equals("错误") || rawAns.equalsIgnoreCase("FALSE")
-                    || rawAns.equalsIgnoreCase("F") || rawAns.equalsIgnoreCase("B") || rawAns.equals("0")) {
+            } else if (rawAns.equals("错")
+                    || rawAns.equals("错误")
+                    || rawAns.equalsIgnoreCase("FALSE")
+                    || rawAns.equalsIgnoreCase("F")
+                    || rawAns.equalsIgnoreCase("B")
+                    || rawAns.equals("0")) {
                 question.setAnswer("错");
             } else {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "判断题答案只能是对或错");

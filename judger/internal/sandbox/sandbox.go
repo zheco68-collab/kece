@@ -72,8 +72,8 @@ func (r *Runner) Compile(ctx context.Context, lang, ws string) (stderr string, o
 	return truncate(compileLog, maxStderrBytes), code == 0, nil
 }
 
-// Run 以给定输入运行编译产物，返回标准输出、退出码与耗时。
-func (r *Runner) Run(ctx context.Context, lang, ws, input string, timeLimitMs, memoryMb int) (RunResult, error) {
+// Run 运行编译产物（标准输入已写入 ws/input.txt），返回标准输出、退出码与耗时。
+func (r *Runner) Run(ctx context.Context, lang, ws string, timeLimitMs, memoryMb int) (RunResult, error) {
 	res := RunResult{}
 	sec := fmt.Sprintf("%.3f", float64(timeLimitMs)/1000.0)
 	shell := runCommand(lang, sec)
@@ -173,7 +173,7 @@ func runCommand(lang, sec string) string {
 	default:
 		return "exit 1"
 	}
-	return fmt.Sprintf("%s; code=$?; cat /sys/fs/cgroup/memory.peak > %s 2>/dev/null; exit $code", run, memProbePath)
+	return fmt.Sprintf("echo 0 > /sys/fs/cgroup/memory.peak 2>/dev/null || true; %s; code=$?; cat /sys/fs/cgroup/memory.peak > %s 2>/dev/null; exit $code", run, memProbePath)
 }
 
 // readMemProbe 读取容器写回的峰值内存（KB）。文件缺失（内核无 memory.peak）或内容非法时返回 nil。
@@ -229,24 +229,23 @@ type Session struct {
 	memoryMb    int
 }
 
-// StartSession 启动一个单次提交沙箱容器，供后续编译与全部测试用例复用。
+// StartSession 启动一个单次提交的运行沙箱容器，供全部测试用例复用。
+// 编译阶段已在独立容器中完成，因此会话容器直接以题目的 runMemoryMb 启动，
+// 避免编译器（g++/javac/tsc）的高内存峰值污染 cgroup memory.peak 读数。
 func (r *Runner) StartSession(ctx context.Context, lang, ws string, runMemoryMb int) (*Session, error) {
 	image := r.imageFor(lang)
 	if image == "" {
 		return nil, fmt.Errorf("no image for language: %s", lang)
 	}
-
-	_, needCompile := compileCommand(lang)
-	initMem := runMemoryMb
-	if needCompile && r.CompileMemoryMb > initMem {
-		initMem = r.CompileMemoryMb
+	if runMemoryMb <= 0 {
+		runMemoryMb = 256
 	}
 
 	args := []string{
 		"run", "-d",
 		"--network", "none",
-		"--memory", fmt.Sprintf("%dm", initMem),
-		"--memory-swap", fmt.Sprintf("%dm", initMem),
+		"--memory", fmt.Sprintf("%dm", runMemoryMb),
+		"--memory-swap", fmt.Sprintf("%dm", runMemoryMb),
 		"--pids-limit", "64",
 		"--cpus", "1",
 		"--cap-drop", "ALL",
@@ -275,7 +274,7 @@ func (r *Runner) StartSession(ctx context.Context, lang, ws string, runMemoryMb 
 		containerID: cid,
 		ws:          ws,
 		lang:        lang,
-		memoryMb:    initMem,
+		memoryMb:    runMemoryMb,
 	}, nil
 }
 
@@ -289,59 +288,8 @@ func (s *Session) Close(ctx context.Context) error {
 	return err
 }
 
-// ApplyRunMemoryLimit 在编译完成后将容器内存限制收缩到题目的运行内存限制。
-func (s *Session) ApplyRunMemoryLimit(ctx context.Context, targetMemoryMb int) error {
-	if s == nil || s.containerID == "" || targetMemoryMb <= 0 {
-		return nil
-	}
-	if s.memoryMb == targetMemoryMb {
-		return nil
-	}
-	args := []string{
-		"update",
-		"--memory", fmt.Sprintf("%dm", targetMemoryMb),
-		"--memory-swap", fmt.Sprintf("%dm", targetMemoryMb),
-		s.containerID,
-	}
-	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	_, _, code, err := runDocker(timeoutCtx, args)
-	if err == nil && code == 0 {
-		s.memoryMb = targetMemoryMb
-	}
-	return err
-}
-
-// Compile 在复用的容器中执行编译命令。
-func (s *Session) Compile(ctx context.Context) (stderr string, ok bool, err error) {
-	shell, need := compileCommand(s.lang)
-	if !need {
-		return "", true, nil
-	}
-	timeoutCtx, cancel := context.WithTimeout(ctx, s.runner.CompileTimeout)
-	defer cancel()
-
-	args := []string{"exec", s.containerID, "sh", "-c", shell}
-	stdout, stderr, code, err := runDocker(timeoutCtx, args)
-	if err != nil {
-		if ctx.Err() != nil {
-			return "", false, ctx.Err()
-		}
-		if timeoutCtx.Err() != nil {
-			return "compile timed out", false, nil
-		}
-		return "", false, fmt.Errorf("docker exec compile: %w", err)
-	}
-	compileLog := stderr
-	if compileLog == "" {
-		compileLog = stdout
-	}
-	return truncate(compileLog, maxStderrBytes), code == 0, nil
-}
-
 // Run 在复用的容器中执行单个测试用例。
-func (s *Session) Run(ctx context.Context, input string, timeLimitMs int) (RunResult, error) {
+func (s *Session) Run(ctx context.Context, timeLimitMs int) (RunResult, error) {
 	res := RunResult{}
 	sec := fmt.Sprintf("%.3f", float64(timeLimitMs)/1000.0)
 	shell := runCommand(s.lang, sec)

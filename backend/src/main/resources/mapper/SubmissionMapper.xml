@@ -118,13 +118,4 @@
          WHERE id = #{id}
     </update>
 
-    <select id="countAcDaily" resultType="map">
-        SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS `date`, COUNT(*) AS `count`
-        FROM `submission`
-        WHERE user_id = #{userId}
-          AND status = 'ACCEPTED'
-          AND created_at &gt;= #{startDate}
-        GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d')
-    </select>
-
 </mapper>

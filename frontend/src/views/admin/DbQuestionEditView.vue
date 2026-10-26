@@ -3,7 +3,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { databaseApi } from '@/api/database'
 import { ApiError } from '@/api/request'
-import AdminNav from '@/components/AdminNav.vue'
 import FormField from '@/components/FormField.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import DbSchemaViewer from '@/components/DbSchemaViewer.vue'
@@ -214,7 +213,6 @@ onMounted(() => {
   <div class="admin container">
     <RouterLink class="back" to="/admin/db-questions">← 返回数据库题管理</RouterLink>
     <h1 class="page-title">{{ isEdit ? '编辑数据库题' : '新建数据库题' }}</h1>
-    <AdminNav />
 
     <p v-if="loading" class="muted">加载中…</p>
     <p v-if="pageError" class="submit-error">{{ pageError }}</p>

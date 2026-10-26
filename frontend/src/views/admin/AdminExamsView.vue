@@ -3,7 +3,6 @@ import { onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { examApi, type Exam } from '@/api/exam';
 import { ApiError } from '@/api/request';
-import AdminNav from '@/components/AdminNav.vue';
 import DataTable from '@/components/DataTable.vue';
 import Pagination from '@/components/Pagination.vue';
 import { useConfirm } from '@/composables/useConfirm';
@@ -131,7 +130,6 @@ onMounted(load);
 <template>
   <div class="admin-exams container">
     <h1 class="page-title">考试管理</h1>
-    <AdminNav />
 
     <div class="toolbar">
       <input v-model="keyword" class="input search" type="text" placeholder="搜索试卷标题…" />

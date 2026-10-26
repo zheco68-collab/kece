@@ -4,7 +4,6 @@ import { RouterLink, useRouter } from 'vue-router'
 import { adminApi } from '@/api/admin'
 import { questionApi } from '@/api/question'
 import { ApiError } from '@/api/request'
-import AdminNav from '@/components/AdminNav.vue'
 import DataTable from '@/components/DataTable.vue'
 import Pagination from '@/components/Pagination.vue'
 import { useConfirm } from '@/composables/useConfirm'
@@ -154,7 +153,6 @@ onBeforeUnmount(() => {
 <template>
   <div class="admin container">
     <h1 class="page-title">编程题管理</h1>
-    <AdminNav />
 
     <div class="filter-bar card">
       <input v-model="keyword" class="input keyword-input" type="search" placeholder="标题关键词" />

@@ -14,6 +14,8 @@ public interface TestCaseMapper {
 
     int update(TestCase testCase);
 
+    int clearInlineContent(Long id);
+
     int deleteById(Long id);
 
     int deleteByQuestionId(Long questionId);

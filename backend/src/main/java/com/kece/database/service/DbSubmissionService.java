@@ -99,15 +99,12 @@ public class DbSubmissionService {
         return pending;
     }
 
-    /** 数据库提交记录列表：默认本人提交，可指定 targetUserId 查看该用户提交，按 id 倒序分页。 */
+    /** 数据库提交记录列表：默认本人提交，可指定 targetUserId 查看该用户提交（非本人自动脱敏 SQL 原文），按 id 倒序分页。 */
     public PageResult<DbSubmissionListVO> list(
             Long targetUserId, String status, int page, int size) {
         AuthUser user = AuthContextHolder.get();
         if (user == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
-        }
-        if (targetUserId != null && !targetUserId.equals(user.getId()) && !user.hasRole(Role.ADMIN) && !user.hasRole(Role.TEACHER)) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "无权查看其他用户的提交记录");
         }
         Long userId = targetUserId != null ? targetUserId : user.getId();
         PageParam p = PageParam.of(page, size);
@@ -165,15 +162,27 @@ public class DbSubmissionService {
         DbSubmission submission = null;
         String ownerId = redis.opsForValue().get(ownerKey(id));
         if (ownerId != null) {
-            // 快路径：提交人 + 题目归属双重判定（出题人可看自己所出题目的提交）
-            submission = submissionMapper.findById(id);
-            if (submission == null || !canAccessSubmission(user, submission)) {
+            boolean isOwnerOrAdmin =
+                    user.hasRole(Role.ADMIN) || ownerId.equals(String.valueOf(user.getId()));
+            // 非提交人且非教师/管理员：无需查库即可直接拒绝
+            if (!isOwnerOrAdmin && !user.hasRole(Role.TEACHER)) {
                 throw new BusinessException(ResultCode.FORBIDDEN);
             }
             String cached = redis.opsForValue().get(statusKey(id));
             if (cached != null) {
-                return sanitize(
-                        readJson(cached, SubmissionVO.class), user, submission.getQuestionId());
+                SubmissionVO cachedVo = readJson(cached, SubmissionVO.class);
+                // 轮询快路径：非终态（PENDING/COMPILING/JUDGING）无测试点详情，提交人或管理员直接从 Redis 返回，免查 MySQL
+                if (isOwnerOrAdmin
+                        && cachedVo != null
+                        && cachedVo.getStatus() != null
+                        && !SubmissionStatus.from(cachedVo.getStatus()).isTerminal()) {
+                    return cachedVo;
+                }
+                submission = submissionMapper.findById(id);
+                if (submission == null || !canAccessSubmission(user, submission)) {
+                    throw new BusinessException(ResultCode.FORBIDDEN);
+                }
+                return sanitize(cachedVo, user, submission.getQuestionId());
             }
         }
         if (submission == null) {
@@ -198,7 +207,7 @@ public class DbSubmissionService {
             return vo;
         }
         boolean privileged = isPrivilegedForQuestion(user, questionId);
-        Set<Long> sampleCaseIds = findSampleCaseIds(vo.getSubmissionId());
+        Set<Long> sampleCaseIds = findSampleCaseIds(questionId);
         report.forEach(
                 c -> {
                     if (sampleCaseIds.contains(c.getCaseId()) || privileged) {
@@ -284,13 +293,11 @@ public class DbSubmissionService {
     }
 
     /** 该提交所属题目的样例测试点 id；题目已删除或查不到时返回空集合（等价于全部隐藏）。 */
-    private Set<Long> findSampleCaseIds(Long submissionId) {
-        DbSubmission submission =
-                submissionId == null ? null : submissionMapper.findById(submissionId);
-        if (submission == null) {
+    private Set<Long> findSampleCaseIds(Long questionId) {
+        if (questionId == null) {
             return Set.of();
         }
-        List<Long> ids = testCaseMapper.findSampleCaseIds(submission.getQuestionId());
+        List<Long> ids = testCaseMapper.findSampleCaseIds(questionId);
         return ids == null || ids.isEmpty() ? Set.of() : new HashSet<>(ids);
     }
 
@@ -327,9 +334,10 @@ public class DbSubmissionService {
         }
         SubmissionResultVO result = vo.getResult();
         DbSubmission sub = submissionMapper.findById(submissionId);
-        boolean newlyAccepted = sub != null
-                && !"ACCEPTED".equals(sub.getStatus())
-                && SubmissionStatus.ACCEPTED.name().equals(vo.getStatus());
+        boolean newlyAccepted =
+                sub != null
+                        && !"ACCEPTED".equals(sub.getStatus())
+                        && SubmissionStatus.ACCEPTED.name().equals(vo.getStatus());
 
         submissionMapper.updateResult(
                 submissionId,
@@ -339,7 +347,8 @@ public class DbSubmissionService {
                 result == null ? null : writeJson(result));
 
         if (newlyAccepted) {
-            LocalDate date = sub.getCreatedAt() != null ? sub.getCreatedAt().toLocalDate() : LocalDate.now();
+            LocalDate date =
+                    sub.getCreatedAt() != null ? sub.getCreatedAt().toLocalDate() : LocalDate.now();
             userDailyAcService.recordDbAc(sub.getUserId(), date);
         }
     }

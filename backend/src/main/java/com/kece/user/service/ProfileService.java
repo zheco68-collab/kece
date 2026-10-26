@@ -3,23 +3,18 @@ package com.kece.user.service;
 import com.kece.common.exception.BusinessException;
 import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
-import com.kece.database.dto.DbSubmissionListVO;
-import com.kece.database.mapper.DbSubmissionMapper;
 import com.kece.exam.dto.ExamRankVO;
 import com.kece.exam.entity.Exam;
 import com.kece.exam.entity.ExamSubmission;
 import com.kece.exam.mapper.ExamMapper;
 import com.kece.exam.mapper.ExamSubmissionMapper;
 import com.kece.exam.service.ExamRankService;
-import com.kece.submission.dto.SubmissionListVO;
-import com.kece.submission.mapper.SubmissionMapper;
 import com.kece.user.dto.ChangePasswordRequest;
 import com.kece.user.dto.HeatmapDayVO;
 import com.kece.user.dto.HeatmapVO;
 import com.kece.user.dto.UpdateProfileRequest;
 import com.kece.user.dto.UserExamRecordVO;
 import com.kece.user.dto.UserProfileVO;
-import com.kece.user.dto.UserTimelineItemVO;
 import com.kece.user.entity.User;
 import com.kece.user.entity.UserDailyAc;
 import com.kece.user.mapper.UserMapper;
@@ -56,8 +51,6 @@ public class ProfileService {
     private static final long MAX_AVATAR_BYTES = 5 * 1024 * 1024; // 5MB
 
     private final UserMapper userMapper;
-    private final SubmissionMapper submissionMapper;
-    private final DbSubmissionMapper dbSubmissionMapper;
     private final ExamMapper examMapper;
     private final ExamSubmissionMapper examSubmissionMapper;
     private final ExamRankService examRankService;
@@ -103,6 +96,9 @@ public class ProfileService {
         }
 
         try {
+            User currentUser = userMapper.findById(userId);
+            String oldAvatarUrl = currentUser != null ? currentUser.getAvatarUrl() : null;
+
             Path uploadDir = Paths.get("uploads", "avatars").toAbsolutePath();
             if (!Files.exists(uploadDir)) {
                 Files.createDirectories(uploadDir);
@@ -113,6 +109,19 @@ public class ProfileService {
 
             String avatarUrl = "/api/v1/uploads/avatars/" + filename;
             userMapper.updateAvatar(userId, avatarUrl);
+
+            if (oldAvatarUrl != null
+                    && oldAvatarUrl.startsWith("/api/v1/uploads/avatars/avatar_")) {
+                String oldFilename = oldAvatarUrl.substring("/api/v1/uploads/avatars/".length());
+                if (!oldFilename.contains("/")
+                        && !oldFilename.contains("\\")
+                        && !oldFilename.equals(filename)) {
+                    try {
+                        Files.deleteIfExists(uploadDir.resolve(oldFilename));
+                    } catch (IOException ignored) {
+                    }
+                }
+            }
             return avatarUrl;
         } catch (IOException e) {
             log.error("保存头像文件失败", e);
@@ -149,7 +158,9 @@ public class ProfileService {
         if (dailyList != null) {
             for (UserDailyAc r : dailyList) {
                 if (r.getAcDate() != null) {
-                    acMap.put(r.getAcDate().toString(), r.getTotalCount() != null ? r.getTotalCount() : 0);
+                    acMap.put(
+                            r.getAcDate().toString(),
+                            r.getTotalCount() != null ? r.getTotalCount() : 0);
                 }
             }
         }
@@ -266,56 +277,6 @@ public class ProfileService {
                         UserExamRecordVO::getSubmittedAt,
                         Comparator.nullsLast(Comparator.reverseOrder())));
         return records;
-    }
-
-    /** 最近动态时间线（合并算法与数据库评测提交，取最新 15 条）。 */
-    public List<UserTimelineItemVO> getTimeline(Long targetUserId) {
-        Long userId = targetUserId != null ? targetUserId : requireUserId();
-        List<SubmissionListVO> algoSubs =
-                submissionMapper.findPage(userId, null, null, null, 0, 15);
-        List<DbSubmissionListVO> dbSubs =
-                dbSubmissionMapper.findPage(userId, null, null, null, 0, 15);
-
-        List<UserTimelineItemVO> items = new ArrayList<>();
-        if (algoSubs != null) {
-            for (SubmissionListVO s : algoSubs) {
-                items.add(
-                        UserTimelineItemVO.builder()
-                                .submissionId(s.getSubmissionId())
-                                .questionId(s.getQuestionId())
-                                .questionTitle(s.getQuestionTitle())
-                                .type("ALGO")
-                                .status(s.getStatus())
-                                .language(s.getLanguage())
-                                .timeUsedMs(s.getTimeUsedMs())
-                                .createdAt(s.getCreatedAt())
-                                .build());
-            }
-        }
-        if (dbSubs != null) {
-            for (DbSubmissionListVO s : dbSubs) {
-                items.add(
-                        UserTimelineItemVO.builder()
-                                .submissionId(s.getSubmissionId())
-                                .questionId(s.getQuestionId())
-                                .questionTitle(s.getQuestionTitle())
-                                .type("DB")
-                                .status(s.getStatus())
-                                .language("SQL")
-                                .timeUsedMs(s.getTimeUsedMs())
-                                .createdAt(s.getCreatedAt())
-                                .build());
-            }
-        }
-
-        items.sort(
-                Comparator.comparing(
-                        UserTimelineItemVO::getCreatedAt,
-                        Comparator.nullsLast(Comparator.reverseOrder())));
-        if (items.size() > 15) {
-            items = items.subList(0, 15);
-        }
-        return items;
     }
 
     private Long requireUserId() {

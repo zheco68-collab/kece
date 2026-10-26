@@ -3,7 +3,6 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { ApiError } from '@/api/request'
 import { objectiveApi } from '@/api/objective'
-import AdminNav from '@/components/AdminNav.vue'
 import FormField from '@/components/FormField.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import { useToast } from '@/composables/useToast'
@@ -160,7 +159,6 @@ onMounted(() => {
   <div class="admin container">
     <RouterLink class="back" to="/admin/objective-questions">← 返回客观题管理</RouterLink>
     <h1 class="page-title">{{ isEdit ? '编辑客观题' : '新建客观题' }}</h1>
-    <AdminNav />
 
     <p v-if="loading" class="muted">加载中…</p>
     <p v-if="pageError" class="submit-error">{{ pageError }}</p>

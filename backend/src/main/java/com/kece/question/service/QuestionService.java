@@ -40,11 +40,6 @@ public class QuestionService {
     private final TestCaseStorageService testCaseStorageService;
 
     public PageResult<QuestionVO> list(
-            String keyword, String difficulty, int page, int size, boolean all) {
-        return list(keyword, difficulty, null, page, size, all);
-    }
-
-    public PageResult<QuestionVO> list(
             String keyword, String difficulty, String userStatus, int page, int size, boolean all) {
         PageParam p = PageParam.of(page, size);
         Integer status = (all && isPrivileged()) ? null : 1;
@@ -74,8 +69,16 @@ public class QuestionService {
 
         List<Question> questions =
                 questionMapper.findPage(
-                        keyword, difficulty, status, null, includeIds, excludeIds, p.offset(), p.size());
-        long total = questionMapper.count(keyword, difficulty, status, null, includeIds, excludeIds);
+                        keyword,
+                        difficulty,
+                        status,
+                        null,
+                        includeIds,
+                        excludeIds,
+                        p.offset(),
+                        p.size());
+        long total =
+                questionMapper.count(keyword, difficulty, status, null, includeIds, excludeIds);
         return new PageResult<>(
                 questions.stream().map(this::toListVO).toList(), total, p.page(), p.size());
     }
@@ -91,7 +94,14 @@ public class QuestionService {
         }
         List<Question> questions =
                 questionMapper.findPage(
-                        keyword, difficulty, status, targetCreatedBy, null, null, p.offset(), p.size());
+                        keyword,
+                        difficulty,
+                        status,
+                        targetCreatedBy,
+                        null,
+                        null,
+                        p.offset(),
+                        p.size());
         long total = questionMapper.count(keyword, difficulty, status, targetCreatedBy, null, null);
         return new PageResult<>(
                 questions.stream().map(this::toListVO).toList(), total, p.page(), p.size());
@@ -138,12 +148,14 @@ public class QuestionService {
         }
         testCaseMapper.deleteByQuestionId(id);
         questionMapper.deleteById(id);
+        testCaseStorageService.deleteQuestionDir(id);
     }
 
     public com.kece.question.dto.TestCaseSummaryVO getTestCaseSummary(Long questionId) {
         Question question = getQuestionOrThrow(questionId);
         checkOwnerOrAdmin(question);
-        com.kece.question.dto.TestCaseSummaryVO summary = testCaseMapper.getSummaryByQuestionId(questionId);
+        com.kece.question.dto.TestCaseSummaryVO summary =
+                testCaseMapper.getSummaryByQuestionId(questionId);
         if (summary == null) {
             return com.kece.question.dto.TestCaseSummaryVO.builder()
                     .totalCount(0)
@@ -169,7 +181,12 @@ public class QuestionService {
         Question question = getQuestionOrThrow(questionId);
         checkOwnerOrAdmin(question);
         List<TestCase> existing = testCaseMapper.findByQuestionId(questionId);
-        int nextNum = existing.isEmpty() ? 1 : (existing.get(existing.size() - 1).getCaseNum() == null ? existing.size() + 1 : existing.get(existing.size() - 1).getCaseNum() + 1);
+        int nextNum =
+                existing.isEmpty()
+                        ? 1
+                        : (existing.get(existing.size() - 1).getCaseNum() == null
+                                ? existing.size() + 1
+                                : existing.get(existing.size() - 1).getCaseNum() + 1);
 
         TestCase testCase = new TestCase();
         testCase.setQuestionId(questionId);
@@ -180,12 +197,19 @@ public class QuestionService {
         testCase.setExpectedOutput(request.getExpectedOutput());
 
         testCaseMapper.insert(testCase);
-        testCaseStorageService.writeCaseFiles(testCase, request.getInput(), request.getExpectedOutput());
-        if (java.util.Objects.equals(testCase.getIsSample(), 0) && (testCase.getInputSize() > 2048 || testCase.getOutputSize() > 2048)) {
+        testCaseStorageService.writeCaseFiles(
+                testCase, request.getInput(), request.getExpectedOutput());
+        boolean clearInline =
+                java.util.Objects.equals(testCase.getIsSample(), 0)
+                        && (testCase.getInputSize() > 2048 || testCase.getOutputSize() > 2048);
+        if (clearInline) {
             testCase.setInput(null);
             testCase.setExpectedOutput(null);
         }
         testCaseMapper.update(testCase);
+        if (clearInline) {
+            testCaseMapper.clearInlineContent(testCase.getId());
+        }
         return toTestCaseVO(testCase);
     }
 
@@ -206,12 +230,19 @@ public class QuestionService {
         testCase.setInput(request.getInput());
         testCase.setExpectedOutput(request.getExpectedOutput());
 
-        testCaseStorageService.writeCaseFiles(testCase, request.getInput(), request.getExpectedOutput());
-        if (java.util.Objects.equals(testCase.getIsSample(), 0) && (testCase.getInputSize() > 2048 || testCase.getOutputSize() > 2048)) {
+        testCaseStorageService.writeCaseFiles(
+                testCase, request.getInput(), request.getExpectedOutput());
+        boolean clearInline =
+                java.util.Objects.equals(testCase.getIsSample(), 0)
+                        && (testCase.getInputSize() > 2048 || testCase.getOutputSize() > 2048);
+        if (clearInline) {
             testCase.setInput(null);
             testCase.setExpectedOutput(null);
         }
         testCaseMapper.update(testCase);
+        if (clearInline) {
+            testCaseMapper.clearInlineContent(testCase.getId());
+        }
         return toTestCaseVO(testCase);
     }
 
@@ -232,6 +263,9 @@ public class QuestionService {
             testCase.setExpectedOutput(null);
         }
         testCaseMapper.update(testCase);
+        if (!isSample) {
+            testCaseMapper.clearInlineContent(testCase.getId());
+        }
     }
 
     @Transactional
@@ -239,7 +273,8 @@ public class QuestionService {
         Question question = getQuestionOrThrow(questionId);
         checkOwnerOrAdmin(question);
         List<TestCase> cases = testCaseMapper.findByQuestionId(questionId);
-        Set<Long> targetIds = sampleCaseIds != null ? new HashSet<>(sampleCaseIds) : Collections.emptySet();
+        Set<Long> targetIds =
+                sampleCaseIds != null ? new HashSet<>(sampleCaseIds) : Collections.emptySet();
         for (TestCase tc : cases) {
             boolean shouldBeSample = targetIds.contains(tc.getId());
             int newVal = shouldBeSample ? 1 : 0;
@@ -253,6 +288,9 @@ public class QuestionService {
                     tc.setExpectedOutput(null);
                 }
                 testCaseMapper.update(tc);
+                if (!shouldBeSample) {
+                    testCaseMapper.clearInlineContent(tc.getId());
+                }
             }
         }
     }
@@ -265,27 +303,39 @@ public class QuestionService {
         if (testCase.getInputPath() != null) {
             java.nio.file.Path p = testCaseStorageService.resolvePath(testCase.getInputPath());
             if (p != null) {
-                try { java.nio.file.Files.deleteIfExists(p); } catch (Exception ignored) {}
+                try {
+                    java.nio.file.Files.deleteIfExists(p);
+                } catch (Exception ignored) {
+                }
             }
         }
         if (testCase.getOutputPath() != null) {
             java.nio.file.Path p = testCaseStorageService.resolvePath(testCase.getOutputPath());
             if (p != null) {
-                try { java.nio.file.Files.deleteIfExists(p); } catch (Exception ignored) {}
+                try {
+                    java.nio.file.Files.deleteIfExists(p);
+                } catch (Exception ignored) {
+                }
             }
         }
         testCaseMapper.deleteById(testCaseId);
     }
 
     @Transactional
-    public List<TestCaseVO> importTestCasesZip(Long questionId, org.springframework.web.multipart.MultipartFile file, boolean replace, boolean firstAsSample) {
+    public List<TestCaseVO> importTestCasesZip(
+            Long questionId,
+            org.springframework.web.multipart.MultipartFile file,
+            boolean replace,
+            boolean firstAsSample) {
         Question question = getQuestionOrThrow(questionId);
         checkOwnerOrAdmin(question);
-        List<TestCase> imported = testCaseStorageService.importZip(questionId, file, replace, firstAsSample);
+        List<TestCase> imported =
+                testCaseStorageService.importZip(questionId, file, replace, firstAsSample);
         return imported.stream().map(this::toTestCaseVO).toList();
     }
 
-    public void exportTestCasesZip(Long questionId, java.util.zip.ZipOutputStream zos) throws java.io.IOException {
+    public void exportTestCasesZip(Long questionId, java.util.zip.ZipOutputStream zos)
+            throws java.io.IOException {
         Question question = getQuestionOrThrow(questionId);
         checkOwnerOrAdmin(question);
         testCaseStorageService.exportZip(questionId, zos);
@@ -379,7 +429,10 @@ public class QuestionService {
                 testCaseMapper.findSamplesByQuestionId(question.getId()).stream()
                         .map(this::toSampleTestCaseVO)
                         .toList();
-        User author = question.getCreatedBy() != null ? userMapper.findById(question.getCreatedBy()) : null;
+        User author =
+                question.getCreatedBy() != null
+                        ? userMapper.findById(question.getCreatedBy())
+                        : null;
         return QuestionVO.builder()
                 .id(question.getId())
                 .title(question.getTitle())
@@ -411,7 +464,9 @@ public class QuestionService {
     private TestCaseVO toTestCaseMetadataVO(TestCase testCase) {
         long inSize = testCase.getInputSize() != null ? testCase.getInputSize() : 0L;
         long outSize = testCase.getOutputSize() != null ? testCase.getOutputSize() : 0L;
-        boolean isLarge = inSize > TestCaseStorageService.MAX_PREVIEW_BYTES || outSize > TestCaseStorageService.MAX_PREVIEW_BYTES;
+        boolean isLarge =
+                inSize > TestCaseStorageService.MAX_PREVIEW_BYTES
+                        || outSize > TestCaseStorageService.MAX_PREVIEW_BYTES;
 
         return TestCaseVO.builder()
                 .id(testCase.getId())
@@ -436,7 +491,9 @@ public class QuestionService {
     private TestCaseVO toSampleTestCaseVO(TestCase testCase) {
         long inSize = testCase.getInputSize() != null ? testCase.getInputSize() : 0L;
         long outSize = testCase.getOutputSize() != null ? testCase.getOutputSize() : 0L;
-        boolean isLarge = inSize > TestCaseStorageService.MAX_PREVIEW_BYTES || outSize > TestCaseStorageService.MAX_PREVIEW_BYTES;
+        boolean isLarge =
+                inSize > TestCaseStorageService.MAX_PREVIEW_BYTES
+                        || outSize > TestCaseStorageService.MAX_PREVIEW_BYTES;
 
         return TestCaseVO.builder()
                 .id(testCase.getId())

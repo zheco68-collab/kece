@@ -2,10 +2,10 @@ package com.kece.exam.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kece.common.security.AuthContextHolder;
-import com.kece.common.security.AuthUser;
 import com.kece.common.exception.BusinessException;
 import com.kece.common.response.ResultCode;
+import com.kece.common.security.AuthContextHolder;
+import com.kece.common.security.AuthUser;
 import com.kece.common.security.Role;
 import com.kece.database.entity.DbQuestion;
 import com.kece.database.mapper.DbQuestionMapper;
@@ -63,36 +63,57 @@ public class ExamAdminService {
         checkOwnerOrAdmin(exam);
 
         List<ExamQuestion> examQuestions = examQuestionMapper.findByExamId(examId);
-        int examTotalFullScore = examQuestions.stream().mapToInt(q -> q.getScore() == null ? 0 : q.getScore()).sum();
+        int examTotalFullScore =
+                examQuestions.stream().mapToInt(q -> q.getScore() == null ? 0 : q.getScore()).sum();
 
         List<ExamSubmission> allSubmissions = submissionMapper.findByExam(examId);
         List<ExamStudentInfo> allStudentInfos = studentInfoMapper.findByExamId(examId);
 
-        Map<Long, ExamStudentInfo> studentInfoMap = allStudentInfos.stream()
-                .collect(Collectors.toMap(ExamStudentInfo::getUserId, si -> si, (a, b) -> a));
+        Map<Long, ExamStudentInfo> studentInfoMap =
+                allStudentInfos.stream()
+                        .collect(
+                                Collectors.toMap(
+                                        ExamStudentInfo::getUserId, si -> si, (a, b) -> a));
 
-        Map<Long, List<ExamSubmission>> subsByUser = allSubmissions.stream()
-                .collect(Collectors.groupingBy(ExamSubmission::getUserId));
+        Map<Long, List<ExamSubmission>> subsByUser =
+                allSubmissions.stream().collect(Collectors.groupingBy(ExamSubmission::getUserId));
 
         Set<Long> userIds = new HashSet<>();
         userIds.addAll(subsByUser.keySet());
         userIds.addAll(studentInfoMap.keySet());
+        Map<Long, com.kece.user.entity.User> userMap =
+                userIds.isEmpty()
+                        ? Map.of()
+                        : userMapper.findByIds(userIds).stream()
+                                .collect(
+                                        Collectors.toMap(
+                                                com.kece.user.entity.User::getId,
+                                                u -> u,
+                                                (a, b) -> a));
 
         List<ExamStudentSubmissionRowVO> students = new ArrayList<>();
         for (Long uid : userIds) {
-            com.kece.user.entity.User user = userMapper.findById(uid);
+            com.kece.user.entity.User user = userMap.get(uid);
             String username = user != null ? user.getUsername() : ("UID:" + uid);
             ExamStudentInfo info = studentInfoMap.get(uid);
             List<ExamSubmission> userSubs = subsByUser.getOrDefault(uid, List.of());
-            Map<Long, ExamSubmission> subByQuestionId = userSubs.stream()
-                    .collect(Collectors.toMap(ExamSubmission::getExamQuestionId, s -> s, (a, b) -> a));
+            Map<Long, ExamSubmission> subByQuestionId =
+                    userSubs.stream()
+                            .collect(
+                                    Collectors.toMap(
+                                            ExamSubmission::getExamQuestionId,
+                                            s -> s,
+                                            (a, b) -> a));
 
-            boolean submitted = userSubs.stream().anyMatch(s -> s.getSubmitted() != null && s.getSubmitted() == 1);
-            LocalDateTime submittedAt = userSubs.stream()
-                    .filter(s -> s.getSubmitted() != null && s.getSubmitted() == 1)
-                    .map(ExamSubmission::getSubmittedAt)
-                    .max(Comparator.naturalOrder())
-                    .orElse(null);
+            boolean submitted =
+                    userSubs.stream()
+                            .anyMatch(s -> s.getSubmitted() != null && s.getSubmitted() == 1);
+            LocalDateTime submittedAt =
+                    userSubs.stream()
+                            .filter(s -> s.getSubmitted() != null && s.getSubmitted() == 1)
+                            .map(ExamSubmission::getSubmittedAt)
+                            .max(Comparator.naturalOrder())
+                            .orElse(null);
 
             Map<Long, Integer> questionScores = new HashMap<>();
             Map<Long, String> questionStatuses = new HashMap<>();
@@ -105,8 +126,13 @@ public class ExamAdminService {
                 Integer score = sub != null ? sub.getScore() : null;
 
                 if (strategyFactory != null) {
-                    var latest = strategyFactory.findStrategy(eq.getQuestionType())
-                            .flatMap(s -> s.findLatestContestSubmission(examId, uid, eq.getQuestionId()));
+                    var latest =
+                            strategyFactory
+                                    .findStrategy(eq.getQuestionType())
+                                    .flatMap(
+                                            s ->
+                                                    s.findLatestContestSubmission(
+                                                            examId, uid, eq.getQuestionId()));
                     if (latest.isPresent()) {
                         status = latest.get().status();
                         score = scaleScore(latest.get().score(), eq.getScore(), status);
@@ -125,35 +151,49 @@ public class ExamAdminService {
                 questionStatuses.put(eq.getId(), status == null ? "UNANSWERED" : status);
             }
 
-            students.add(ExamStudentSubmissionRowVO.builder()
-                    .userId(uid)
-                    .username(username)
-                    .realName(info != null ? info.getRealName() : username)
-                    .studentNo(info != null ? info.getStudentNo() : "—")
-                    .college(info != null ? info.getCollege() : "—")
-                    .major(info != null ? info.getMajor() : "—")
-                    .className(info != null ? info.getClassName() : "—")
-                    .totalScore(totalScore)
-                    .fullScore(examTotalFullScore)
-                    .solvedCount(solvedCount)
-                    .totalQuestions(examQuestions.size())
-                    .submitted(submitted)
-                    .submittedAt(submittedAt)
-                    .questionScores(questionScores)
-                    .questionStatuses(questionStatuses)
-                    .build());
+            students.add(
+                    ExamStudentSubmissionRowVO.builder()
+                            .userId(uid)
+                            .username(username)
+                            .realName(info != null ? info.getRealName() : username)
+                            .studentNo(info != null ? info.getStudentNo() : "—")
+                            .college(info != null ? info.getCollege() : "—")
+                            .major(info != null ? info.getMajor() : "—")
+                            .className(info != null ? info.getClassName() : "—")
+                            .totalScore(totalScore)
+                            .fullScore(examTotalFullScore)
+                            .solvedCount(solvedCount)
+                            .totalQuestions(examQuestions.size())
+                            .submitted(submitted)
+                            .submittedAt(submittedAt)
+                            .questionScores(questionScores)
+                            .questionStatuses(questionStatuses)
+                            .build());
         }
 
         // 默认按总分降序排列
         students.sort(Comparator.comparing(ExamStudentSubmissionRowVO::getTotalScore).reversed());
 
         int totalStudents = students.size();
-        int submittedCount = (int) students.stream().filter(ExamStudentSubmissionRowVO::getSubmitted).count();
-        double avgScore = totalStudents > 0
-                ? students.stream().mapToInt(ExamStudentSubmissionRowVO::getTotalScore).average().orElse(0.0)
-                : 0.0;
-        int maxScore = students.stream().mapToInt(ExamStudentSubmissionRowVO::getTotalScore).max().orElse(0);
-        int minScore = students.stream().mapToInt(ExamStudentSubmissionRowVO::getTotalScore).min().orElse(0);
+        int submittedCount =
+                (int) students.stream().filter(ExamStudentSubmissionRowVO::getSubmitted).count();
+        double avgScore =
+                totalStudents > 0
+                        ? students.stream()
+                                .mapToInt(ExamStudentSubmissionRowVO::getTotalScore)
+                                .average()
+                                .orElse(0.0)
+                        : 0.0;
+        int maxScore =
+                students.stream()
+                        .mapToInt(ExamStudentSubmissionRowVO::getTotalScore)
+                        .max()
+                        .orElse(0);
+        int minScore =
+                students.stream()
+                        .mapToInt(ExamStudentSubmissionRowVO::getTotalScore)
+                        .min()
+                        .orElse(0);
 
         return ExamAdminOverviewVO.builder()
                 .exam(toVO(exam, examQuestions))
@@ -172,7 +212,8 @@ public class ExamAdminService {
         checkOwnerOrAdmin(exam);
 
         List<ExamQuestion> examQuestions = examQuestionMapper.findByExamId(examId);
-        int examTotalFullScore = examQuestions.stream().mapToInt(q -> q.getScore() == null ? 0 : q.getScore()).sum();
+        int examTotalFullScore =
+                examQuestions.stream().mapToInt(q -> q.getScore() == null ? 0 : q.getScore()).sum();
 
         ExamStudentInfo studentInfo = null;
         String username = null;
@@ -189,7 +230,9 @@ public class ExamAdminService {
                 subByQuestionId.put(s.getExamQuestionId(), s);
                 if (s.getSubmitted() != null && s.getSubmitted() == 1) {
                     submitted = true;
-                    if (submittedAt == null || (s.getSubmittedAt() != null && s.getSubmittedAt().isAfter(submittedAt))) {
+                    if (submittedAt == null
+                            || (s.getSubmittedAt() != null
+                                    && s.getSubmittedAt().isAfter(submittedAt))) {
                         submittedAt = s.getSubmittedAt();
                     }
                 }
@@ -251,8 +294,15 @@ public class ExamAdminService {
                     resultJson = sub.getResultJson();
 
                     if (strategyFactory != null) {
-                        var latest = strategyFactory.findStrategy(type)
-                                .flatMap(s -> s.findLatestContestSubmission(examId, userId, eq.getQuestionId()));
+                        var latest =
+                                strategyFactory
+                                        .findStrategy(type)
+                                        .flatMap(
+                                                s ->
+                                                        s.findLatestContestSubmission(
+                                                                examId,
+                                                                userId,
+                                                                eq.getQuestionId()));
                         if (latest.isPresent()) {
                             status = latest.get().status();
                             studentScore = scaleScore(latest.get().score(), fullScore, status);
@@ -261,7 +311,9 @@ public class ExamAdminService {
                         }
                     }
 
-                    isCorrect = "ACCEPTED".equals(status) || (studentScore != null && studentScore.equals(fullScore));
+                    isCorrect =
+                            "ACCEPTED".equals(status)
+                                    || (studentScore != null && studentScore.equals(fullScore));
                 } else {
                     isCorrect = false;
                 }
@@ -274,47 +326,50 @@ public class ExamAdminService {
                 }
             }
 
-            questionVOs.add(ExamStudentPaperQuestionVO.builder()
-                    .examQuestionId(eq.getId())
-                    .questionId(eq.getQuestionId())
-                    .questionType(type)
-                    .objectiveType(objectiveType)
-                    .title(title)
-                    .content(content)
-                    .options(options)
-                    .fullScore(fullScore)
-                    .studentScore(studentScore)
-                    .status(status)
-                    .studentAnswer(studentAnswer)
-                    .standardAnswer(standardAnswer)
-                    .isCorrect(isCorrect)
-                    .language(language)
-                    .resultJson(resultJson)
-                    .build());
+            questionVOs.add(
+                    ExamStudentPaperQuestionVO.builder()
+                            .examQuestionId(eq.getId())
+                            .questionId(eq.getQuestionId())
+                            .questionType(type)
+                            .objectiveType(objectiveType)
+                            .title(title)
+                            .content(content)
+                            .options(options)
+                            .fullScore(fullScore)
+                            .studentScore(studentScore)
+                            .status(status)
+                            .studentAnswer(studentAnswer)
+                            .standardAnswer(standardAnswer)
+                            .isCorrect(isCorrect)
+                            .language(language)
+                            .resultJson(resultJson)
+                            .build());
         }
 
         ExamStudentInfoVO infoVO = null;
         if (studentInfo != null) {
-            infoVO = ExamStudentInfoVO.builder()
-                    .id(studentInfo.getId())
-                    .examId(examId)
-                    .userId(userId)
-                    .realName(studentInfo.getRealName())
-                    .studentNo(studentInfo.getStudentNo())
-                    .college(studentInfo.getCollege())
-                    .major(studentInfo.getMajor())
-                    .className(studentInfo.getClassName())
-                    .build();
+            infoVO =
+                    ExamStudentInfoVO.builder()
+                            .id(studentInfo.getId())
+                            .examId(examId)
+                            .userId(userId)
+                            .realName(studentInfo.getRealName())
+                            .studentNo(studentInfo.getStudentNo())
+                            .college(studentInfo.getCollege())
+                            .major(studentInfo.getMajor())
+                            .className(studentInfo.getClassName())
+                            .build();
         } else if (userId != null) {
-            infoVO = ExamStudentInfoVO.builder()
-                    .examId(examId)
-                    .userId(userId)
-                    .realName(username)
-                    .studentNo("—")
-                    .college("—")
-                    .major("—")
-                    .className("—")
-                    .build();
+            infoVO =
+                    ExamStudentInfoVO.builder()
+                            .examId(examId)
+                            .userId(userId)
+                            .realName(username)
+                            .studentNo("—")
+                            .college("—")
+                            .major("—")
+                            .className("—")
+                            .build();
         }
 
         return ExamStudentPaperVO.builder()
@@ -367,16 +422,19 @@ public class ExamAdminService {
     }
 
     private ExamVO toVO(Exam exam, List<ExamQuestion> questions) {
-        List<ExamQuestionVO> qVOs = questions.stream()
-                .map(q -> ExamQuestionVO.builder()
-                        .id(q.getId())
-                        .questionId(q.getQuestionId())
-                        .questionType(q.getQuestionType())
-                        .title(q.getTitle())
-                        .score(q.getScore())
-                        .sortOrder(q.getSortOrder())
-                        .build())
-                .toList();
+        List<ExamQuestionVO> qVOs =
+                questions.stream()
+                        .map(
+                                q ->
+                                        ExamQuestionVO.builder()
+                                                .id(q.getId())
+                                                .questionId(q.getQuestionId())
+                                                .questionType(q.getQuestionType())
+                                                .title(q.getTitle())
+                                                .score(q.getScore())
+                                                .sortOrder(q.getSortOrder())
+                                                .build())
+                        .toList();
 
         return ExamVO.builder()
                 .id(exam.getId())

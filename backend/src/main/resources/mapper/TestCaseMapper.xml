@@ -74,6 +74,12 @@
         WHERE id = #{id}
     </update>
 
+    <update id="clearInlineContent">
+        UPDATE `test_case`
+           SET input = NULL, expected_output = NULL
+         WHERE id = #{id}
+    </update>
+
     <delete id="deleteById">
         DELETE FROM `test_case` WHERE id = #{id}
     </delete>

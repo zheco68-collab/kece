@@ -3,7 +3,6 @@ import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { practiceApi } from '@/api/practice'
 import { ApiError } from '@/api/request'
-import AdminNav from '@/components/AdminNav.vue'
 import DataTable from '@/components/DataTable.vue'
 import Pagination from '@/components/Pagination.vue'
 import { useConfirm } from '@/composables/useConfirm'
@@ -134,7 +133,6 @@ onMounted(load)
 <template>
   <div class="admin admin-practices container">
     <h1 class="page-title">随堂课练管理</h1>
-    <AdminNav />
 
     <!-- 顶部单行工具栏：搜索框、状态选择器、发起课练按钮靠右 -->
     <div class="toolbar">

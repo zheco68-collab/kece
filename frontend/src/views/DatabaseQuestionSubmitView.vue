@@ -466,26 +466,6 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--line);
   padding: 12px 16px;
 }
-.schema-drawer-head {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--ink-tertiary);
-  text-transform: uppercase;
-  margin-bottom: 6px;
-}
-.schema-code {
-  margin: 0;
-  padding: 10px 14px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.4;
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--ink);
-  border-radius: 0;
-}
 
 .monaco-wrapper {
   border-bottom: 1px solid var(--line);

@@ -7,7 +7,6 @@ import {
   type ObjectiveSubmissionRow,
 } from '@/api/admin';
 import { ApiError } from '@/api/request';
-import AdminNav from '@/components/AdminNav.vue';
 import DataTable from '@/components/DataTable.vue';
 import Pagination from '@/components/Pagination.vue';
 import { useConfirm } from '@/composables/useConfirm';
@@ -394,7 +393,6 @@ onBeforeUnmount(() => {
 <template>
   <div class="admin container">
     <h1 class="page-title">提交监控</h1>
-    <AdminNav />
 
     <div class="tabs">
       <button class="tab" :class="{ active: activeTab === 'code' }" @click="switchTab('code')">

@@ -46,6 +46,14 @@ func TestScoreFrom(t *testing.T) {
 			}
 		})
 	}
+
+	cases := []model.TestCase{
+		{CaseID: 1, ScoreWeight: 20},
+		{CaseID: 2, ScoreWeight: 80},
+	}
+	if got := scoreFromCases(cases, []string{"WRONG_ANSWER", "ACCEPTED"}); got != 80 {
+		t.Fatalf("scoreFromCases weighted = %d, want 80", got)
+	}
 }
 
 func TestFilenameFor(t *testing.T) {

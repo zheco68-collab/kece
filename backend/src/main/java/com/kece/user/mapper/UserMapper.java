@@ -1,6 +1,7 @@
 package com.kece.user.mapper;
 
 import com.kece.user.entity.User;
+import java.util.Collection;
 import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -10,6 +11,8 @@ import org.apache.ibatis.annotations.Param;
 public interface UserMapper {
 
     User findById(Long id);
+
+    List<User> findByIds(@Param("ids") Collection<Long> ids);
 
     User findByUsername(String username);
 

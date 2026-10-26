@@ -3,11 +3,13 @@ package judge
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/zheco68-collab/KECE/judger/internal/compare"
@@ -24,14 +26,31 @@ const (
 
 // Judge 为单次提交的判题编排器。
 type Judge struct {
-	queue  *queue.Queue
-	runner *sandbox.Runner
-	cfg    config.Config
+	queue     *queue.Queue
+	runner    *sandbox.Runner
+	cfg       config.Config
+	sqlMu     sync.Mutex
+	adminPool *sql.DB
+	userPool  *sql.DB
 }
 
 // New 创建判题编排器。
 func New(cfg config.Config, q *queue.Queue, r *sandbox.Runner) *Judge {
 	return &Judge{queue: q, runner: r, cfg: cfg}
+}
+
+// Close 释放常驻连接池资源。
+func (j *Judge) Close() {
+	j.sqlMu.Lock()
+	defer j.sqlMu.Unlock()
+	if j.adminPool != nil {
+		_ = j.adminPool.Close()
+		j.adminPool = nil
+	}
+	if j.userPool != nil {
+		_ = j.userPool.Close()
+		j.userPool = nil
+	}
 }
 
 // ParseTask 解析后端推送的任务 JSON。
@@ -58,27 +77,9 @@ func (j *Judge) Process(ctx context.Context, task model.Task) {
 		return
 	}
 
-	// 启动单次提交沙箱会话（复用容器，避免逐用例 cold start）
-	sess, _ := j.runner.StartSession(ctx, task.Language, ws, task.MemoryLimitMb)
-	if sess != nil {
-		defer func() {
-			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = sess.Close(closeCtx)
-		}()
-	}
-
-	// 2. 编译。
+	// 2. 编译（在独立编译容器中进行，避免编译器 g++/javac/tsc 的内存峰值污染运行容器的 cgroup memory.peak）。
 	j.publish(ctx, task.SubmissionID, statusCompiling, len(task.TestCases), 0)
-	var (
-		stderr string
-		ok     bool
-	)
-	if sess != nil {
-		stderr, ok, err = sess.Compile(ctx)
-	} else {
-		stderr, ok, err = j.runner.Compile(ctx, task.Language, ws)
-	}
+	stderr, ok, err := j.runner.Compile(ctx, task.Language, ws)
 	if err != nil {
 		j.finishSystemError(ctx, task.SubmissionID)
 		return
@@ -88,9 +89,14 @@ func (j *Judge) Process(ctx context.Context, task model.Task) {
 		return
 	}
 
-	// 编译成功后，将会话容器内存上限收缩至题目的运行内存限制
+	// 启动单次提交沙箱会话（直接按题目的运行内存限制创建并复用容器，避免逐用例 cold start）
+	sess, _ := j.runner.StartSession(ctx, task.Language, ws, task.MemoryLimitMb)
 	if sess != nil {
-		_ = sess.ApplyRunMemoryLimit(ctx, task.MemoryLimitMb)
+		defer func() {
+			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = sess.Close(closeCtx)
+		}()
 	}
 
 	// 3. 逐用例运行并汇总。
@@ -121,17 +127,12 @@ func (j *Judge) Process(ctx context.Context, task model.Task) {
 	// 4. 写终态并推送结果。
 	overall := AggregateOverall(statuses)
 	result := model.Result{
-		Score:           intPtr(scoreFrom(statuses)),
+		Score:           intPtr(scoreFromCases(task.TestCases, statuses)),
 		TimeUsedMs:      intPtr(maxTimeMs),
 		MemoryUsedKb:    maxMemKb,
 		TestCasesReport: report,
 	}
 	j.finishTerminal(ctx, task.SubmissionID, overall, result)
-}
-
-// runCase 运行单个测试点并返回其判题结果。
-func (j *Judge) runCase(ctx context.Context, task model.Task, ws string, tc model.TestCase) (model.CaseResult, error) {
-	return j.runCaseWithSession(ctx, task, ws, tc, nil)
 }
 
 // runCaseWithSession 在指定沙箱会话（若无则兜底新建容器）中运行单个测试点。
@@ -180,9 +181,9 @@ func (j *Judge) runCaseWithSession(ctx context.Context, task model.Task, ws stri
 		err error
 	)
 	if sess != nil {
-		res, err = sess.Run(ctx, tc.Input, task.TimeLimitMs)
+		res, err = sess.Run(ctx, task.TimeLimitMs)
 	} else {
-		res, err = j.runner.Run(ctx, task.Language, ws, tc.Input, task.TimeLimitMs, task.MemoryLimitMb)
+		res, err = j.runner.Run(ctx, task.Language, ws, task.TimeLimitMs, task.MemoryLimitMb)
 	}
 	if err != nil {
 		return model.CaseResult{}, err
@@ -260,6 +261,32 @@ func AggregateOverall(statuses []string) string {
 		}
 	}
 	return sandbox.StatusAccepted
+}
+
+// scoreFromCases 优先按各用例 ScoreWeight 权重占比计分（满分 100，向下取整）；若未配置正权重则退化为均分。
+func scoreFromCases(cases []model.TestCase, statuses []string) int {
+	if len(statuses) == 0 {
+		return 0
+	}
+	if len(cases) == len(statuses) {
+		totalWeight := 0
+		acceptedWeight := 0
+		for i, tc := range cases {
+			if tc.ScoreWeight > 0 {
+				totalWeight += tc.ScoreWeight
+				if statuses[i] == sandbox.StatusAccepted {
+					acceptedWeight += tc.ScoreWeight
+				}
+			}
+		}
+		if totalWeight > 0 {
+			if acceptedWeight == totalWeight {
+				return 100
+			}
+			return acceptedWeight * 100 / totalWeight
+		}
+	}
+	return scoreFrom(statuses)
 }
 
 // scoreFrom 按通过用例占比给分（满分 100，向下取整）；无用例时为 0。

@@ -45,17 +45,6 @@ export interface UserExamRecord {
   submittedAt: string | null
 }
 
-export interface UserTimelineItem {
-  submissionId: number
-  questionId: number
-  questionTitle: string | null
-  type: 'ALGO' | 'DB'
-  status: string
-  language: string | null
-  timeUsedMs: number | null
-  createdAt: string
-}
-
 export const profileApi = {
   getProfile: (userId?: number): Promise<UserProfile> =>
     http.get('/users/profile', { params: userId ? { userId } : undefined }),
@@ -81,8 +70,5 @@ export const profileApi = {
 
   getExams: (userId?: number): Promise<UserExamRecord[]> =>
     http.get('/users/exams', { params: userId ? { userId } : undefined }),
-
-  getTimeline: (userId?: number): Promise<UserTimelineItem[]> =>
-    http.get('/users/timeline', { params: userId ? { userId } : undefined }),
 }
 

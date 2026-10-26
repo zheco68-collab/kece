@@ -274,7 +274,6 @@ onBeforeUnmount(() => {
           <CodeEditor
             v-model="codes[language]"
             :language="language"
-            :filename="FILENAMES[language]"
             height="520px"
           />
         </div>

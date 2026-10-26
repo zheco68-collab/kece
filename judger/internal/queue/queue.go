@@ -103,9 +103,13 @@ func (q *Queue) Heartbeat(ctx context.Context) error {
 	return err
 }
 
-// ClearHeartbeat 移除判题机存活心跳键（用于优雅停机即刻变更为掉线状态）。
+// ClearHeartbeat 移除判题机存活心跳键并从全局注册集合移除（用于优雅停机即刻变更为掉线状态）。
 func (q *Queue) ClearHeartbeat(ctx context.Context) error {
-	return q.client.Del(ctx, q.cfg.HeartbeatKey+q.cfg.WorkerID).Err()
+	pipe := q.client.TxPipeline()
+	pipe.Del(ctx, q.cfg.HeartbeatKey+q.cfg.WorkerID)
+	pipe.SRem(ctx, "judge:workers", q.cfg.WorkerID)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func itoa(n int64) string {

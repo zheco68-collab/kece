@@ -33,7 +33,6 @@ import com.kece.question.mapper.QuestionMapper;
 import com.kece.question.mapper.TestCaseMapper;
 import com.kece.question.strategy.ContestSubmissionDTO;
 import com.kece.question.strategy.QuestionStrategyFactory;
-import com.kece.question.strategy.QuestionTypeStrategy;
 import com.kece.submission.entity.Submission;
 import com.kece.submission.enums.SubmissionStatus;
 import com.kece.submission.mapper.SubmissionMapper;
@@ -220,7 +219,9 @@ public class ExamSubmissionService {
             case "DB", "DATABASE" -> submissionId = enqueueDb(row, examQuestion);
             case "OBJECTIVE" ->
                     throw new BusinessException(ResultCode.PARAM_ERROR, "客观题在交卷后统一判分，考试中不支持单题提交");
-            default -> throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的题型: " + examQuestion.getQuestionType());
+            default ->
+                    throw new BusinessException(
+                            ResultCode.PARAM_ERROR, "不支持的题型: " + examQuestion.getQuestionType());
         }
         if (submissionId == null) {
             throw new BusinessException(ResultCode.SYSTEM_ERROR, "题目数据缺失，提交失败");
@@ -234,8 +235,12 @@ public class ExamSubmissionService {
 
     /** 该考试该考生该题是否已有实时提交（ACM 交卷时避免重复入队）。 */
     private boolean hasContestSubmission(Exam exam, AuthUser user, ExamQuestion eq) {
-        return strategyFactory.findStrategy(eq.getQuestionType())
-                .flatMap(s -> s.findLatestContestSubmission(exam.getId(), user.getId(), eq.getQuestionId()))
+        return strategyFactory
+                .findStrategy(eq.getQuestionType())
+                .flatMap(
+                        s ->
+                                s.findLatestContestSubmission(
+                                        exam.getId(), user.getId(), eq.getQuestionId()))
                 .isPresent();
     }
 
@@ -274,9 +279,16 @@ public class ExamSubmissionService {
                             String answer = row == null ? null : row.getAnswerContent();
                             String language = row == null ? null : row.getLanguage();
 
-                            ContestSubmissionDTO latest = strategyFactory.findStrategy(type)
-                                    .flatMap(s -> s.findLatestContestSubmission(examId, user.getId(), eq.getQuestionId()))
-                                    .orElse(null);
+                            ContestSubmissionDTO latest =
+                                    strategyFactory
+                                            .findStrategy(type)
+                                            .flatMap(
+                                                    s ->
+                                                            s.findLatestContestSubmission(
+                                                                    examId,
+                                                                    user.getId(),
+                                                                    eq.getQuestionId()))
+                                            .orElse(null);
                             if (latest != null) {
                                 rowStatus = latest.status();
                                 score = scaleScore(latest.score(), eq.getScore(), rowStatus);
@@ -314,10 +326,13 @@ public class ExamSubmissionService {
         if ("ACCEPTED".equals(status)) {
             return fullScore != null ? fullScore : 0;
         }
-        if (judgeScore == null || fullScore == null || judgeScore <= 0) {
+        if (judgeScore == null || fullScore == null || judgeScore <= 0 || fullScore <= 0) {
             return 0;
         }
         int earned = (int) Math.round((double) judgeScore * fullScore / 100.0);
+        if (earned == 0 && fullScore > 0 && judgeScore > 0) {
+            earned = 1;
+        }
         return Math.min(earned, fullScore);
     }
 
@@ -388,12 +403,20 @@ public class ExamSubmissionService {
                                 tc -> {
                                     Map<String, Object> c = new HashMap<>();
                                     c.put("caseId", tc.getId());
+                                    c.put("caseNum", tc.getCaseNum() != null ? tc.getCaseNum() : 1);
+                                    c.put(
+                                            "scoreWeight",
+                                            tc.getScoreWeight() != null ? tc.getScoreWeight() : 10);
                                     if (tc.getInputPath() != null && !tc.getInputPath().isBlank()) {
                                         c.put("inputPath", tc.getInputPath());
                                         c.put("outputPath", tc.getOutputPath());
                                     } else {
                                         c.put("input", tc.getInput() != null ? tc.getInput() : "");
-                                        c.put("expectedOutput", tc.getExpectedOutput() != null ? tc.getExpectedOutput() : "");
+                                        c.put(
+                                                "expectedOutput",
+                                                tc.getExpectedOutput() != null
+                                                        ? tc.getExpectedOutput()
+                                                        : "");
                                     }
                                     return c;
                                 })

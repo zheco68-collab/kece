@@ -111,14 +111,11 @@ public class SubmissionService {
         return pending;
     }
 
-    /** 提交列表：默认本人提交，可指定 targetUserId 查看该用户提交，按 id 倒序分页。 */
+    /** 提交列表：默认本人提交，可指定 targetUserId 查看该用户提交（非本人自动脱敏代码原文），按 id 倒序分页。 */
     public PageResult<SubmissionListVO> list(Long targetUserId, String status, int page, int size) {
         AuthUser user = AuthContextHolder.get();
         if (user == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
-        }
-        if (targetUserId != null && !targetUserId.equals(user.getId()) && !user.hasRole(Role.ADMIN) && !user.hasRole(Role.TEACHER)) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "无权查看其他用户的提交记录");
         }
         Long userId = targetUserId != null ? targetUserId : user.getId();
         PageParam p = PageParam.of(page, size);
@@ -176,15 +173,27 @@ public class SubmissionService {
         Submission submission = null;
         String ownerId = redis.opsForValue().get(ownerKey(id));
         if (ownerId != null) {
-            // 快路径：提交人 + 题目归属双重判定（出题人可看自己所出题目的提交）
-            submission = submissionMapper.findById(id);
-            if (submission == null || !canAccessSubmission(user, submission)) {
+            boolean isOwnerOrAdmin =
+                    user.hasRole(Role.ADMIN) || ownerId.equals(String.valueOf(user.getId()));
+            // 非提交人且非教师/管理员：无需查库即可直接拒绝
+            if (!isOwnerOrAdmin && !user.hasRole(Role.TEACHER)) {
                 throw new BusinessException(ResultCode.FORBIDDEN);
             }
             String cached = redis.opsForValue().get(statusKey(id));
             if (cached != null) {
-                return sanitize(
-                        readJson(cached, SubmissionVO.class), user, submission.getQuestionId());
+                SubmissionVO cachedVo = readJson(cached, SubmissionVO.class);
+                // 轮询快路径：非终态（PENDING/COMPILING/JUDGING）无测试点详情，提交人或管理员直接从 Redis 返回，免查 MySQL
+                if (isOwnerOrAdmin
+                        && cachedVo != null
+                        && cachedVo.getStatus() != null
+                        && !SubmissionStatus.from(cachedVo.getStatus()).isTerminal()) {
+                    return cachedVo;
+                }
+                submission = submissionMapper.findById(id);
+                if (submission == null || !canAccessSubmission(user, submission)) {
+                    throw new BusinessException(ResultCode.FORBIDDEN);
+                }
+                return sanitize(cachedVo, user, submission.getQuestionId());
             }
         }
         if (submission == null) {
@@ -344,9 +353,10 @@ public class SubmissionService {
         }
         SubmissionResultVO result = vo.getResult();
         Submission sub = submissionMapper.findById(submissionId);
-        boolean newlyAccepted = sub != null
-                && !"ACCEPTED".equals(sub.getStatus())
-                && SubmissionStatus.ACCEPTED.name().equals(vo.getStatus());
+        boolean newlyAccepted =
+                sub != null
+                        && !"ACCEPTED".equals(sub.getStatus())
+                        && SubmissionStatus.ACCEPTED.name().equals(vo.getStatus());
 
         submissionMapper.updateResult(
                 submissionId,
@@ -358,7 +368,8 @@ public class SubmissionService {
                 result == null ? null : writeJson(result));
 
         if (newlyAccepted) {
-            LocalDate date = sub.getCreatedAt() != null ? sub.getCreatedAt().toLocalDate() : LocalDate.now();
+            LocalDate date =
+                    sub.getCreatedAt() != null ? sub.getCreatedAt().toLocalDate() : LocalDate.now();
             userDailyAcService.recordAlgoAc(sub.getUserId(), date);
         }
     }
@@ -384,13 +395,19 @@ public class SubmissionService {
                                     Map<String, Object> c = new HashMap<>();
                                     c.put("caseId", tc.getId());
                                     c.put("caseNum", tc.getCaseNum() != null ? tc.getCaseNum() : 1);
-                                    c.put("scoreWeight", tc.getScoreWeight() != null ? tc.getScoreWeight() : 10);
+                                    c.put(
+                                            "scoreWeight",
+                                            tc.getScoreWeight() != null ? tc.getScoreWeight() : 10);
                                     if (tc.getInputPath() != null && !tc.getInputPath().isBlank()) {
                                         c.put("inputPath", tc.getInputPath());
                                         c.put("outputPath", tc.getOutputPath());
                                     } else {
                                         c.put("input", tc.getInput() != null ? tc.getInput() : "");
-                                        c.put("expectedOutput", tc.getExpectedOutput() != null ? tc.getExpectedOutput() : "");
+                                        c.put(
+                                                "expectedOutput",
+                                                tc.getExpectedOutput() != null
+                                                        ? tc.getExpectedOutput()
+                                                        : "");
                                     }
                                     return c;
                                 })

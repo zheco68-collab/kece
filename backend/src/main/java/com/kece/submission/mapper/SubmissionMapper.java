@@ -60,8 +60,4 @@ public interface SubmissionMapper {
             @Param("memoryUsedKb") Integer memoryUsedKb,
             @Param("errorLog") String errorLog,
             @Param("resultJson") String resultJson);
-
-    /** 统计用户从某日期起的每日 AC 题数。 */
-    List<java.util.Map<String, Object>> countAcDaily(
-            @Param("userId") Long userId, @Param("startDate") java.time.LocalDate startDate);
 }

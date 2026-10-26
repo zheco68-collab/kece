@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { examApi, type ExamAdminOverview } from '@/api/exam';
 import { ApiError } from '@/api/request';
-import AdminNav from '@/components/AdminNav.vue';
 import DataTable from '@/components/DataTable.vue';
 import { useToast } from '@/composables/useToast';
 
@@ -152,8 +151,6 @@ onMounted(load);
       <span class="sep">/</span>
       <span class="current-label">考生成绩与答卷总览</span>
     </div>
-
-    <AdminNav />
 
     <div v-if="loading" class="state-card card">
       <div class="loading-spinner"></div>

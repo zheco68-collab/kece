@@ -14,11 +14,18 @@ function Test-Port([int]$Port) {
     return $null -ne (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
 }
 
-# ---- 0. 工具链（本机路径，可用同名环境变量覆盖） ----
-if (-not $env:JAVA_HOME) { $env:JAVA_HOME = "C:\Users\zco\.jdks\jdk-17.0.20.1+1" }
-if (-not $env:GOROOT)   { $env:GOROOT   = "C:\Users\zco\go-sdk\go" }
+# ---- 0. 工具链（优先读取环境变量与系统 PATH，回退到用户目录默认路径） ----
+if (-not $env:JAVA_HOME) {
+    $defaultJdk = Join-Path $env:USERPROFILE ".jdks\jdk-17.0.20.1+1"
+    if (Test-Path $defaultJdk) { $env:JAVA_HOME = $defaultJdk }
+}
+if (-not $env:GOROOT) {
+    $defaultGo = Join-Path $env:USERPROFILE "go-sdk\go"
+    if (Test-Path $defaultGo) { $env:GOROOT = $defaultGo }
+}
 if (-not $env:GOPROXY)  { $env:GOPROXY  = "https://goproxy.cn,direct" }
-$env:PATH = "$env:GOROOT\bin;$env:JAVA_HOME\bin;$env:PATH"
+if ($env:GOROOT)        { $env:PATH = "$env:GOROOT\bin;$env:PATH" }
+if ($env:JAVA_HOME)     { $env:PATH = "$env:JAVA_HOME\bin;$env:PATH" }
 
 # ---- 1. 基础设施：judge-mysql / redis 容器（原生 MySQL 不在此启动，见下方提示） ----
 if (-not (Test-Port 3306)) {
@@ -54,7 +61,7 @@ if (Get-Process -Name judger -ErrorAction SilentlyContinue) {
     } finally { Pop-Location }
 
     $env:REDIS_ADDR           = if ($env:REDIS_ADDR)           { $env:REDIS_ADDR }           else { "127.0.0.1:6379" }
-    $env:WORKSPACE_DIR        = if ($env:WORKSPACE_DIR)        { $env:WORKSPACE_DIR }        else { "C:\Users\zco\judge-workspace" }
+    $env:WORKSPACE_DIR        = if ($env:WORKSPACE_DIR)        { $env:WORKSPACE_DIR }        else { (Join-Path $env:USERPROFILE "judge-workspace") }
     $env:JUDGE_MYSQL_HOST     = if ($env:JUDGE_MYSQL_HOST)     { $env:JUDGE_MYSQL_HOST }     else { "127.0.0.1" }
     $env:JUDGE_MYSQL_PORT     = if ($env:JUDGE_MYSQL_PORT)     { $env:JUDGE_MYSQL_PORT }     else { "3307" }
     $env:JUDGE_MYSQL_USER     = if ($env:JUDGE_MYSQL_USER)     { $env:JUDGE_MYSQL_USER }     else { "root" }

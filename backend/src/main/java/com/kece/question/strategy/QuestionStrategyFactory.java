@@ -3,15 +3,12 @@ package com.kece.question.strategy;
 import com.kece.common.exception.BusinessException;
 import com.kece.common.response.ResultCode;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
 
-/**
- * 题目类型策略工厂：自动扫描并管理所有题型策略实现类，提供依据 typeCode 的动态多态查找能力。
- */
+/** 题目类型策略工厂：自动扫描并管理所有题型策略实现类，提供依据 typeCode 的动态多态查找能力。 */
 @Component
 public class QuestionStrategyFactory {
 
@@ -45,9 +42,7 @@ public class QuestionStrategyFactory {
         return strategy;
     }
 
-    /**
-     * 安全查找策略，不存在时返回空 Optional。
-     */
+    /** 安全查找策略，不存在时返回空 Optional。 */
     public Optional<QuestionTypeStrategy> findStrategy(String questionType) {
         if (questionType == null || questionType.isBlank()) {
             return Optional.empty();
@@ -55,9 +50,7 @@ public class QuestionStrategyFactory {
         return Optional.ofNullable(strategyMap.get(questionType.trim().toUpperCase()));
     }
 
-    /**
-     * 检查系统是否已接入支持某题型。
-     */
+    /** 检查系统是否已接入支持某题型。 */
     public boolean supports(String questionType) {
         if (questionType == null || questionType.isBlank()) {
             return false;
@@ -65,10 +58,8 @@ public class QuestionStrategyFactory {
         return strategyMap.containsKey(questionType.trim().toUpperCase());
     }
 
-    /**
-     * 获取当前系统注册的所有题型策略列表。
-     */
+    /** 获取当前系统注册的所有题型策略列表（去重，排除别名如 DATABASE）。 */
     public Collection<QuestionTypeStrategy> getAllStrategies() {
-        return Collections.unmodifiableCollection(strategyMap.values());
+        return strategyMap.values().stream().distinct().toList();
     }
 }

@@ -31,6 +31,14 @@
         SELECT * FROM `user` WHERE id = #{id}
     </select>
 
+    <select id="findByIds" resultMap="BaseResultMap">
+        SELECT * FROM `user`
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
     <select id="findByUsername" resultMap="BaseResultMap">
         SELECT * FROM `user` WHERE username = #{username}
     </select>

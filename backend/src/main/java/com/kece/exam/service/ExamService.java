@@ -1,7 +1,5 @@
 package com.kece.exam.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kece.common.exception.BusinessException;
 import com.kece.common.response.PageParam;
 import com.kece.common.response.PageResult;
@@ -9,36 +7,30 @@ import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
 import com.kece.common.security.AuthUser;
 import com.kece.common.security.Role;
-import com.kece.database.entity.DbQuestion;
-import com.kece.database.mapper.DbQuestionMapper;
 import com.kece.database.mapper.DbSubmissionMapper;
 import com.kece.exam.dto.ExamQuestionRequest;
 import com.kece.exam.dto.ExamQuestionVO;
 import com.kece.exam.dto.ExamRequest;
 import com.kece.exam.dto.ExamSessionQuestionVO;
 import com.kece.exam.dto.ExamSessionVO;
+import com.kece.exam.dto.ExamStudentInfoRequest;
+import com.kece.exam.dto.ExamStudentInfoVO;
 import com.kece.exam.dto.ExamVO;
 import com.kece.exam.dto.SessionEnterVO;
 import com.kece.exam.dto.UserSavedAnswerVO;
 import com.kece.exam.entity.Exam;
 import com.kece.exam.entity.ExamQuestion;
 import com.kece.exam.entity.ExamSessionStatus;
+import com.kece.exam.entity.ExamStudentInfo;
 import com.kece.exam.entity.ExamSubmission;
 import com.kece.exam.mapper.ExamMapper;
 import com.kece.exam.mapper.ExamQuestionMapper;
+import com.kece.exam.mapper.ExamStudentInfoMapper;
 import com.kece.exam.mapper.ExamSubmissionMapper;
-import com.kece.objective.entity.ObjectiveQuestion;
-import com.kece.objective.mapper.ObjectiveQuestionMapper;
-import com.kece.question.entity.Question;
-import com.kece.question.mapper.QuestionMapper;
 import com.kece.question.strategy.QuestionMeta;
 import com.kece.question.strategy.QuestionStrategyFactory;
 import com.kece.question.strategy.QuestionTypeStrategy;
 import com.kece.submission.mapper.SubmissionMapper;
-import com.kece.exam.dto.ExamStudentInfoRequest;
-import com.kece.exam.dto.ExamStudentInfoVO;
-import com.kece.exam.entity.ExamStudentInfo;
-import com.kece.exam.mapper.ExamStudentInfoMapper;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -64,11 +56,7 @@ public class ExamService {
     private final ExamSubmissionMapper submissionMapper;
     private final SubmissionMapper codeSubmissionMapper;
     private final DbSubmissionMapper dbSubmissionMapper;
-    private final QuestionMapper questionMapper;
-    private final DbQuestionMapper dbQuestionMapper;
-    private final ObjectiveQuestionMapper objectiveQuestionMapper;
     private final ExamStudentInfoMapper studentInfoMapper;
-    private final ObjectMapper objectMapper;
     private final QuestionStrategyFactory strategyFactory;
 
     /** 公开列表：仅公开考试；all=true 时特权角色可见私有考试。 */
@@ -76,7 +64,8 @@ public class ExamService {
             String keyword, Integer status, int page, int size, boolean all) {
         PageParam p = PageParam.of(page, size);
         Integer effectiveStatus = (all && isPrivileged()) ? status : 1;
-        List<Exam> items = examMapper.findPage(keyword, effectiveStatus, null, p.offset(), p.size());
+        List<Exam> items =
+                examMapper.findPage(keyword, effectiveStatus, null, p.offset(), p.size());
         long total = examMapper.count(keyword, effectiveStatus, null);
 
         AuthUser currentUser = AuthContextHolder.get();
@@ -106,7 +95,8 @@ public class ExamService {
                 (user != null && user.hasRole(Role.ADMIN))
                         ? createdBy
                         : (user == null ? null : user.getId());
-        List<Exam> items = examMapper.findPage(keyword, status, targetCreatedBy, p.offset(), p.size());
+        List<Exam> items =
+                examMapper.findPage(keyword, status, targetCreatedBy, p.offset(), p.size());
         long total = examMapper.count(keyword, status, targetCreatedBy);
 
         Set<Long> submittedExamIds = Collections.emptySet();
@@ -226,17 +216,27 @@ public class ExamService {
 
         Map<Long, UserSavedAnswerVO> myAnswers = new HashMap<>();
         if (currentUser != null) {
-            List<ExamSubmission> savedList = submissionMapper.findByExamAndUser(id, currentUser.getId());
-            Map<Long, ExamQuestion> eqMap = examQuestionMapper.findByExamId(exam.getId()).stream()
-                    .collect(java.util.stream.Collectors.toMap(ExamQuestion::getId, q -> q));
+            List<ExamSubmission> savedList =
+                    submissionMapper.findByExamAndUser(id, currentUser.getId());
+            Map<Long, ExamQuestion> eqMap =
+                    examQuestionMapper.findByExamId(exam.getId()).stream()
+                            .collect(
+                                    java.util.stream.Collectors.toMap(ExamQuestion::getId, q -> q));
             for (ExamSubmission s : savedList) {
                 ExamQuestion eq = eqMap.get(s.getExamQuestionId());
                 Long subId = null;
                 String liveStatus = s.getStatus();
                 Integer liveScore = s.getScore();
                 if (eq != null && strategyFactory != null) {
-                    var latest = strategyFactory.findStrategy(eq.getQuestionType())
-                            .flatMap(st -> st.findLatestContestSubmission(exam.getId(), currentUser.getId(), eq.getQuestionId()));
+                    var latest =
+                            strategyFactory
+                                    .findStrategy(eq.getQuestionType())
+                                    .flatMap(
+                                            st ->
+                                                    st.findLatestContestSubmission(
+                                                            exam.getId(),
+                                                            currentUser.getId(),
+                                                            eq.getQuestionId()));
                     if (latest.isPresent()) {
                         subId = latest.get().submissionId();
                         liveStatus = latest.get().status();
@@ -260,7 +260,8 @@ public class ExamService {
             }
         }
 
-        boolean requireInfo = exam.getRequireStudentInfo() != null && exam.getRequireStudentInfo() == 1;
+        boolean requireInfo =
+                exam.getRequireStudentInfo() != null && exam.getRequireStudentInfo() == 1;
         boolean hasFilled = false;
         ExamStudentInfoVO studentInfoVO = null;
         if (currentUser != null) {
@@ -296,15 +297,16 @@ public class ExamService {
         Exam exam = getExamOrThrow(examId);
         ExamStudentInfo existing = studentInfoMapper.findByExamAndUser(examId, user.getId());
         if (existing == null) {
-            ExamStudentInfo info = ExamStudentInfo.builder()
-                    .examId(examId)
-                    .userId(user.getId())
-                    .realName(req.getRealName().trim())
-                    .studentNo(req.getStudentNo().trim())
-                    .college(req.getCollege() == null ? "" : req.getCollege().trim())
-                    .major(req.getMajor() == null ? "" : req.getMajor().trim())
-                    .className(req.getClassName() == null ? "" : req.getClassName().trim())
-                    .build();
+            ExamStudentInfo info =
+                    ExamStudentInfo.builder()
+                            .examId(examId)
+                            .userId(user.getId())
+                            .realName(req.getRealName().trim())
+                            .studentNo(req.getStudentNo().trim())
+                            .college(req.getCollege() == null ? "" : req.getCollege().trim())
+                            .major(req.getMajor() == null ? "" : req.getMajor().trim())
+                            .className(req.getClassName() == null ? "" : req.getClassName().trim())
+                            .build();
             studentInfoMapper.insert(info);
             return toStudentInfoVO(info);
         } else {
@@ -403,7 +405,8 @@ public class ExamService {
         exam.setDurationMinutes(request.getDurationMinutes());
         exam.setMode(request.getMode().trim().toUpperCase());
         exam.setStatus(request.getStatus() == null ? 1 : request.getStatus());
-        exam.setRequireStudentInfo(request.getRequireStudentInfo() == null ? 0 : request.getRequireStudentInfo());
+        exam.setRequireStudentInfo(
+                request.getRequireStudentInfo() == null ? 0 : request.getRequireStudentInfo());
         if (request.getSchoolName() != null && !request.getSchoolName().isBlank()) {
             exam.setSchoolName(request.getSchoolName());
         }
@@ -424,7 +427,8 @@ public class ExamService {
     private ExamQuestion buildSnapshot(Long examId, int sortOrder, ExamQuestionRequest req) {
         QuestionTypeStrategy strategy = strategyFactory.getStrategy(req.getQuestionType());
         QuestionMeta meta = strategy.resolveQuestionMeta(req.getQuestionId());
-        checkQuestionPermission(meta.getCreatedBy(), strategy.getTypeCode() + "#" + req.getQuestionId());
+        checkQuestionPermission(
+                meta.getCreatedBy(), strategy.getTypeCode() + "#" + req.getQuestionId());
 
         ExamQuestion snapshot = new ExamQuestion();
         snapshot.setExamId(examId);
@@ -442,8 +446,7 @@ public class ExamService {
             return;
         }
         if (user == null || createdBy == null || !createdBy.equals(user.getId())) {
-            throw new BusinessException(
-                    ResultCode.PARAM_ERROR, "教师只能选择自己出的题目: " + questionDesc);
+            throw new BusinessException(ResultCode.PARAM_ERROR, "教师只能选择自己出的题目: " + questionDesc);
         }
     }
 
@@ -456,20 +459,10 @@ public class ExamService {
                         .title(q.getTitle())
                         .score(q.getScore())
                         .sortOrder(q.getSortOrder());
-        strategyFactory.findStrategy(q.getQuestionType())
+        strategyFactory
+                .findStrategy(q.getQuestionType())
                 .ifPresent(s -> s.populateExamSessionQuestion(q.getQuestionId(), b));
         return b.build();
-    }
-
-    private List<String> parseOptions(String optionsJson) {
-        if (optionsJson == null || optionsJson.isBlank()) {
-            return List.of();
-        }
-        try {
-            return objectMapper.readValue(optionsJson, new TypeReference<List<String>>() {});
-        } catch (Exception e) {
-            return List.of();
-        }
     }
 
     /** 状态机推进：UPCOMING→ONGOING→ENDED 按当前时间判定，变化时持久化并返回最新状态。 */
@@ -530,10 +523,6 @@ public class ExamService {
     private boolean isPrivileged() {
         AuthUser user = AuthContextHolder.get();
         return user != null && (user.hasRole(Role.TEACHER) || user.hasRole(Role.ADMIN));
-    }
-
-    private ExamVO toVO(Exam exam, boolean withQuestions) {
-        return toVO(exam, withQuestions, null);
     }
 
     private ExamVO toVO(Exam exam, boolean withQuestions, Boolean submitted) {

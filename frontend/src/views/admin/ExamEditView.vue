@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router';
 import { examApi } from '@/api/exam';
 import { adminApi } from '@/api/admin';
 import { ApiError } from '@/api/request';
-import AdminNav from '@/components/AdminNav.vue';
 import FormField from '@/components/FormField.vue';
 import { useToast } from '@/composables/useToast';
 import { useUserStore } from '@/stores/user';
@@ -343,7 +342,6 @@ onMounted(async () => {
 <template>
   <div class="exam-edit container">
     <h1 class="page-title">{{ isEdit ? '编辑试卷' : '新建试卷' }}</h1>
-    <AdminNav />
 
     <p v-if="loading" class="muted">加载中…</p>
     <p v-else-if="pageError" class="submit-error">{{ pageError }}</p>
