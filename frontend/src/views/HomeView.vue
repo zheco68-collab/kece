@@ -161,7 +161,9 @@ function getPokerStyle(card: PokerSlot) {
   return {
     zIndex: card.slotIndex + 1,
     transform: POKER_TRANSFORMS[card.slotIndex],
-    transition: card.wrapping ? 'none' : 'transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.35s ease',
+    transition: card.wrapping
+      ? 'none'
+      : 'transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease',
   }
 }
 
@@ -407,7 +409,7 @@ onMounted(async () => {
             v-for="card in pokerCards"
             :key="card.id"
             class="poker"
-            :class="[card.module.tone, { 'is-front': card.slotIndex === 4 }]"
+            :class="[`slot-${card.slotIndex}`, { 'is-front': card.slotIndex === 4 }]"
             :style="getPokerStyle(card)"
             @click="movePoker"
           >
@@ -805,35 +807,32 @@ onMounted(async () => {
   user-select: none;
 }
 
-/* 不同槽位/模块的微妙工业灰阶层次，确保扇形叠放时每张牌边界清晰分明 */
-.poker.tone-1 {
-  background: #ffffff;
+/* 从左后方 (slot-0) 到右前方 (slot-4) 由灰到白逐级递进，层次分明 */
+.poker.slot-0 {
+  background-color: #d4d8df;
+  border-color: #b4bac4;
 }
-.poker.tone-2 {
-  background: #f7f8fa;
+.poker.slot-1 {
+  background-color: #dfe3e9;
+  border-color: #bfc5ce;
 }
-.poker.tone-3 {
-  background: #f1f3f6;
+.poker.slot-2 {
+  background-color: #eaedf1;
+  border-color: #cbd0d8;
 }
-.poker.tone-4 {
-  background: #ffffff;
+.poker.slot-3 {
+  background-color: #f4f6f8;
+  border-color: #d6dbe2;
 }
-.poker.tone-5 {
-  background: #f5f6f8;
-}
-.poker.tone-6 {
-  background: #eef0f4;
-}
-
-/* 最前方的激活主牌强对比度高亮 */
+.poker.slot-4,
 .poker.is-front {
-  background: #ffffff;
+  background-color: #ffffff;
   border-color: var(--ink);
   box-shadow: -12px 18px 42px rgba(17, 17, 17, 0.14);
 }
 
 .poker.is-front:hover {
-  background: #fcfcfd;
+  background-color: #ffffff;
 }
 
 .poker-card-top {
@@ -868,9 +867,9 @@ onMounted(async () => {
   font-size: 10px;
   font-weight: 700;
   padding: 2px 7px;
-  background: #ffffff;
-  border: 1px solid var(--line);
-  color: var(--ink-tertiary);
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  color: var(--ink-secondary);
   letter-spacing: 0.4px;
 }
 
@@ -878,8 +877,8 @@ onMounted(async () => {
   width: 48px;
   height: 48px;
   border-radius: 0;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(17, 17, 17, 0.12);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -925,8 +924,8 @@ onMounted(async () => {
 .poker-spec {
   font-size: 11px;
   color: var(--ink-secondary);
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: rgba(17, 17, 17, 0.04);
+  border: 1px solid rgba(17, 17, 17, 0.1);
   padding: 5px 8px;
   margin-bottom: 14px;
   white-space: nowrap;
@@ -939,7 +938,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   padding-top: 12px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid rgba(17, 17, 17, 0.1);
 }
 
 .poker-hint {
@@ -953,8 +952,8 @@ onMounted(async () => {
   font-weight: 700;
   color: var(--ink);
   padding: 4px 10px;
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(17, 17, 17, 0.2);
   transition: all 0.15s ease;
 }
 
