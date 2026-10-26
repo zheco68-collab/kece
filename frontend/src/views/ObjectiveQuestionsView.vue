@@ -12,7 +12,7 @@ const size = 10
 
 const list = ref<ObjectiveQuestion[]>([])
 const total = ref(0)
-const loading = ref(false)
+const loading = ref(true)
 const error = ref('')
 
 const userStore = useUserStore()
@@ -99,12 +99,13 @@ onMounted(() => {
     <p v-if="loading" class="muted loading">加载中…</p>
     <p v-else-if="list.length === 0" class="empty">暂无题目</p>
 
-    <div v-else class="objective-list">
+    <div v-else class="objective-list" :key="`${page}-${type}`">
       <RouterLink
-        v-for="q in list"
+        v-for="(q, index) in list"
         :key="q.id"
         :to="`/objective/${q.id}`"
         class="objective-item card"
+        :style="{ '--drop-index': index }"
       >
         <span class="badge" :class="`type-${q.type.toLowerCase()}`">{{ typeLabels[q.type] }}</span>
         <p class="obj-content">{{ q.content }}</p>
@@ -141,6 +142,8 @@ onMounted(() => {
   font-size: 28px;
 }
 .toolbar {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -174,6 +177,8 @@ onMounted(() => {
   padding: 32px 0;
 }
 .objective-list {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -183,10 +188,40 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
   padding: 18px 20px;
-  transition: box-shadow 0.15s ease;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  /* 客观题卡片入场从工具栏下方按序掉落效果 */
+  animation: cardDropIn 0.44s cubic-bezier(0.25, 1.15, 0.5, 1) backwards;
+  animation-delay: calc(var(--drop-index, 0) * 45ms);
+  will-change: transform, opacity;
 }
 .objective-item:hover {
   box-shadow: var(--shadow-md);
+  border-color: var(--ink);
+  transform: translateY(-2px) !important;
+}
+
+@keyframes cardDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-38px) scale(0.985);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(3px) scale(1.002);
+  }
+  82% {
+    transform: translateY(-1.5px) scale(0.999);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .objective-item {
+    animation: none !important;
+  }
 }
 .obj-content {
   flex: 1;
