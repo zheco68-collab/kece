@@ -109,13 +109,13 @@ const allModules: ModuleItem[] = [
   },
 ]
 
-// 对应 1.html 中的 5 个扇形槽位变换参数
+// 对应 1.html 中的 5 个扇形槽位变换参数（按 1072px 容器全宽等比展开，使左右边界与首屏及代码终端严格对齐）
 const POKER_TRANSFORMS = [
   'rotate(-10deg)',
-  'rotate(-6deg) translate(35%, -12%)',
-  'rotate(-2deg) translate(65%, -19%)',
-  'rotate(2deg) translate(95%, -26%)',
-  'rotate(6deg) translate(125%, -23%)',
+  'rotate(-6deg) translate(45%, -11%)',
+  'rotate(-2deg) translate(90%, -19%)',
+  'rotate(2deg) translate(135%, -28%)',
+  'rotate(6deg) translate(178.5%, -29%)',
 ]
 
 interface PokerSlot {
@@ -741,7 +741,6 @@ onMounted(async () => {
 .modules-section {
   padding-top: 20px;
   padding-bottom: 72px;
-  overflow: hidden;
 }
 
 .modules-header {
@@ -774,31 +773,33 @@ onMounted(async () => {
 }
 
 .poker-stage {
+  width: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
-  padding-top: 110px;
+  padding-top: 116px;
   padding-bottom: 36px;
 }
 
-/* 对应 1.html 的 .poker-container */
+/* 100% 占满 1072px 容器宽度，使扇形左端 (slot-0) 与右端 (slot-4) 严格对齐容器左右边界 */
 .poker-container {
   position: relative;
-  width: 675px;
-  height: 390px;
+  width: 100%;
+  max-width: 1072px;
+  height: 420px;
 }
 
-/* 对应 1.html 的 .poker 尺寸比例与左下旋转基点，但严格保持 KECE 直角工业风格 */
+/* 对应 1.html 的 .poker 左下旋转基点，按 1072px 全宽比例舒展尺寸并保持 KECE 直角工业风格 */
 .poker {
   position: absolute;
   top: 0;
-  left: 0;
-  width: 300px;
-  height: 390px;
+  left: 73px;
+  width: 340px;
+  height: 420px;
   background: var(--surface);
   border: 1.5px solid var(--line);
   border-radius: 0;
-  padding: 24px 22px 20px;
+  padding: 26px 26px 22px;
   display: flex;
   flex-direction: column;
   transform-origin: bottom left;
