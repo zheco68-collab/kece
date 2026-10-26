@@ -11,7 +11,163 @@ import 'prismjs/components/prism-json'
 
 const router = useRouter()
 
+// =========================================
+// 扑克牌扇形轮转效果（复刻 1.html 物理扇形位移逻辑，保持 KECE 直角工业风）
+// =========================================
+interface ModuleItem {
+  num: string
+  code: string
+  archTag: string
+  title: string
+  subtitle: string
+  desc: string
+  spec: string
+  actionText: string
+  path: string
+  icon: 'algo' | 'db' | 'fe' | 'obj' | 'practice' | 'exam'
+  tone: 'tone-1' | 'tone-2' | 'tone-3' | 'tone-4' | 'tone-5' | 'tone-6'
+}
+
+const allModules: ModuleItem[] = [
+  {
+    num: '01',
+    code: 'ALGO',
+    archTag: 'CGROUPS V2',
+    title: '算法编程 OJ',
+    subtitle: '在线编程 · 智能评测',
+    desc: '支持 C++、Java、Python 等多语言在线编译，基于 Linux 容器实现毫秒级时空限制判定与流式测试点对拍。',
+    spec: '毫秒级时空限制判定',
+    actionText: '进入题库 →',
+    path: '/questions',
+    icon: 'algo',
+    tone: 'tone-1',
+  },
+  {
+    num: '02',
+    code: 'SQL',
+    archTag: 'MYSQL 8.0',
+    title: '数据库 SQL OJ',
+    subtitle: 'SQL 实战 · 结果评测',
+    desc: '单次提交独占物理隔离临时库，内置 Schema 表结构可视化预览，支持查询与变更结果集精准比对。',
+    spec: '动态临时库物理强隔离',
+    actionText: '进入题库 →',
+    path: '/database',
+    icon: 'db',
+    tone: 'tone-2',
+  },
+  {
+    num: '03',
+    code: 'WEB AI',
+    archTag: 'PLAYWRIGHT',
+    title: '前端 AI 智能评测',
+    subtitle: '代码检查 · 智能反馈',
+    desc: '基于无头浏览器 DOM 交互断言与多模态大模型，自动完成页面渲染校验、交互测试与代码质量审计。',
+    spec: 'DOM 交互断言与多模态审计',
+    actionText: '体验评测 →',
+    path: '/frontend',
+    icon: 'fe',
+    tone: 'tone-3',
+  },
+  {
+    num: '04',
+    code: 'QUIZ',
+    archTag: 'LATEX MATH',
+    title: '标准客观题库',
+    subtitle: '自动判分 · 成绩统计',
+    desc: '涵盖单选、多选与填空题型，原生支持 Markdown 与 KaTeX 数学公式渲染，提交即刻生成判分解析。',
+    spec: '单选 / 多选 / 填空智能判题',
+    actionText: '进入题库 →',
+    path: '/objective',
+    icon: 'obj',
+    tone: 'tone-4',
+  },
+  {
+    num: '05',
+    code: 'LAB',
+    archTag: 'LIVE LAB',
+    title: '随堂课练实训',
+    subtitle: '混合编排 · 实时督学',
+    desc: '面向日常教学的编程与客观题混排实训，提供教师端实时完成率统计与课堂督学监控看板。',
+    spec: '课堂实训进度实时追踪',
+    actionText: '进入课练 →',
+    path: '/practice',
+    icon: 'practice',
+    tone: 'tone-5',
+  },
+  {
+    num: '06',
+    code: 'EXAM',
+    archTag: 'ACM / OI',
+    title: '在线考试系统',
+    subtitle: '双赛制 · 实时排名',
+    desc: '支持 ACM 罚时与 OI 按点计分双赛制，内置开考题目快照防作弊锁定、切屏监测与实时天梯榜单。',
+    spec: '题目快照防作弊天梯榜',
+    actionText: '进入机考 →',
+    path: '/exams',
+    icon: 'exam',
+    tone: 'tone-6',
+  },
+]
+
+// 对应 1.html 中的 5 个扇形槽位变换参数
+const POKER_TRANSFORMS = [
+  'rotate(-10deg)',
+  'rotate(-6deg) translate(35%, -12%)',
+  'rotate(-2deg) translate(65%, -19%)',
+  'rotate(2deg) translate(95%, -26%)',
+  'rotate(6deg) translate(125%, -23%)',
+]
+
+interface PokerSlot {
+  id: number
+  slotIndex: number // 0..4 (4 为最前方主牌)
+  wrapping: boolean // 从 4 回到 0 时关闭过渡，复刻 1.html ele.style.transition = ""
+  module: ModuleItem
+}
+
+// 初始化 5 张实体扑克牌，初始槽位 0..4（第 5 张 slotIndex=4 在最前展示 01 算法编程 OJ）
+const pokerCards = reactive<PokerSlot[]>([
+  { id: 0, slotIndex: 0, wrapping: false, module: allModules[4]! },
+  { id: 1, slotIndex: 1, wrapping: false, module: allModules[3]! },
+  { id: 2, slotIndex: 2, wrapping: false, module: allModules[2]! },
+  { id: 3, slotIndex: 3, wrapping: false, module: allModules[1]! },
+  { id: 4, slotIndex: 4, wrapping: false, module: allModules[0]! },
+])
+
+// 下一张待抽入牌底的模块索引
+let nextModulePointer = 5
+
+const activeFrontModule = computed(() => {
+  const front = pokerCards.find((c) => c.slotIndex === 4)
+  return front ? front.module : allModules[0]!
+})
+
+function movePoker() {
+  pokerCards.forEach((card) => {
+    if (card.slotIndex + 1 >= pokerCards.length) {
+      // 最前方的牌退回牌堆最底层 (slotIndex = 0)，不加过渡动画并装载下一个模块
+      card.wrapping = true
+      card.slotIndex = 0
+      card.module = allModules[nextModulePointer]!
+      nextModulePointer = (nextModulePointer + 1) % allModules.length
+    } else {
+      card.wrapping = false
+      card.slotIndex += 1
+    }
+  })
+}
+
+function getPokerStyle(card: PokerSlot) {
+  return {
+    zIndex: card.slotIndex + 1,
+    transform: POKER_TRANSFORMS[card.slotIndex],
+    transition: card.wrapping ? 'none' : 'transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.35s ease',
+  }
+}
+
+// =========================================
 // 交互终端演示 Tab 切换
+// =========================================
 type DemoMode = 'algo' | 'sql' | 'exam'
 const activeTab = ref<DemoMode>('algo')
 
@@ -234,150 +390,112 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- 核心多维能力评测矩阵（3x2 均衡宽幅直角卡片网格） -->
+    <!-- 核心多维能力评测矩阵（复刻 1.html 扑克牌扇形轮转交互，保持 KECE 直角工业风） -->
     <section class="modules-section container">
       <div class="modules-header">
         <div class="modules-eyebrow mono">// CAPABILITY MATRIX · 6 MODULES</div>
         <h2 class="modules-title">全栈技术与工程能力评测矩阵</h2>
         <p class="modules-desc">
-          每个评测模块均拥有独立的物理隔离与自动判分机制，满足从日常刷题、随堂课练到正规机考的全流程需求。
+          点击最上方的卡片切换模块，或点击卡片底部入口直达对应评测系统。
         </p>
       </div>
 
-      <div class="modules-grid">
-        <!-- 01 算法 OJ -->
-        <RouterLink to="/questions" class="module-card">
-          <div class="module-card-top">
-            <div class="module-icon-box">
-              <svg class="module-svg" viewBox="0 0 48 48" fill="none">
-                <rect x="6" y="6" width="36" height="36" rx="0" stroke="currentColor" stroke-width="2.5" />
+      <!-- 扑克牌扇形舞台 -->
+      <div class="poker-stage">
+        <div class="poker-container">
+          <div
+            v-for="card in pokerCards"
+            :key="card.id"
+            class="poker"
+            :class="[card.module.tone, { 'is-front': card.slotIndex === 4 }]"
+            :style="getPokerStyle(card)"
+            @click="movePoker"
+          >
+            <!-- 扑克牌左上角标（扇形叠放时每一张的角标均清晰可见） -->
+            <div class="poker-card-top">
+              <div class="poker-corner mono">
+                <span class="poker-num">{{ card.module.num }}</span>
+                <span class="poker-code">{{ card.module.code }}</span>
+              </div>
+              <span class="poker-arch-tag mono">{{ card.module.archTag }}</span>
+            </div>
+
+            <!-- 矢量图标框 -->
+            <div class="poker-icon-box">
+              <!-- 算法 OJ -->
+              <svg v-if="card.module.icon === 'algo'" class="poker-svg" viewBox="0 0 48 48" fill="none">
+                <rect x="6" y="6" width="36" height="36" stroke="currentColor" stroke-width="2.5" />
                 <path d="M18 20L14 24L18 28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
                 <path d="M30 20L34 24L30 28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
                 <path d="M26 17L22 31" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
               </svg>
-            </div>
-            <span class="module-arch-tag mono">CGROUPS V2</span>
-          </div>
-
-          <h3 class="module-title">算法编程 OJ</h3>
-          <p class="module-desc">支持 C++、Java、Python 等多语言在线编译，毫秒级时空限制判定与测试点对拍。</p>
-          <div class="module-foot">
-            <span class="module-num mono">01 / ALGO</span>
-            <span class="module-arrow">进入题库 →</span>
-          </div>
-        </RouterLink>
-
-        <!-- 02 数据库 OJ -->
-        <RouterLink to="/database" class="module-card">
-          <div class="module-card-top">
-            <div class="module-icon-box">
-              <svg class="module-svg" viewBox="0 0 48 48" fill="none">
+              <!-- 数据库 OJ -->
+              <svg v-else-if="card.module.icon === 'db'" class="poker-svg" viewBox="0 0 48 48" fill="none">
                 <ellipse cx="24" cy="14" rx="14" ry="5.5" stroke="currentColor" stroke-width="2.5" />
                 <path d="M10 14V24C10 27 16.3 29.5 24 29.5C31.7 29.5 38 27 38 24V14" stroke="currentColor" stroke-width="2.5" />
                 <path d="M10 24V34C10 37 16.3 39.5 24 39.5C31.7 39.5 38 37 38 34V24" stroke="currentColor" stroke-width="2.5" />
               </svg>
-            </div>
-            <span class="module-arch-tag mono">MYSQL 8.0</span>
-          </div>
-
-          <h3 class="module-title">数据库 SQL OJ</h3>
-          <p class="module-desc">单次提交独占物理隔离临时库，支持 Schema 表结构可视化预览与查询结果集精准比对。</p>
-          <div class="module-foot">
-            <span class="module-num mono">02 / SQL</span>
-            <span class="module-arrow">进入题库 →</span>
-          </div>
-        </RouterLink>
-
-        <!-- 03 前端 AI 评测 -->
-        <RouterLink to="/frontend" class="module-card">
-          <div class="module-card-top">
-            <div class="module-icon-box">
-              <svg class="module-svg" viewBox="0 0 48 48" fill="none">
-                <rect x="7" y="9" width="34" height="30" rx="0" stroke="currentColor" stroke-width="2.5" />
+              <!-- 前端 AI -->
+              <svg v-else-if="card.module.icon === 'fe'" class="poker-svg" viewBox="0 0 48 48" fill="none">
+                <rect x="7" y="9" width="34" height="30" stroke="currentColor" stroke-width="2.5" />
                 <line x1="7" y1="18" x2="41" y2="18" stroke="currentColor" stroke-width="2.5" />
                 <circle cx="13" cy="13.5" r="1.5" fill="currentColor" />
                 <circle cx="18" cy="13.5" r="1.5" fill="currentColor" />
                 <circle cx="23" cy="13.5" r="1.5" fill="currentColor" />
                 <path d="M16 29L20 33L32 23" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-            </div>
-            <span class="module-arch-tag mono">PLAYWRIGHT</span>
-          </div>
-
-          <h3 class="module-title">前端 AI 智能评测</h3>
-          <p class="module-desc">基于无头浏览器 DOM 交互断言与多模态大模型，自动完成页面渲染校验与代码审计。</p>
-          <div class="module-foot">
-            <span class="module-num mono">03 / WEB AI</span>
-            <span class="module-arrow">体验评测 →</span>
-          </div>
-        </RouterLink>
-
-        <!-- 04 标准客观题 -->
-        <RouterLink to="/objective" class="module-card">
-          <div class="module-card-top">
-            <div class="module-icon-box">
-              <svg class="module-svg" viewBox="0 0 48 48" fill="none">
-                <rect x="9" y="7" width="30" height="34" rx="0" stroke="currentColor" stroke-width="2.5" />
+              <!-- 客观题 -->
+              <svg v-else-if="card.module.icon === 'obj'" class="poker-svg" viewBox="0 0 48 48" fill="none">
+                <rect x="9" y="7" width="30" height="34" stroke="currentColor" stroke-width="2.5" />
                 <line x1="16" y1="16" x2="32" y2="16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
                 <line x1="16" y1="23" x2="32" y2="23" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
                 <line x1="16" y1="30" x2="26" y2="30" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-                <circle cx="13" cy="16" r="1" fill="currentColor" />
-                <circle cx="13" cy="23" r="1" fill="currentColor" />
-                <circle cx="13" cy="30" r="1" fill="currentColor" />
               </svg>
-            </div>
-            <span class="module-arch-tag mono">LATEX MATH</span>
-          </div>
-
-          <h3 class="module-title">标准客观题库</h3>
-          <p class="module-desc">涵盖单选、多选与填空题型，原生支持 Markdown 与数学公式渲染，提交即刻生成解析。</p>
-          <div class="module-foot">
-            <span class="module-num mono">04 / QUIZ</span>
-            <span class="module-arrow">进入题库 →</span>
-          </div>
-        </RouterLink>
-
-        <!-- 05 随堂课练系统 -->
-        <RouterLink to="/practice" class="module-card">
-          <div class="module-card-top">
-            <div class="module-icon-box">
-              <svg class="module-svg" viewBox="0 0 48 48" fill="none">
-                <rect x="6" y="9" width="36" height="30" rx="0" stroke="currentColor" stroke-width="2.5" />
+              <!-- 随堂课练 -->
+              <svg v-else-if="card.module.icon === 'practice'" class="poker-svg" viewBox="0 0 48 48" fill="none">
+                <rect x="6" y="9" width="36" height="30" stroke="currentColor" stroke-width="2.5" />
                 <path d="M14 29L21 21L27 26L35 17" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-            </div>
-            <span class="module-arch-tag mono">LIVE LAB</span>
-          </div>
-
-          <h3 class="module-title">随堂课练实训</h3>
-          <p class="module-desc">面向日常教学的编程与客观题混排实训，提供教师端实时完成率统计与督学监控看板。</p>
-          <div class="module-foot">
-            <span class="module-num mono">05 / PRACTICE</span>
-            <span class="module-arrow">进入课练 →</span>
-          </div>
-        </RouterLink>
-
-        <!-- 06 在线考试系统 -->
-        <RouterLink to="/exams" class="module-card">
-          <div class="module-card-top">
-            <div class="module-icon-box">
-              <svg class="module-svg" viewBox="0 0 48 48" fill="none">
+              <!-- 在线考试 -->
+              <svg v-else class="poker-svg" viewBox="0 0 48 48" fill="none">
                 <circle cx="24" cy="26" r="14" stroke="currentColor" stroke-width="2.5" />
                 <path d="M24 18V26L29 29" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
                 <line x1="21" y1="7" x2="27" y2="7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
                 <line x1="24" y1="7" x2="24" y2="12" stroke="currentColor" stroke-width="2.5" />
-                <line x1="34" y1="14" x2="37" y2="11" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
               </svg>
             </div>
-            <span class="module-arch-tag mono">ACM / OI</span>
-          </div>
 
-          <h3 class="module-title">在线考试系统</h3>
-          <p class="module-desc">支持 ACM 罚时与 OI 按点计分双赛制，内置题目快照防作弊锁定、切屏监测与实时榜单。</p>
-          <div class="module-foot">
-            <span class="module-num mono">06 / EXAM</span>
-            <span class="module-arrow">进入机考 →</span>
+            <!-- 标题与简介 -->
+            <div class="poker-title">{{ card.module.title }}</div>
+            <div class="poker-subtitle">{{ card.module.subtitle }}</div>
+            <p class="poker-desc">{{ card.module.desc }}</p>
+
+            <!-- 规格标签 -->
+            <div class="poker-spec mono">{{ card.module.spec }}</div>
+
+            <!-- 底部操作栏：点击牌面切牌 / 点击按钮直接跳转路由 -->
+            <div class="poker-foot">
+              <span class="poker-hint mono">CLICK TO SHUFFLE ↻</span>
+              <RouterLink
+                :to="card.module.path"
+                class="poker-link"
+                @click.stop
+              >
+                {{ card.module.actionText }}
+              </RouterLink>
+            </div>
           </div>
+        </div>
+      </div>
+
+      <!-- 底部模块快速指示器与切牌控制条 -->
+      <div class="poker-controls mono">
+        <button type="button" class="btn-shuffle" @click="movePoker">
+          <span>切换下一张卡片 ({{ activeFrontModule.num }} / 06)</span>
+          <span>↻</span>
+        </button>
+        <RouterLink :to="activeFrontModule.path" class="btn-enter-active">
+          直达「{{ activeFrontModule.title }}」 →
         </RouterLink>
       </div>
     </section>
@@ -616,17 +734,18 @@ onMounted(async () => {
 }
 
 /* =========================================
-   2. 6 大核心能力评测矩阵（3x2 均衡直角卡片）
+   2. 扑克牌扇形轮转能力矩阵（复刻 1.html 扑克扇形效果 + KECE 直角工业风）
    ========================================= */
 .modules-section {
-  padding-top: 16px;
-  padding-bottom: 68px;
+  padding-top: 20px;
+  padding-bottom: 72px;
+  overflow: hidden;
 }
 
 .modules-header {
   text-align: center;
   max-width: 620px;
-  margin: 0 auto 36px;
+  margin: 0 auto 24px;
 }
 
 .modules-eyebrow {
@@ -652,112 +771,244 @@ onMounted(async () => {
   margin: 0;
 }
 
-.modules-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+.poker-stage {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-top: 110px;
+  padding-bottom: 36px;
 }
 
-.module-card {
+/* 对应 1.html 的 .poker-container */
+.poker-container {
+  position: relative;
+  width: 675px;
+  height: 390px;
+}
+
+/* 对应 1.html 的 .poker 尺寸比例与左下旋转基点，但严格保持 KECE 直角工业风格 */
+.poker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 300px;
+  height: 390px;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1.5px solid var(--line);
   border-radius: 0;
-  padding: 26px 24px 22px;
+  padding: 24px 22px 20px;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-sm);
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  text-decoration: none;
-  color: inherit;
+  transform-origin: bottom left;
+  box-shadow: -8px 12px 28px rgba(17, 17, 17, 0.08);
+  cursor: pointer;
+  user-select: none;
 }
 
-.module-card:hover {
-  transform: translateY(-4px);
-  border-color: var(--line-strong);
+/* 不同槽位/模块的微妙工业灰阶层次，确保扇形叠放时每张牌边界清晰分明 */
+.poker.tone-1 {
   background: #ffffff;
-  box-shadow: 0 14px 32px rgba(17, 24, 39, 0.07);
+}
+.poker.tone-2 {
+  background: #f7f8fa;
+}
+.poker.tone-3 {
+  background: #f1f3f6;
+}
+.poker.tone-4 {
+  background: #ffffff;
+}
+.poker.tone-5 {
+  background: #f5f6f8;
+}
+.poker.tone-6 {
+  background: #eef0f4;
 }
 
-.module-card-top {
+/* 最前方的激活主牌强对比度高亮 */
+.poker.is-front {
+  background: #ffffff;
+  border-color: var(--ink);
+  box-shadow: -12px 18px 42px rgba(17, 17, 17, 0.14);
+}
+
+.poker.is-front:hover {
+  background: #fcfcfd;
+}
+
+.poker-card-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   margin-bottom: 18px;
 }
 
-.module-icon-box {
-  width: 44px;
-  height: 44px;
-  border-radius: 0;
-  background: #ffffff;
-  border: 1px solid var(--line);
-  display: flex;
+.poker-corner {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  color: var(--ink);
-  transition: all 0.22s ease;
+  gap: 6px;
 }
 
-.module-card:hover .module-icon-box {
-  background: var(--ink);
-  color: #ffffff;
-  border-color: var(--ink);
-}
-
-.module-svg {
-  width: 22px;
-  height: 22px;
-}
-
-.module-arch-tag {
-  font-size: 10.5px;
+.poker-num {
+  font-size: 13px;
   font-weight: 700;
-  padding: 2px 8px;
+  color: #ffffff;
+  background: var(--ink);
+  padding: 2px 7px;
+}
+
+.poker-code {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-secondary);
+  letter-spacing: 0.5px;
+}
+
+.poker-arch-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
   background: #ffffff;
   border: 1px solid var(--line);
   color: var(--ink-tertiary);
   letter-spacing: 0.4px;
 }
 
-.module-title {
-  font-size: 17.5px;
-  font-weight: 700;
+.poker-icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--ink);
-  margin: 0 0 8px;
+  margin-bottom: 16px;
+  transition: all 0.2s ease;
 }
 
-.module-desc {
-  font-size: 13.5px;
+.poker.is-front .poker-icon-box {
+  background: var(--ink);
+  color: #ffffff;
+  border-color: var(--ink);
+}
+
+.poker-svg {
+  width: 24px;
+  height: 24px;
+}
+
+.poker-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 4px;
+  letter-spacing: -0.3px;
+}
+
+.poker-subtitle {
+  font-size: 12.5px;
+  font-weight: 600;
   color: var(--ink-secondary);
-  line-height: 1.6;
-  margin: 0 0 20px;
+  margin-bottom: 12px;
+}
+
+.poker-desc {
+  font-size: 13px;
+  color: var(--ink-secondary);
+  line-height: 1.55;
+  margin: 0 0 14px;
   flex: 1;
 }
 
-.module-foot {
+.poker-spec {
+  font-size: 11px;
+  color: var(--ink-secondary);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 5px 8px;
+  margin-bottom: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.poker-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-top: 14px;
+  padding-top: 12px;
   border-top: 1px solid var(--line);
 }
 
-.module-num {
-  font-size: 11px;
-  font-weight: 600;
+.poker-hint {
+  font-size: 10px;
   color: var(--ink-tertiary);
+  letter-spacing: 0.3px;
 }
 
-.module-arrow {
+.poker-link {
   font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-secondary);
+  font-weight: 700;
+  color: var(--ink);
+  padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
   transition: all 0.15s ease;
 }
 
-.module-card:hover .module-arrow {
+.poker-link:hover {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+/* 底部切牌控制条 */
+.poker-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.btn-shuffle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: var(--ink);
+  color: #ffffff;
+  border: 1px solid var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.btn-shuffle:hover {
+  opacity: 0.88;
+}
+
+.btn-shuffle:active {
+  transform: scale(0.98);
+}
+
+.btn-enter-active {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 20px;
+  background: var(--surface);
   color: var(--ink);
-  transform: translateX(3px);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.btn-enter-active:hover {
+  border-color: var(--line-strong);
+  background: #ffffff;
 }
 
 /* =========================================
@@ -1086,8 +1337,9 @@ onMounted(async () => {
    5. 响应式适配
    ========================================= */
 @media (max-width: 960px) {
-  .modules-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .poker-stage {
+    transform: scale(0.82);
+    transform-origin: center center;
   }
 }
 
@@ -1125,12 +1377,16 @@ onMounted(async () => {
   }
 }
 
-@media (max-width: 540px) {
+@media (max-width: 640px) {
   .hero-title {
     font-size: 34px;
   }
-  .modules-grid {
-    grid-template-columns: 1fr;
+  .poker-stage {
+    transform: scale(0.58);
+    margin: -40px 0;
+  }
+  .poker-controls {
+    flex-direction: column;
   }
   .hud-metric-row {
     grid-template-columns: 1fr;
