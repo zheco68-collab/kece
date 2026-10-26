@@ -160,7 +160,7 @@ onMounted(() => {
     <RouterLink class="back" to="/admin/objective-questions">← 返回客观题管理</RouterLink>
     <h1 class="page-title">{{ isEdit ? '编辑客观题' : '新建客观题' }}</h1>
 
-    <p v-if="loading" class="muted">加载中…</p>
+    <div v-if="loading" class="state-card card"><div class="loading-spinner"></div><p class="muted">正在加载客观题配置…</p></div>
     <p v-if="pageError" class="submit-error">{{ pageError }}</p>
 
     <div v-if="!loading" class="form-cards">

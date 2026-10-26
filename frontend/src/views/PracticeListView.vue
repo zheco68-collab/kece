@@ -220,8 +220,8 @@ onMounted(() => {
     </div>
 
     <!-- 状态反馈 -->
-    <div v-if="loading && practices.length === 0" class="muted loading">
-      正在加载随堂课练活动…
+    <div v-if="loading && practices.length === 0" class="state-card card">
+      <div class="loading-spinner"></div><p class="muted">正在加载随堂课练活动…</p>
     </div>
 
     <div v-else-if="filteredPractices.length === 0" class="empty">

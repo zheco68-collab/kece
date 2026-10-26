@@ -364,7 +364,7 @@ onMounted(loadSource)
         />
       </div>
 
-      <p v-if="listLoading" class="muted">加载题库中…</p>
+      <div v-if="listLoading" class="state-card"><div class="loading-spinner"></div><p class="muted">正在加载题库…</p></div>
       <ul v-else class="source-list">
         <li
           v-for="row in sourceRows()"

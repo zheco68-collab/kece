@@ -51,7 +51,7 @@ function cellStyle(col: DataTableColumn): CSSProperties {
       </thead>
       <tbody>
         <tr v-if="loading" class="state-row">
-          <td :colspan="colSpan" class="state-cell">加载中…</td>
+          <td :colspan="colSpan" class="state-cell"><div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载数据…</p></td>
         </tr>
         <tr v-else-if="rows.length === 0" class="state-row">
           <td :colspan="colSpan" class="state-cell state-empty">{{ emptyText }}</td>

@@ -343,7 +343,7 @@ onMounted(async () => {
   <div class="exam-edit container">
     <h1 class="page-title">{{ isEdit ? '编辑试卷' : '新建试卷' }}</h1>
 
-    <p v-if="loading" class="muted">加载中…</p>
+    <div v-if="loading" class="state-card card"><div class="loading-spinner"></div><p class="muted">正在加载试卷配置…</p></div>
     <p v-else-if="pageError" class="submit-error">{{ pageError }}</p>
 
     <template v-else>
@@ -434,7 +434,7 @@ onMounted(async () => {
           <input v-model="tabKeyword" class="input search" type="text" placeholder="搜索该题型题目…" />
         </div>
 
-        <p v-if="listLoading" class="muted">加载题库中…</p>
+        <div v-if="listLoading" class="state-card"><div class="loading-spinner"></div><p class="muted">正在加载题库…</p></div>
         <ul v-else class="source-list">
           <li v-for="row in sourceRows()" :key="`${tab}-${row.id}`" class="source-row">
             <span class="type-pill" :class="row.tagClass">{{ row.tagText }}</span>

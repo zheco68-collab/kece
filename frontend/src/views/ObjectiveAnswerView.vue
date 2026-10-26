@@ -119,7 +119,7 @@ onMounted(async () => {
   <div class="answer container">
     <button class="back" @click="router.back()">← 返回</button>
 
-    <p v-if="loading" class="muted">加载中…</p>
+    <div v-if="loading" class="state-card card"><div class="loading-spinner"></div><p class="muted">正在加载客观题详情与选项…</p></div>
     <div v-else-if="error" class="submit-error">{{ error }}</div>
 
     <template v-else-if="question">

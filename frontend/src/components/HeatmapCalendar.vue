@@ -153,7 +153,7 @@ function onCellMouseLeave() {
     </div>
 
     <div v-if="loading" class="heatmap-loading muted">
-      加载热力图数据…
+      <div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载热力图数据…</p>
     </div>
 
     <div v-else class="heatmap-scroll">

@@ -883,9 +883,9 @@ onBeforeUnmount(() => {
 }
 
 .loading-spin {
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--line);
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--line);
   border-top-color: var(--ink);
   animation: spin 0.7s linear infinite;
 }

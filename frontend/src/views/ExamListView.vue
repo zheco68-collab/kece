@@ -184,7 +184,7 @@ onMounted(() => {
 
     <!-- 状态反馈 -->
     <p v-if="error" class="submit-error">{{ error }}</p>
-    <p v-if="loading" class="muted loading">正在加载考试场次…</p>
+    <div v-if="loading" class="state-card card"><div class="loading-spinner"></div><p class="muted">正在加载考试场次…</p></div>
     <p v-else-if="filteredList.length === 0" class="empty">当前暂无可参与的考试场次</p>
 
     <!-- 考试场次 Bento 直角卡片流 -->

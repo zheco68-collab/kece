@@ -214,7 +214,7 @@ onMounted(() => {
     <RouterLink class="back" to="/admin/db-questions">← 返回数据库题管理</RouterLink>
     <h1 class="page-title">{{ isEdit ? '编辑数据库题' : '新建数据库题' }}</h1>
 
-    <p v-if="loading" class="muted">加载中…</p>
+    <div v-if="loading" class="state-card card"><div class="loading-spinner"></div><p class="muted">正在加载数据库题配置…</p></div>
     <p v-if="pageError" class="submit-error">{{ pageError }}</p>
 
     <div v-if="!loading" class="form-cards">

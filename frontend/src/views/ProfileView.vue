@@ -549,7 +549,7 @@ onMounted(() => {
         </div>
 
         <div v-if="examsLoading" class="block-loading muted">
-          正在加载考试记录…
+          <div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载考试记录…</p>
         </div>
 
         <div v-else-if="exams.length === 0" class="empty-block">
@@ -694,7 +694,7 @@ onMounted(() => {
         <!-- Tab 1: 编程题表格 -->
         <template v-if="activeTab === 'code'">
           <div v-if="codeLoading" class="block-loading muted">
-            正在加载编程题提交…
+            <div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载编程题提交…</p>
           </div>
           <div v-else-if="codeList.length === 0" class="empty-block">
             <span class="empty-text">暂无编程题提交记录</span>
@@ -780,7 +780,7 @@ onMounted(() => {
         <!-- Tab 2: 数据库题表格 -->
         <template v-else-if="activeTab === 'database'">
           <div v-if="dbLoading" class="block-loading muted">
-            正在加载数据库提交…
+            <div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载数据库提交…</p>
           </div>
           <div v-else-if="dbList.length === 0" class="empty-block">
             <span class="empty-text">暂无数据库提交记录</span>
@@ -860,7 +860,7 @@ onMounted(() => {
         <!-- Tab 3: 客观题表格 -->
         <template v-else>
           <div v-if="objLoading" class="block-loading muted">
-            正在加载客观题作答…
+            <div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载客观题作答…</p>
           </div>
           <div v-else-if="objList.length === 0" class="empty-block">
             <span class="empty-text">暂无客观题作答记录</span>

@@ -96,7 +96,7 @@ onMounted(() => {
     </div>
 
     <p v-if="error" class="submit-error">{{ error }}</p>
-    <p v-if="loading" class="muted loading">加载中…</p>
+    <div v-if="loading" class="state-card card"><div class="loading-spinner"></div><p class="muted">正在加载客观题库…</p></div>
     <p v-else-if="list.length === 0" class="empty">暂无题目</p>
 
     <div v-else class="objective-list" :key="`${page}-${type}`">

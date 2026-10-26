@@ -323,7 +323,7 @@ onMounted(() => {
     <RouterLink class="back" to="/admin/questions">← 返回编程题管理</RouterLink>
     <h1 class="page-title">{{ isEdit ? '编辑编程题' : '新建编程题' }}</h1>
 
-    <p v-if="loading" class="muted">加载中…</p>
+    <div v-if="loading" class="state-card card"><div class="loading-spinner"></div><p class="muted">正在加载编程题配置…</p></div>
     <p v-if="pageError" class="submit-error">{{ pageError }}</p>
 
     <div v-if="!loading" class="form-cards">
@@ -503,7 +503,7 @@ onMounted(() => {
             </div>
 
             <div v-if="loadingCases" class="muted sample-loading">
-              正在加载测试点列表…
+              <div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载测试点列表…</p>
             </div>
 
             <div v-else class="sample-grid">
