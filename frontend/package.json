@@ -20,6 +20,7 @@
     "marked-katex-extension": "^5.1.13",
     "monaco-editor": "^0.57.0",
     "pinia": "^4.0.3",
+    "prismjs": "^1.30.0",
     "vue": "^3.5.42",
     "vue-router": "^4.6.4"
   },
@@ -27,6 +28,7 @@
     "@eslint/js": "^10.0.1",
     "@types/katex": "^0.16.8",
     "@types/node": "^24.13.3",
+    "@types/prismjs": "^1.26.6",
     "@typescript-eslint/eslint-plugin": "^8.71.1",
     "@typescript-eslint/parser": "^8.71.1",
     "@vitejs/plugin-vue": "^6.0.8",

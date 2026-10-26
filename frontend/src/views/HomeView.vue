@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import ClusterConsole from '@/components/ClusterConsole.vue'
 import { systemApi } from '@/api/system'
+import Prism from 'prismjs'
+import 'prismjs/components/prism-clike'
+import 'prismjs/components/prism-java'
+import 'prismjs/components/prism-sql'
+import 'prismjs/components/prism-json'
 
 const router = useRouter()
 
@@ -145,6 +150,32 @@ function handleTitleMouseLeave() {
   if (glitchTimer) clearTimeout(glitchTimer)
   isGlitching.value = false
 }
+
+// 针对首页沙箱评测终端演示代码的代码与关键字高亮（支持 Java / SQL / JSON）
+const highlightedCode = computed(() => {
+  const current = demos[activeTab.value]
+  if (!current || !current.code) return ''
+
+  let grammar = Prism.languages.clike
+  let langId = 'clike'
+
+  if (activeTab.value === 'algo') {
+    grammar = Prism.languages.java || Prism.languages.clike
+    langId = 'java'
+  } else if (activeTab.value === 'sql') {
+    grammar = Prism.languages.sql || Prism.languages.clike
+    langId = 'sql'
+  } else if (activeTab.value === 'exam') {
+    grammar = Prism.languages.json || Prism.languages.clike
+    langId = 'json'
+  }
+
+  try {
+    return Prism.highlight(current.code, grammar, langId)
+  } catch {
+    return current.code
+  }
+})
 
 // 动态拉取后端每日更新的随机 Java 算法模板（秒级响应，离线/超时高可用保底）
 onMounted(async () => {
@@ -379,7 +410,7 @@ onMounted(async () => {
         </div>
 
         <div class="terminal-body">
-          <pre class="code-view"><code>{{ demos[activeTab].code }}</code></pre>
+          <pre class="code-view"><code v-html="highlightedCode"></code></pre>
         </div>
 
         <div class="terminal-hud">
@@ -859,6 +890,55 @@ onMounted(async () => {
   margin: 0;
   color: #e2e4e9;
   white-space: pre;
+}
+
+/* 语法与关键字高亮体系 (Dark 主题高保真对比度) */
+.code-view :deep(.token.keyword) {
+  color: #c678dd;
+  font-weight: 600;
+}
+
+.code-view :deep(.token.class-name),
+.code-view :deep(.token.type) {
+  color: #e5c07b;
+}
+
+.code-view :deep(.token.function) {
+  color: #61afef;
+}
+
+.code-view :deep(.token.string) {
+  color: #98c379;
+}
+
+.code-view :deep(.token.number) {
+  color: #d19a66;
+}
+
+.code-view :deep(.token.boolean) {
+  color: #d19a66;
+  font-weight: 600;
+}
+
+.code-view :deep(.token.comment) {
+  color: #7f848e;
+  font-style: italic;
+}
+
+.code-view :deep(.token.operator) {
+  color: #56b6c2;
+}
+
+.code-view :deep(.token.punctuation) {
+  color: #abb2bf;
+}
+
+.code-view :deep(.token.property) {
+  color: #e06c75;
+}
+
+.code-view :deep(.token.namespace) {
+  color: #abb2bf;
 }
 
 .terminal-hud {
