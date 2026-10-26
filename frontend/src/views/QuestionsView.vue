@@ -18,7 +18,7 @@ const size = 10
 
 const list = ref<Question[]>([])
 const total = ref(0)
-const loading = ref(false)
+const loading = ref(true)
 const error = ref('')
 
 const solved = ref<Set<number>>(new Set())
@@ -211,12 +211,13 @@ onMounted(() => {
     </div>
 
     <!-- 富信息单列题目卡片列表 -->
-    <div v-else class="question-list">
+    <div v-else class="question-list" :key="`${page}-${difficulty}-${statusFilter}`">
       <RouterLink
-        v-for="q in displayedList"
+        v-for="(q, index) in displayedList"
         :key="q.id"
         :to="`/questions/${q.id}`"
         class="question-item card"
+        :style="{ '--drop-index': index }"
       >
         <!-- 左侧：通过状态图标 + 题号 + 标题与元数据 -->
         <div class="q-main-layout">
@@ -360,6 +361,8 @@ onMounted(() => {
 
 /* 顶部综合工具栏 */
 .toolbar {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -479,6 +482,8 @@ onMounted(() => {
 
 /* 题目卡片列表 */
 .question-list {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -495,11 +500,39 @@ onMounted(() => {
   text-decoration: none;
   color: inherit;
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  /* 题目卡片入场从工具栏下方按序掉落效果 */
+  animation: cardDropIn 0.44s cubic-bezier(0.25, 1.15, 0.5, 1) backwards;
+  animation-delay: calc(var(--drop-index, 0) * 45ms);
+  will-change: transform, opacity;
 }
 .question-item:hover {
   border-color: var(--ink);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-  transform: translateY(-1px);
+  transform: translateY(-2px) !important;
+}
+
+@keyframes cardDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-38px) scale(0.985);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(3px) scale(1.002);
+  }
+  82% {
+    transform: translateY(-1.5px) scale(0.999);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .question-item {
+    animation: none !important;
+  }
 }
 .q-main-layout {
   display: flex;
