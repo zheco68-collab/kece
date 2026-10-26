@@ -15,10 +15,20 @@ const router = useRouter()
 type DemoMode = 'algo' | 'sql' | 'exam'
 const activeTab = ref<DemoMode>('algo')
 
+interface PipelineStage {
+  step: string
+  title: string
+  meta: string
+}
+
 interface DemoContent {
   filename: string
   langBadge: string
+  runnerTag: string
+  targetPath: string
+  targetLabel: string
   code: string
+  pipeline: PipelineStage[]
   verdict: {
     status: string
     statusClass: string
@@ -31,6 +41,9 @@ const demos = reactive<Record<DemoMode, DemoContent>>({
   algo: {
     filename: 'Solution.java',
     langBadge: 'Java 17',
+    runnerTag: 'NODE-ALGO-01 · CGROUPS V2',
+    targetPath: '/questions',
+    targetLabel: '进入算法题库实测 →',
     code: `// ==========================================
 // 算法模板 · 二分查找与边界判定 (Java 17)
 // ==========================================
@@ -46,6 +59,12 @@ public class Solution {
         return -1;
     }
 }`,
+    pipeline: [
+      { step: '01', title: '源码词法检查与字节码编译', meta: 'javac -encoding UTF-8 · 0 Errors' },
+      { step: '02', title: 'Cgroups v2 容器命名空间隔离挂载', meta: 'PID / NET / IPC 独立沙箱限制' },
+      { step: '03', title: '全量标准测试点并发流式对拍', meta: '10 / 10 Cases · Zero-Copy Pipe' },
+      { step: '04', title: '峰值资源审计与临时容器销毁', meta: 'CPU & RSS 精确采样归档' },
+    ],
     verdict: {
       status: 'ACCEPTED (AC)',
       statusClass: 'status-ac',
@@ -60,6 +79,9 @@ public class Solution {
   sql: {
     filename: 'query.sql',
     langBadge: 'MySQL 8.0',
+    runnerTag: 'NODE-SQL-01 · EPHEMERAL DB',
+    targetPath: '/database',
+    targetLabel: '进入数据库题库实测 →',
     code: `-- 查询研发部薪资最高的前三名员工
 SELECT
     e.id,
@@ -69,6 +91,12 @@ FROM emp e
 WHERE e.dept = 'RD'
 ORDER BY e.salary DESC, e.id ASC
 LIMIT 3;`,
+    pipeline: [
+      { step: '01', title: '分配一次性物理隔离临时库', meta: 'CREATE SCHEMA judge_sub_01' },
+      { step: '02', title: '注入建表 Schema 与基准测试数据', meta: 'InnoDB 事务级初始化快照' },
+      { step: '03', title: '执行考生 SQL 与标程结果集对拍', meta: '字段类型 · 行序 · 浮点精度比对' },
+      { step: '04', title: '毫秒级自动销毁临时数据库实例', meta: 'DROP SCHEMA · 零状态残留' },
+    ],
     verdict: {
       status: 'ACCEPTED (AC)',
       statusClass: 'status-ac',
@@ -83,6 +111,9 @@ LIMIT 3;`,
   exam: {
     filename: 'session_report.json',
     langBadge: 'ACM 赛制',
+    runnerTag: 'EXAM-ENGINE · SNAPSHOT LOCK',
+    targetPath: '/exams',
+    targetLabel: '进入在线考试系统 →',
     code: `{
   "exam_id": 1024,
   "title": "2026 技术工程能力机试",
@@ -93,6 +124,12 @@ LIMIT 3;`,
   "screen_switch_count": 0,
   "status": "COMPLETED"
 }`,
+    pipeline: [
+      { step: '01', title: '开考拉取不可变题目快照副本', meta: 'Snapshot Isolation · 防中途改题影响' },
+      { step: '02', title: '焦点切屏监测与防作弊行为记录', meta: 'Visibility API · 实时告警审计' },
+      { step: '03', title: '客观题与编程题混合自动判分', meta: 'ACM 罚时 / OI 按测试点折算' },
+      { step: '04', title: '全考场实时天梯榜单聚合结算', meta: 'Rank #1 · 成绩单即时归档' },
+    ],
     verdict: {
       status: 'RANK #1 (100 分)',
       statusClass: 'status-exam',
@@ -234,218 +271,463 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- 核心多维能力评测矩阵（5 大直角 Bento 宽幅卡片，清晰大方、绝不杂乱） -->
-    <section class="modules-section container">
-      <div class="modules-header">
-        <div class="modules-eyebrow mono">// CAPABILITY MATRIX · 5 ENGINES</div>
-        <h2 class="modules-title">全栈技术与工程能力评测矩阵</h2>
-        <p class="modules-desc">
-          每个评测引擎均拥有独立的物理隔离与自动判分机制，满足从日常练习到正规机考的全流程需求。
-        </p>
+    <!-- ============================================================
+         SECTION 01 · 全栈技术与工程能力评测矩阵（工业级 Bento 规格矩阵）
+         ============================================================ -->
+    <section class="matrix-section container">
+      <!-- 工业分栏头部条 -->
+      <div class="section-head-bar">
+        <div class="section-head-left">
+          <div class="section-eyebrow mono">
+            <span class="sec-index">01</span>
+            <span>// CAPABILITY MATRIX · 6 CORE MODULES</span>
+          </div>
+          <h2 class="section-title">全栈技术与工程能力评测矩阵</h2>
+        </div>
+        <div class="section-head-right">
+          <p class="section-desc">
+            每个评测模块均具备物理级沙箱隔离与自动化判分流水线，覆盖从日常算法刷题、随堂实训到正规机考的全链路场景。
+          </p>
+        </div>
       </div>
 
-      <div class="modules-grid">
-        <!-- 01 算法 OJ -->
-        <RouterLink to="/questions" class="module-card">
-          <div class="module-card-top">
-            <span class="module-num mono">01</span>
-            <span class="module-arch-tag mono">CGROUPS V2</span>
-          </div>
+      <!-- 2 + 4 双层工业级 Bento 矩阵 -->
+      <div class="bento-matrix">
+        <!-- 第一层：2 大主力沙箱引擎（双宽旗舰规格卡） -->
+        <div class="bento-row-primary">
+          <!-- 01 算法编程 OJ -->
+          <RouterLink to="/questions" class="engine-card is-primary">
+            <div class="engine-card-bar mono">
+              <div class="bar-left">
+                <span class="engine-idx">01</span>
+                <span class="engine-code">ENGINE // ALGO_SANDBOX</span>
+              </div>
+              <span class="engine-status-pill is-online">
+                <span class="pip"></span>
+                <span>CGROUPS V2 强隔离</span>
+              </span>
+            </div>
 
-          <div class="module-icon-box">
-            <svg class="module-svg" viewBox="0 0 48 48" fill="none">
-              <rect x="6" y="6" width="36" height="36" rx="0" stroke="currentColor" stroke-width="2.5" />
-              <path d="M18 20L14 24L18 28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-              <path d="M30 20L34 24L30 28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-              <path d="M26 17L22 31" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-            </svg>
-          </div>
+            <div class="engine-card-body">
+              <div class="engine-main-top">
+                <div class="engine-icon-frame">
+                  <svg class="engine-svg" viewBox="0 0 48 48" fill="none">
+                    <rect x="6" y="6" width="36" height="36" stroke="currentColor" stroke-width="2.5" />
+                    <path d="M18 20L14 24L18 28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="M30 20L34 24L30 28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="M26 17L22 31" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+                  </svg>
+                </div>
+                <div class="engine-title-group">
+                  <h3 class="engine-title">算法编程 OJ</h3>
+                  <p class="engine-subtitle">多语言在线编译与毫秒级时空受限沙箱评测</p>
+                </div>
+              </div>
 
-          <div class="module-title">算法 OJ</div>
-          <div class="module-desc">在线编程 · 智能评测</div>
-          <div class="module-spec mono">毫秒级时空限制判定</div>
-          <div class="module-arrow">进入题库 →</div>
-        </RouterLink>
+              <p class="engine-detail">
+                基于 Linux Cgroups v2 与容器命名空间实现严格内存与 CPU 时间片限制，支持多测试点并发流式比对与详细错误栈定位。
+              </p>
 
-        <!-- 02 数据库 OJ -->
-        <RouterLink to="/database" class="module-card">
-          <div class="module-card-top">
-            <span class="module-num mono">02</span>
-            <span class="module-arch-tag mono">MYSQL 8.0</span>
-          </div>
+              <div class="engine-spec-grid mono">
+                <div class="spec-cell">
+                  <span class="spec-k">LANGUAGES</span>
+                  <span class="spec-v">C++17 / Java 17 / Python 3 / ArkTS</span>
+                </div>
+                <div class="spec-cell">
+                  <span class="spec-k">ISOLATION</span>
+                  <span class="spec-v">PID · NET · IPC · RSS 硬限</span>
+                </div>
+              </div>
+            </div>
 
-          <div class="module-icon-box">
-            <svg class="module-svg" viewBox="0 0 48 48" fill="none">
-              <ellipse cx="24" cy="14" rx="14" ry="5.5" stroke="currentColor" stroke-width="2.5" />
-              <path d="M10 14V24C10 27 16.3 29.5 24 29.5C31.7 29.5 38 27 38 24V14" stroke="currentColor" stroke-width="2.5" />
-              <path d="M10 24V34C10 37 16.3 39.5 24 39.5C31.7 39.5 38 37 38 34V24" stroke="currentColor" stroke-width="2.5" />
-            </svg>
-          </div>
+            <div class="engine-card-foot mono">
+              <span class="foot-meta">VERDICT: AC / WA / TLE / MLE / RE / CE</span>
+              <span class="foot-cta">进入算法题库 →</span>
+            </div>
+          </RouterLink>
 
-          <div class="module-title">数据库 OJ</div>
-          <div class="module-desc">SQL 实战 · 结果评测</div>
-          <div class="module-spec mono">动态临时库物理强隔离</div>
-          <div class="module-arrow">进入题库 →</div>
-        </RouterLink>
+          <!-- 02 数据库 SQL OJ -->
+          <RouterLink to="/database" class="engine-card is-primary">
+            <div class="engine-card-bar mono">
+              <div class="bar-left">
+                <span class="engine-idx">02</span>
+                <span class="engine-code">ENGINE // MYSQL_EPHEMERAL</span>
+              </div>
+              <span class="engine-status-pill is-online">
+                <span class="pip"></span>
+                <span>MYSQL 8.0 临时库</span>
+              </span>
+            </div>
 
-        <!-- 03 前端 AI 评测 -->
-        <RouterLink to="/frontend" class="module-card">
-          <div class="module-card-top">
-            <span class="module-num mono">03</span>
-            <span class="module-arch-tag mono">PLAYWRIGHT</span>
-          </div>
+            <div class="engine-card-body">
+              <div class="engine-main-top">
+                <div class="engine-icon-frame">
+                  <svg class="engine-svg" viewBox="0 0 48 48" fill="none">
+                    <ellipse cx="24" cy="14" rx="14" ry="5.5" stroke="currentColor" stroke-width="2.5" />
+                    <path d="M10 14V24C10 27 16.3 29.5 24 29.5C31.7 29.5 38 27 38 24V14" stroke="currentColor" stroke-width="2.5" />
+                    <path d="M10 24V34C10 37 16.3 39.5 24 39.5C31.7 39.5 38 37 38 34V24" stroke="currentColor" stroke-width="2.5" />
+                  </svg>
+                </div>
+                <div class="engine-title-group">
+                  <h3 class="engine-title">数据库 SQL OJ</h3>
+                  <p class="engine-subtitle">真实关系型数据库环境下的查询与变更评测</p>
+                </div>
+              </div>
 
-          <div class="module-icon-box">
-            <svg class="module-svg" viewBox="0 0 48 48" fill="none">
-              <rect x="7" y="9" width="34" height="30" rx="0" stroke="currentColor" stroke-width="2.5" />
-              <line x1="7" y1="18" x2="41" y2="18" stroke="currentColor" stroke-width="2.5" />
-              <circle cx="13" cy="13.5" r="1.5" fill="currentColor" />
-              <circle cx="18" cy="13.5" r="1.5" fill="currentColor" />
-              <circle cx="23" cy="13.5" r="1.5" fill="currentColor" />
-              <path d="M16 29L20 33L32 23" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </div>
+              <p class="engine-detail">
+                每次提交动态分配独立 MySQL 临时 Schema，自动执行建表与初始数据灌入，支持复杂 SELECT 查询与 DML 数据操纵结果集精准对拍。
+              </p>
 
-          <div class="module-title">前端 AI 评测</div>
-          <div class="module-desc">代码检查 · 智能反馈</div>
-          <div class="module-spec mono">DOM 交互断言与多模态审计</div>
-          <div class="module-arrow">体验评测 →</div>
-        </RouterLink>
+              <div class="engine-spec-grid mono">
+                <div class="spec-cell">
+                  <span class="spec-k">WORKLOAD</span>
+                  <span class="spec-v">SELECT 检索 / INSERT · UPDATE · DELETE</span>
+                </div>
+                <div class="spec-cell">
+                  <span class="spec-k">LIFECYCLE</span>
+                  <span class="spec-v">单次提交独占 Schema · 跑完即焚</span>
+                </div>
+              </div>
+            </div>
 
-        <!-- 04 标准客观题 -->
-        <RouterLink to="/objective" class="module-card">
-          <div class="module-card-top">
-            <span class="module-num mono">04</span>
-            <span class="module-arch-tag mono">LATEX MATH</span>
-          </div>
+            <div class="engine-card-foot mono">
+              <span class="foot-meta">SCHEMA PARSER · 交互式表结构预览</span>
+              <span class="foot-cta">进入数据库题库 →</span>
+            </div>
+          </RouterLink>
+        </div>
 
-          <div class="module-icon-box">
-            <svg class="module-svg" viewBox="0 0 48 48" fill="none">
-              <rect x="9" y="7" width="30" height="34" rx="0" stroke="currentColor" stroke-width="2.5" />
-              <line x1="16" y1="16" x2="32" y2="16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-              <line x1="16" y1="23" x2="32" y2="23" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-              <line x1="16" y1="30" x2="26" y2="30" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-              <circle cx="13" cy="16" r="1" fill="currentColor" />
-              <circle cx="13" cy="23" r="1" fill="currentColor" />
-              <circle cx="13" cy="30" r="1" fill="currentColor" />
-            </svg>
-          </div>
+        <!-- 第二层：4 大专项评测与教学考务系统 -->
+        <div class="bento-row-secondary">
+          <!-- 03 前端 AI 评测 -->
+          <RouterLink to="/frontend" class="engine-card">
+            <div class="engine-card-bar mono">
+              <span class="engine-idx">03</span>
+              <span class="engine-tag">PLAYWRIGHT + AI</span>
+            </div>
+            <div class="engine-card-body">
+              <div class="sub-card-head">
+                <div class="engine-icon-frame is-sm">
+                  <svg class="engine-svg" viewBox="0 0 48 48" fill="none">
+                    <rect x="7" y="9" width="34" height="30" stroke="currentColor" stroke-width="2.5" />
+                    <line x1="7" y1="18" x2="41" y2="18" stroke="currentColor" stroke-width="2.5" />
+                    <path d="M16 29L20 33L32 23" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <h3 class="sub-card-title">前端 AI 智能评测</h3>
+              </div>
+              <p class="sub-card-desc">无头浏览器渲染快照、DOM 交互断言与多模态大模型代码质量审计。</p>
+              <div class="sub-card-pills mono">
+                <span class="mini-pill">DOM 断言</span>
+                <span class="mini-pill">视觉审计</span>
+              </div>
+            </div>
+            <div class="engine-card-foot mono">
+              <span class="foot-meta">UI SANDBOX</span>
+              <span class="foot-cta">体验评测 →</span>
+            </div>
+          </RouterLink>
 
-          <div class="module-title">标准客观题</div>
-          <div class="module-desc">自动判分 · 成绩统计</div>
-          <div class="module-spec mono">单选/多选/填空智能判题</div>
-          <div class="module-arrow">进入题库 →</div>
-        </RouterLink>
+          <!-- 04 标准客观题 -->
+          <RouterLink to="/objective" class="engine-card">
+            <div class="engine-card-bar mono">
+              <span class="engine-idx">04</span>
+              <span class="engine-tag">KATEX MATH</span>
+            </div>
+            <div class="engine-card-body">
+              <div class="sub-card-head">
+                <div class="engine-icon-frame is-sm">
+                  <svg class="engine-svg" viewBox="0 0 48 48" fill="none">
+                    <rect x="9" y="7" width="30" height="34" stroke="currentColor" stroke-width="2.5" />
+                    <line x1="16" y1="16" x2="32" y2="16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+                    <line x1="16" y1="23" x2="32" y2="23" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+                    <line x1="16" y1="30" x2="26" y2="30" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+                  </svg>
+                </div>
+                <h3 class="sub-card-title">标准客观题库</h3>
+              </div>
+              <p class="sub-card-desc">涵盖单选、多选与填空题型，原生支持 Markdown 与 LaTeX 数学公式渲染及即时判分解析。</p>
+              <div class="sub-card-pills mono">
+                <span class="mini-pill">单选/多选/填空</span>
+                <span class="mini-pill">自动批改</span>
+              </div>
+            </div>
+            <div class="engine-card-foot mono">
+              <span class="foot-meta">AUTO GRADING</span>
+              <span class="foot-cta">进入题库 →</span>
+            </div>
+          </RouterLink>
 
-        <!-- 05 在线考试系统 -->
-        <RouterLink to="/exams" class="module-card exam-card">
-          <div class="module-card-top">
-            <span class="module-num mono">05</span>
-            <span class="module-arch-tag mono">ACM / OI</span>
-          </div>
+          <!-- 05 随堂课练系统 -->
+          <RouterLink to="/practice" class="engine-card">
+            <div class="engine-card-bar mono">
+              <span class="engine-idx">05</span>
+              <span class="engine-tag">LIVE MONITOR</span>
+            </div>
+            <div class="engine-card-body">
+              <div class="sub-card-head">
+                <div class="engine-icon-frame is-sm">
+                  <svg class="engine-svg" viewBox="0 0 48 48" fill="none">
+                    <rect x="6" y="10" width="36" height="28" stroke="currentColor" stroke-width="2.5" />
+                    <path d="M14 28L20 22L26 26L34 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <h3 class="sub-card-title">随堂课练实训</h3>
+              </div>
+              <p class="sub-card-desc">面向日常教学的算法、SQL 与客观题混合编排实训，提供教师端实时完成率与督学监控看板。</p>
+              <div class="sub-card-pills mono">
+                <span class="mini-pill">混合题集</span>
+                <span class="mini-pill">实训看板</span>
+              </div>
+            </div>
+            <div class="engine-card-foot mono">
+              <span class="foot-meta">CLASSROOM LAB</span>
+              <span class="foot-cta">进入课练 →</span>
+            </div>
+          </RouterLink>
 
-          <div class="module-icon-box">
-            <svg class="module-svg" viewBox="0 0 48 48" fill="none">
-              <circle cx="24" cy="26" r="14" stroke="currentColor" stroke-width="2.5" />
-              <path d="M24 18V26L29 29" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-              <line x1="21" y1="7" x2="27" y2="7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-              <line x1="24" y1="7" x2="24" y2="12" stroke="currentColor" stroke-width="2.5" />
-              <line x1="34" y1="14" x2="37" y2="11" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-            </svg>
-          </div>
-
-          <div class="module-title">在线考试系统</div>
-          <div class="module-desc">ACM / OI 双赛制 · 实时排名</div>
-          <div class="module-spec mono">题目快照防作弊天梯榜</div>
-          <div class="module-arrow">进入机考 →</div>
-        </RouterLink>
+          <!-- 06 在线考试系统 -->
+          <RouterLink to="/exams" class="engine-card">
+            <div class="engine-card-bar mono">
+              <span class="engine-idx">06</span>
+              <span class="engine-tag">ACM / OI MODE</span>
+            </div>
+            <div class="engine-card-body">
+              <div class="sub-card-head">
+                <div class="engine-icon-frame is-sm">
+                  <svg class="engine-svg" viewBox="0 0 48 48" fill="none">
+                    <circle cx="24" cy="26" r="14" stroke="currentColor" stroke-width="2.5" />
+                    <path d="M24 18V26L29 29" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                    <line x1="20" y1="7" x2="28" y2="7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+                  </svg>
+                </div>
+                <h3 class="sub-card-title">在线机考与天梯</h3>
+              </div>
+              <p class="sub-card-desc">支持 ACM 罚时赛制与 OI 按点计分赛制，内置开考题目快照冻结、切屏防作弊统计与实时榜单。</p>
+              <div class="sub-card-pills mono">
+                <span class="mini-pill">题目快照</span>
+                <span class="mini-pill">切屏审计</span>
+              </div>
+            </div>
+            <div class="engine-card-foot mono">
+              <span class="foot-meta">PROCTORED EXAM</span>
+              <span class="foot-cta">进入机考 →</span>
+            </div>
+          </RouterLink>
+        </div>
       </div>
     </section>
 
-    <!-- 交互式技术体验区：实时沙箱评测终端 -->
+    <!-- ============================================================
+         SECTION 02 · 真实评测闭环体验（左：语法高亮代码终端 / 右：工业级判题遥测检视器）
+         ============================================================ -->
     <section class="demo-section container">
-      <div class="demo-header">
-        <div class="demo-eyebrow mono">// SANDBOX RUNNER · LIVE VERDICT</div>
-        <h2 class="demo-title">真实评测闭环体验</h2>
-        <p class="demo-desc">
-          基于 Linux 强隔离容器沙箱与独立 MySQL 临时库，提供毫秒级、防作弊、确定性的技术评测。
-        </p>
+      <!-- 工业分栏头部条 + 模式切换器 -->
+      <div class="section-head-bar">
+        <div class="section-head-left">
+          <div class="section-eyebrow mono">
+            <span class="sec-index">02</span>
+            <span>// SANDBOX RUNNER · LIVE VERDICT</span>
+          </div>
+          <h2 class="section-title">真实评测闭环体验</h2>
+        </div>
+
+        <div class="workbench-Select-group mono" role="tablist">
+          <button
+            type="button"
+            class="wb-mode-btn"
+            :class="{ active: activeTab === 'algo' }"
+            @click="activeTab = 'algo'"
+          >
+            <span class="wb-mode-num">01</span>
+            <span>Java 算法 OJ</span>
+          </button>
+          <button
+            type="button"
+            class="wb-mode-btn"
+            :class="{ active: activeTab === 'sql' }"
+            @click="activeTab = 'sql'"
+          >
+            <span class="wb-mode-num">02</span>
+            <span>SQL 数据库 OJ</span>
+          </button>
+          <button
+            type="button"
+            class="wb-mode-btn"
+            :class="{ active: activeTab === 'exam' }"
+            @click="activeTab = 'exam'"
+          >
+            <span class="wb-mode-num">03</span>
+            <span>ACM 考试结算</span>
+          </button>
+        </div>
       </div>
 
-      <div class="terminal-card">
-        <div class="terminal-top">
-          <div class="terminal-badge">
-            <span class="live-dot"></span>
-            <span>JUDGE RUNNER #01</span>
+      <!-- 双栏工业评测工作台：左侧保留代码展示与语法高亮，右侧配对 ClusterConsole 同款工业风遥测检视面板 -->
+      <div class="workbench-split">
+        <!-- 左侧：代码展示与 Prism 语法高亮终端（保留原有改动） -->
+        <div class="terminal-card">
+          <div class="terminal-top">
+            <div class="terminal-badge">
+              <span class="live-dot"></span>
+              <span>JUDGE RUNNER #01</span>
+              <span class="runner-divider">/</span>
+              <span class="runner-sub">{{ demos[activeTab].runnerTag }}</span>
+            </div>
+
+            <div class="terminal-tabs">
+              <button
+                class="terminal-tab"
+                :class="{ active: activeTab === 'algo' }"
+                @click="activeTab = 'algo'"
+              >
+                Java 算法 OJ
+              </button>
+              <button
+                class="terminal-tab"
+                :class="{ active: activeTab === 'sql' }"
+                @click="activeTab = 'sql'"
+              >
+                SQL 数据库 OJ
+              </button>
+              <button
+                class="terminal-tab"
+                :class="{ active: activeTab === 'exam' }"
+                @click="activeTab = 'exam'"
+              >
+                ACM 考试结算
+              </button>
+            </div>
           </div>
 
-          <div class="terminal-tabs">
-            <button
-              class="terminal-tab"
-              :class="{ active: activeTab === 'algo' }"
-              @click="activeTab = 'algo'"
-            >
-              Java 算法 OJ
-            </button>
-            <button
-              class="terminal-tab"
-              :class="{ active: activeTab === 'sql' }"
-              @click="activeTab = 'sql'"
-            >
-              SQL 数据库 OJ
-            </button>
-            <button
-              class="terminal-tab"
-              :class="{ active: activeTab === 'exam' }"
-              @click="activeTab = 'exam'"
-            >
-              ACM 考试结算
-            </button>
+          <div class="terminal-meta-bar">
+            <span class="file-name">{{ demos[activeTab].filename }}</span>
+            <span class="lang-tag">{{ demos[activeTab].langBadge }} · UTF-8</span>
+          </div>
+
+          <div class="terminal-body">
+            <pre class="code-view"><code v-html="highlightedCode"></code></pre>
           </div>
         </div>
 
-        <div class="terminal-meta-bar">
-          <span class="file-name">{{ demos[activeTab].filename }}</span>
-          <span class="lang-tag">{{ demos[activeTab].langBadge }}</span>
-        </div>
-
-        <div class="terminal-body">
-          <pre class="code-view"><code v-html="highlightedCode"></code></pre>
-        </div>
-
-        <div class="terminal-hud">
-          <div class="hud-status-row">
-            <span class="verdict-tag" :class="demos[activeTab].verdict.statusClass">
+        <!-- 右侧：与项目直角工业风一致的判题流水线与遥测检视面板 -->
+        <aside class="verdict-inspector">
+          <!-- 检视器顶栏 -->
+          <div class="inspector-head mono">
+            <div class="ins-head-left">
+              <span class="ins-dot"></span>
+              <span class="ins-title">// VERDICT TELEMETRY</span>
+            </div>
+            <span class="ins-verdict-badge" :class="demos[activeTab].verdict.statusClass">
               ● {{ demos[activeTab].verdict.status }}
             </span>
-            <span class="verdict-detail">{{ demos[activeTab].verdict.details }}</span>
           </div>
-          <div class="hud-metric-row">
+
+          <!-- 核心指标 3 宫格 -->
+          <div class="inspector-metrics">
             <div
               v-for="m in demos[activeTab].verdict.metrics"
               :key="m.label"
-              class="metric-item"
+              class="ins-metric-box"
             >
-              <div class="metric-title">{{ m.label }}</div>
-              <div class="metric-data">{{ m.value }}</div>
+              <div class="ins-metric-label">{{ m.label }}</div>
+              <div class="ins-metric-val mono">{{ m.value }}</div>
             </div>
           </div>
-        </div>
+
+          <!-- 沙箱判题 4 步确定性流水线 -->
+          <div class="inspector-pipeline">
+            <div class="pipeline-head mono">
+              <span>EXECUTION PIPELINE</span>
+              <span>4 STAGES · VERIFIED</span>
+            </div>
+            <div class="pipeline-list">
+              <div
+                v-for="stage in demos[activeTab].pipeline"
+                :key="stage.step"
+                class="pipeline-item"
+              >
+                <span class="stage-num mono">{{ stage.step }}</span>
+                <div class="stage-info">
+                  <div class="stage-title">{{ stage.title }}</div>
+                  <div class="stage-meta mono">{{ stage.meta }}</div>
+                </div>
+                <span class="stage-check mono">OK</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 检视器底栏：隔离说明与快速实测入口 -->
+          <div class="inspector-foot">
+            <div class="ins-foot-note mono">
+              {{ demos[activeTab].verdict.details }}
+            </div>
+            <RouterLink :to="demos[activeTab].targetPath" class="ins-action-link mono">
+              {{ demos[activeTab].targetLabel }}
+            </RouterLink>
+          </div>
+        </aside>
       </div>
     </section>
 
-    <!-- 底部行动区 CTA -->
-    <section class="cta-section container">
-      <div class="cta-card">
-        <div class="cta-left">
-          <h2 class="cta-title">准备好开启专业级技术测评了吗？</h2>
-          <p class="cta-desc">
-            无论是日常算法与 SQL 训练，还是举办期末机考与企业笔试，KECE 现已全面就绪。
-          </p>
+    <!-- ============================================================
+         SECTION 03 · 工业级安全底座规格与快速启航控制台
+         ============================================================ -->
+    <section class="arch-section container">
+      <div class="arch-console">
+        <!-- 顶部：4 项底层工程规格横条 -->
+        <div class="arch-specs-row">
+          <div class="arch-spec-item">
+            <div class="arch-spec-top mono">
+              <span class="arch-code">SPEC // 01</span>
+              <span class="arch-badge">KERNEL</span>
+            </div>
+            <div class="arch-spec-name">Cgroups v2 资源硬限</div>
+            <p class="arch-spec-desc">进程数、内存水位与 CPU 时间片内核级隔离，杜绝 Fork 炸弹与恶意系统调用。</p>
+          </div>
+
+          <div class="arch-spec-item">
+            <div class="arch-spec-top mono">
+              <span class="arch-code">SPEC // 02</span>
+              <span class="arch-badge">DATABASE</span>
+            </div>
+            <div class="arch-spec-name">独立临时库对拍</div>
+            <p class="arch-spec-desc">每次 SQL 判题动态创建隔离 Schema 并自动回滚销毁，保障并发判题零脏数据干扰。</p>
+          </div>
+
+          <div class="arch-spec-item">
+            <div class="arch-spec-top mono">
+              <span class="arch-code">SPEC // 03</span>
+              <span class="arch-badge">SECURITY</span>
+            </div>
+            <div class="arch-spec-name">题目快照与防作弊审计</div>
+            <p class="arch-spec-desc">开考瞬间冻结试卷快照，全程记录切屏次数与提交轨迹，保障考核公平可追溯。</p>
+          </div>
+
+          <div class="arch-spec-item">
+            <div class="arch-spec-top mono">
+              <span class="arch-code">SPEC // 04</span>
+              <span class="arch-badge">RANKING</span>
+            </div>
+            <div class="arch-spec-name">双赛制实时天梯结算</div>
+            <p class="arch-spec-desc">支持 ACM 罚时榜与 OI 得分榜双引擎实时聚合计算，提供多维个人能力画像。</p>
+          </div>
         </div>
-        <div class="cta-right">
-          <button class="btn btn-primary btn-lg" @click="start">开始使用 →</button>
-          <RouterLink to="/exams" class="btn btn-ghost btn-lg">参加在线考试</RouterLink>
+
+        <!-- 底部：浅色工业风行动控制台 -->
+        <div class="arch-cta-bar">
+          <div class="arch-cta-left">
+            <div class="arch-cta-eyebrow mono">// READY FOR PRODUCTION ASSESSMENT</div>
+            <h2 class="arch-cta-title">准备好开启专业级技术测评了吗？</h2>
+            <p class="arch-cta-desc">
+              无论是日常算法与 SQL 实战训练，还是组织随堂课练与正规机考，KECE 评测集群现已全面就绪。
+            </p>
+          </div>
+          <div class="arch-cta-actions">
+            <button class="btn btn-primary btn-lg" @click="start">立即开始刷题 →</button>
+            <RouterLink to="/exams" class="btn btn-ghost btn-lg">参加在线考试</RouterLink>
+            <RouterLink to="/rankings" class="btn btn-ghost btn-lg">全站天梯榜</RouterLink>
+          </div>
         </div>
       </div>
     </section>
@@ -454,7 +736,7 @@ onMounted(async () => {
 
 <style scoped>
 .home {
-  padding-bottom: 80px;
+  padding-bottom: 88px;
 }
 
 .mono {
@@ -595,20 +877,24 @@ onMounted(async () => {
 }
 
 /* =========================================
-   2. 全宽 5 大能力评测矩阵（Bento Grid）
+   通用工业分栏头部 (Section Header Bar)
    ========================================= */
-.modules-section {
-  padding-top: 10px;
-  padding-bottom: 64px;
+.section-head-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  padding-top: 28px;
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
-.modules-header {
-  text-align: center;
-  max-width: 620px;
-  margin: 0 auto 36px;
-}
-
-.modules-eyebrow {
+.section-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.8px;
@@ -616,61 +902,100 @@ onMounted(async () => {
   margin-bottom: 8px;
 }
 
-.modules-title {
-  font-size: 28px;
+.sec-index {
+  display: inline-block;
+  padding: 1px 6px;
+  background: var(--ink);
+  color: #ffffff;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.section-title {
+  font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.4px;
   color: var(--ink);
-  margin: 0 0 10px;
+  margin: 0;
+  line-height: 1.25;
 }
 
-.modules-desc {
-  font-size: 14.5px;
+.section-head-right {
+  max-width: 460px;
+}
+
+.section-desc {
+  font-size: 14px;
   color: var(--ink-secondary);
   line-height: 1.6;
   margin: 0;
 }
 
-.modules-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
+/* =========================================
+   2. 全栈技术与工程能力评测矩阵 (Industrial Bento Matrix)
+   ========================================= */
+.matrix-section {
+  padding-top: 8px;
+  padding-bottom: 56px;
+}
+
+.bento-matrix {
+  display: flex;
+  flex-direction: column;
   gap: 16px;
 }
 
-.module-card {
-  background: var(--surface);
+.bento-row-primary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.bento-row-secondary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.engine-card {
+  background: #ffffff;
   border: 1px solid var(--line);
   border-radius: 0;
-  padding: 24px 20px 22px;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-sm);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  position: relative;
   text-decoration: none;
   color: inherit;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.module-card:hover {
-  transform: translateY(-4px);
+.engine-card:hover {
   border-color: var(--line-strong);
-  background: #ffffff;
-  box-shadow: 0 16px 36px rgba(17, 24, 39, 0.08);
+  transform: translateY(-3px);
+  box-shadow: 0 14px 32px rgba(17, 17, 17, 0.07);
 }
 
-.module-card.exam-card {
-  background: #ffffff;
-}
-
-.module-card-top {
+/* 卡片顶部工业规格栏 */
+.engine-card-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  padding: 10px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
 }
 
-.module-num {
-  font-size: 12px;
+.bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.engine-idx {
   font-weight: 700;
   color: var(--ink);
   background: #ffffff;
@@ -678,132 +1003,293 @@ onMounted(async () => {
   padding: 1px 6px;
 }
 
-.module-arch-tag {
-  font-size: 10px;
+.engine-code {
   font-weight: 700;
-  padding: 1px 6px;
-  background: #ffffff;
-  border: 1px solid var(--line);
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
   letter-spacing: 0.4px;
 }
 
-.module-icon-box {
-  width: 48px;
-  height: 48px;
-  border-radius: 0;
+.engine-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-tertiary);
   background: #ffffff;
+  border: 1px solid var(--line);
+  padding: 1px 6px;
+  letter-spacing: 0.4px;
+}
+
+.engine-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 8px;
+  background: var(--success-bg);
+  border: 1px solid #b2f2bb;
+  color: var(--success);
+}
+
+.engine-status-pill .pip {
+  width: 5px;
+  height: 5px;
+  background: var(--success);
+  box-shadow: 0 0 4px rgba(47, 158, 68, 0.6);
+}
+
+/* 主力引擎卡片主体 */
+.engine-card-body {
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.engine-main-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.engine-icon-frame {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  background: var(--surface);
   border: 1px solid var(--line);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--ink);
-  margin-bottom: 16px;
-  transition: all 0.25s ease;
+  transition: all 0.2s ease;
 }
 
-.module-card:hover .module-icon-box {
+.engine-icon-frame.is-sm {
+  width: 36px;
+  height: 36px;
+}
+
+.engine-card:hover .engine-icon-frame {
   background: var(--ink);
-  color: #ffffff;
   border-color: var(--ink);
+  color: #ffffff;
 }
 
-.module-svg {
-  width: 24px;
-  height: 24px;
+.engine-svg {
+  width: 22px;
+  height: 22px;
 }
 
-.module-title {
-  font-size: 16px;
+.engine-icon-frame.is-sm .engine-svg {
+  width: 18px;
+  height: 18px;
+}
+
+.engine-title-group {
+  min-width: 0;
+}
+
+.engine-title {
+  font-size: 18px;
   font-weight: 700;
   color: var(--ink);
-  margin-bottom: 4px;
+  margin: 0 0 3px;
+  line-height: 1.25;
 }
 
-.module-desc {
-  font-size: 12.5px;
+.engine-subtitle {
+  font-size: 13px;
   color: var(--ink-secondary);
-  margin-bottom: 12px;
-  line-height: 1.4;
+  margin: 0;
 }
 
-.module-spec {
-  font-size: 10.5px;
-  color: var(--ink-tertiary);
-  background: #ffffff;
+.engine-detail {
+  font-size: 13.5px;
+  color: var(--ink-secondary);
+  line-height: 1.6;
+  margin: 0 0 16px;
+}
+
+.engine-spec-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.spec-cell {
+  background: var(--surface);
   border: 1px solid var(--line);
-  padding: 3px 6px;
-  margin-bottom: 16px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.spec-k {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink-tertiary);
+  letter-spacing: 0.4px;
+}
+
+.spec-v {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.module-arrow {
-  margin-top: auto;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--ink-secondary);
-  transition: all 0.15s ease;
+/* 第二层专项卡片内部排版 */
+.sub-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
-.module-card:hover .module-arrow {
+.sub-card-title {
+  font-size: 15.5px;
+  font-weight: 700;
   color: var(--ink);
-  transform: translateX(3px);
+  margin: 0;
+}
+
+.sub-card-desc {
+  font-size: 13px;
+  color: var(--ink-secondary);
+  line-height: 1.55;
+  margin: 0 0 14px;
+  flex: 1;
+}
+
+.sub-card-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.mini-pill {
+  font-size: 10.5px;
+  padding: 2px 7px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-secondary);
+}
+
+/* 卡片底栏 */
+.engine-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.foot-meta {
+  color: var(--ink-tertiary);
+  font-size: 10.5px;
+}
+
+.foot-cta {
+  font-weight: 700;
+  color: var(--ink);
+  transition: transform 0.15s ease;
+}
+
+.engine-card:hover .engine-card-foot {
+  background: var(--ink);
+  border-top-color: var(--ink);
+}
+
+.engine-card:hover .foot-meta {
+  color: #a0a4ab;
+}
+
+.engine-card:hover .foot-cta {
+  color: #ffffff;
+  transform: translateX(2px);
 }
 
 /* =========================================
-   3. 交互式沙箱评测终端
+   3. 交互式沙箱评测工作台 (Split Workbench: 左代码高亮 + 右工业检视器)
    ========================================= */
 .demo-section {
-  padding-top: 20px;
-  padding-bottom: 60px;
+  padding-top: 8px;
+  padding-bottom: 56px;
 }
 
-.demo-header {
-  text-align: center;
-  margin-bottom: 32px;
+.workbench-Select-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.demo-eyebrow {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  color: var(--ink-tertiary);
-  margin-bottom: 8px;
-}
-
-.demo-title {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.4px;
-  color: var(--ink);
-  margin: 0 0 8px;
-}
-
-.demo-desc {
-  font-size: 15px;
+.wb-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 600;
   color: var(--ink-secondary);
-  margin: 0 auto;
-  max-width: 580px;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
+.wb-mode-btn:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: #ffffff;
+}
+
+.wb-mode-btn.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #ffffff;
+}
+
+.wb-mode-num {
+  font-size: 10.5px;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  opacity: 0.75;
+}
+
+.workbench-split {
+  display: grid;
+  grid-template-columns: 1.32fr 1fr;
+  gap: 18px;
+  align-items: stretch;
+}
+
+/* 左侧：暗色代码终端与语法高亮（完整保留） */
 .terminal-card {
   background: #141415;
   border-radius: var(--radius);
   border: 1px solid #28282a;
   color: #f1f1f1;
   overflow: hidden;
-  box-shadow:
-    0 20px 48px rgba(0, 0, 0, 0.14),
-    0 2px 6px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-md);
 }
 
 .terminal-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 20px;
+  padding: 12px 18px;
   background: #1b1b1d;
   border-bottom: 1px solid #28282a;
   gap: 12px;
@@ -816,8 +1302,16 @@ onMounted(async () => {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
   font-weight: 600;
-  color: #8c8c90;
-  letter-spacing: 0.5px;
+  color: #9da0a8;
+  letter-spacing: 0.4px;
+}
+
+.runner-divider {
+  color: #45464c;
+}
+
+.runner-sub {
+  color: #6c6f78;
 }
 
 .live-dot {
@@ -835,8 +1329,8 @@ onMounted(async () => {
 
 .terminal-tab {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
-  padding: 5px 14px;
+  font-size: 11.5px;
+  padding: 4px 11px;
   border-radius: var(--pill);
   color: #88888e;
   background: transparent;
@@ -860,7 +1354,7 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 20px;
+  padding: 8px 18px;
   background: #171719;
   border-bottom: 1px solid #232326;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -883,7 +1377,8 @@ onMounted(async () => {
   font-size: 13.5px;
   line-height: 1.6;
   overflow-x: auto;
-  min-height: 200px;
+  flex: 1;
+  min-height: 280px;
 }
 
 .code-view {
@@ -941,138 +1436,330 @@ onMounted(async () => {
   color: #abb2bf;
 }
 
-.terminal-hud {
-  padding: 16px 20px;
-  background: #171719;
-  border-top: 1px solid #262629;
+/* 右侧：工业风沙箱判题遥测检视面板 (对齐 ClusterConsole 视觉语言) */
+.verdict-inspector {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-sm);
 }
 
-.hud-status-row {
+.inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  gap: 10px;
+}
+
+.ins-head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ins-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(47, 158, 68, 0.7);
+}
+
+.ins-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.5px;
+}
+
+.ins-verdict-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+}
+
+.ins-verdict-badge.status-ac {
+  background: var(--success-bg);
+  color: var(--success);
+  border-color: #b2f2bb;
+}
+
+.ins-verdict-badge.status-exam {
+  background: #e7f5ff;
+  color: #1971c2;
+  border-color: #a5d8ff;
+}
+
+.inspector-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 16px 18px 12px;
+}
+
+.ins-metric-box {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+}
+
+.ins-metric-label {
+  font-size: 11px;
+  color: var(--ink-tertiary);
+  margin-bottom: 3px;
+}
+
+.ins-metric-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.inspector-pipeline {
+  padding: 6px 18px 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.pipeline-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-tertiary);
+  letter-spacing: 0.5px;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.pipeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pipeline-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.pipeline-item:hover {
+  background: #ffffff;
+  border-color: var(--line-strong);
+}
+
+.stage-num {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.stage-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.stage-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.stage-meta {
+  font-size: 11px;
+  color: var(--ink-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stage-check {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  background: var(--success-bg);
+  border: 1px solid #b2f2bb;
+  color: var(--success);
+}
+
+.inspector-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  padding: 12px 18px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  margin-top: auto;
 }
 
-.verdict-tag {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+.ins-foot-note {
+  font-size: 11px;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ins-action-link {
   font-size: 12px;
   font-weight: 700;
-  padding: 3px 12px;
-  border-radius: var(--pill);
+  color: var(--ink);
+  white-space: nowrap;
+  padding: 4px 10px;
+  background: #ffffff;
+  border: 1px solid var(--line-strong);
+  transition: all 0.15s ease;
 }
 
-.verdict-tag.status-ac {
-  background: rgba(47, 158, 68, 0.16);
-  color: #40c057;
-  border: 1px solid rgba(47, 158, 68, 0.35);
-}
-
-.verdict-tag.status-exam {
-  background: rgba(34, 139, 230, 0.16);
-  color: #4dabf7;
-  border: 1px solid rgba(34, 139, 230, 0.35);
-}
-
-.verdict-detail {
-  font-size: 12px;
-  color: #8c8f98;
-}
-
-.hud-metric-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.metric-item {
-  background: #1f1f22;
-  border: 1px solid #2a2a2e;
-  border-radius: 0;
-  padding: 9px 12px;
-}
-
-.metric-title {
-  font-size: 11px;
-  color: #72747d;
-  margin-bottom: 2px;
-}
-
-.metric-data {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 13px;
-  font-weight: 600;
+.ins-action-link:hover {
+  background: var(--ink);
   color: #ffffff;
 }
 
 /* =========================================
-   4. 底部 CTA 行动区
+   4. 工业级安全底座规格与底部行动控制台 (Architecture & Action Console)
    ========================================= */
-.cta-section {
-  padding-top: 20px;
+.arch-section {
+  padding-top: 8px;
 }
 
-.cta-card {
-  background: #141416;
-  border-radius: var(--radius);
-  border: 1px solid #26262a;
-  padding: 44px 40px;
+.arch-console {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+}
+
+.arch-specs-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: 1px solid var(--line);
+}
+
+.arch-spec-item {
+  padding: 22px 20px;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  transition: background 0.2s ease;
+}
+
+.arch-spec-item:last-child {
+  border-right: none;
+}
+
+.arch-spec-item:hover {
+  background: #ffffff;
+}
+
+.arch-spec-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 10.5px;
+}
+
+.arch-code {
+  font-weight: 700;
+  color: var(--ink-tertiary);
+}
+
+.arch-badge {
+  font-weight: 700;
+  padding: 1px 6px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.arch-spec-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.arch-spec-desc {
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.arch-cta-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 32px;
-  color: #ffffff;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+  padding: 32px 28px;
+  background: #ffffff;
 }
 
-.cta-title {
-  font-size: 26px;
+.arch-cta-eyebrow {
+  font-size: 11px;
   font-weight: 700;
-  color: #ffffff;
-  margin: 0 0 8px;
+  letter-spacing: 0.8px;
+  color: var(--ink-tertiary);
+  margin-bottom: 6px;
+}
+
+.arch-cta-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 6px;
   letter-spacing: -0.4px;
 }
 
-.cta-desc {
-  font-size: 15px;
-  color: #9fa2ab;
+.arch-cta-desc {
+  font-size: 14px;
+  color: var(--ink-secondary);
   margin: 0;
-  max-width: 520px;
-  line-height: 1.6;
+  max-width: 540px;
 }
 
-.cta-right {
+.arch-cta-actions {
   display: flex;
-  gap: 14px;
+  align-items: center;
+  gap: 12px;
   flex-shrink: 0;
-}
-
-.cta-card .btn-primary {
-  background: #ffffff;
-  color: #111111;
-}
-
-.cta-card .btn-primary:hover {
-  background: #f0f0f0;
-}
-
-.cta-card .btn-ghost {
-  border-color: #3e3e46;
-  color: #e1e3e8;
-}
-
-.cta-card .btn-ghost:hover {
-  background: #25252a;
-  color: #ffffff;
+  flex-wrap: wrap;
 }
 
 /* =========================================
    5. 响应式适配
    ========================================= */
-@media (max-width: 1080px) {
-  .modules-grid {
-    grid-template-columns: repeat(3, 1fr);
+@media (max-width: 1024px) {
+  .bento-row-secondary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .workbench-split {
+    grid-template-columns: 1fr;
+  }
+  .arch-specs-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .arch-spec-item:nth-child(2) {
+    border-right: none;
+  }
+  .arch-spec-item:nth-child(1),
+  .arch-spec-item:nth-child(2) {
+    border-bottom: 1px solid var(--line);
   }
 }
 
@@ -1096,19 +1783,20 @@ onMounted(async () => {
   .hero-spec-strip {
     justify-content: center;
   }
-  .modules-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .cta-card {
+  .section-head-bar {
     flex-direction: column;
-    text-align: center;
-    padding: 32px 24px;
+    align-items: flex-start;
+    gap: 12px;
   }
-  .cta-right {
-    width: 100%;
+  .bento-row-primary {
+    grid-template-columns: 1fr;
+  }
+  .arch-cta-bar {
     flex-direction: column;
+    align-items: flex-start;
+    padding: 24px 20px;
   }
-  .cta-right .btn {
+  .arch-cta-actions {
     width: 100%;
   }
 }
@@ -1117,11 +1805,24 @@ onMounted(async () => {
   .hero-title {
     font-size: 34px;
   }
-  .modules-grid {
+  .bento-row-secondary {
     grid-template-columns: 1fr;
   }
-  .hud-metric-row {
+  .engine-spec-grid {
     grid-template-columns: 1fr;
+  }
+  .inspector-metrics {
+    grid-template-columns: 1fr;
+  }
+  .arch-specs-row {
+    grid-template-columns: 1fr;
+  }
+  .arch-spec-item {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .arch-spec-item:last-child {
+    border-bottom: none;
   }
   .terminal-tabs {
     display: none;
