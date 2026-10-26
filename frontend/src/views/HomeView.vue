@@ -16,13 +16,8 @@ type DemoMode = 'algo' | 'sql' | 'exam'
 const activeTab = ref<DemoMode>('algo')
 
 interface DemoContent {
-  id: DemoMode
-  num: string
-  label: string
-  summary: string
   filename: string
   langBadge: string
-  targetPath: string
   code: string
   verdict: {
     status: string
@@ -34,13 +29,8 @@ interface DemoContent {
 
 const demos = reactive<Record<DemoMode, DemoContent>>({
   algo: {
-    id: 'algo',
-    num: '01',
-    label: 'Java 算法 OJ',
-    summary: 'Cgroups v2 隔离容器 · 毫秒级时空限制判定',
     filename: 'Solution.java',
     langBadge: 'Java 17',
-    targetPath: '/questions',
     code: `// ==========================================
 // 算法模板 · 二分查找与边界判定 (Java 17)
 // ==========================================
@@ -68,13 +58,8 @@ public class Solution {
     },
   },
   sql: {
-    id: 'sql',
-    num: '02',
-    label: 'SQL 数据库 OJ',
-    summary: '独立临时 Schema 对拍 · 跑完即自动销毁',
     filename: 'query.sql',
     langBadge: 'MySQL 8.0',
-    targetPath: '/database',
     code: `-- 查询研发部薪资最高的前三名员工
 SELECT
     e.id,
@@ -96,13 +81,8 @@ LIMIT 3;`,
     },
   },
   exam: {
-    id: 'exam',
-    num: '03',
-    label: 'ACM 考试结算',
-    summary: '试卷快照防作弊锁定 · 实时天梯榜单折算',
     filename: 'session_report.json',
     langBadge: 'ACM 赛制',
-    targetPath: '/exams',
     code: `{
   "exam_id": 1024,
   "title": "2026 技术工程能力机试",
@@ -125,53 +105,6 @@ LIMIT 3;`,
     },
   },
 })
-
-const demoList: DemoMode[] = ['algo', 'sql', 'exam']
-
-const capabilities = [
-  {
-    num: '01',
-    title: '算法编程 OJ',
-    desc: '多语言在线编译与流式测试点对拍，基于 Cgroups v2 实现毫秒级时间与内存峰值硬限制。',
-    spec: 'C++17 · Java 17 · Python 3 · ArkTS',
-    path: '/questions',
-  },
-  {
-    num: '02',
-    title: '数据库 SQL OJ',
-    desc: '每次提交动态分配独立 MySQL 临时库，支持复杂 SELECT 查询与 DML 数据操纵结果比对。',
-    spec: 'MySQL 8.0 · 独立临时库 · 表结构可视',
-    path: '/database',
-  },
-  {
-    num: '03',
-    title: '前端 AI 智能评测',
-    desc: '结合 Playwright 无头浏览器渲染断言与多模态大模型，自动完成 DOM 交互与代码审计。',
-    spec: 'Playwright · DOM 断言 · 智能反馈',
-    path: '/frontend',
-  },
-  {
-    num: '04',
-    title: '标准客观题库',
-    desc: '支持单选、多选与填空题型，内置 Markdown 与 KaTeX 数学公式渲染，交卷即时判分解析。',
-    spec: '单选 / 多选 / 填空 · LaTeX 公式',
-    path: '/objective',
-  },
-  {
-    num: '05',
-    title: '随堂课练实训',
-    desc: '面向日常教学的编程与客观题混排练习，提供教师端实时完成率统计与督学监控看板。',
-    spec: '混合题集 · 实时进度 · 教学实训',
-    path: '/practice',
-  },
-  {
-    num: '06',
-    title: '在线考试系统',
-    desc: '支持 ACM 罚时与 OI 按点计分双赛制，具备开考题目快照冻结、切屏监控与实时天梯榜。',
-    spec: 'ACM / OI 双赛制 · 防作弊快照',
-    path: '/exams',
-  },
-]
 
 function start() {
   router.push('/questions')
@@ -301,114 +234,239 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- ============================================================
-         01 · 能力矩阵：极简瑞士十字通栏网格（无碎框、大留白、强秩序）
-         ============================================================ -->
-    <section class="matrix-section container">
-      <div class="sec-header">
-        <div class="sec-eyebrow mono">// 01 · CAPABILITY MATRIX</div>
-        <div class="sec-head-row">
-          <h2 class="sec-title">六大核心评测与考务引擎</h2>
-          <p class="sec-sub">统一架构底座，覆盖日常训练、随堂实训与正规机考全场景。</p>
-        </div>
+    <!-- 核心多维能力评测矩阵（3x2 均衡宽幅直角卡片网格） -->
+    <section class="modules-section container">
+      <div class="modules-header">
+        <div class="modules-eyebrow mono">// CAPABILITY MATRIX · 6 MODULES</div>
+        <h2 class="modules-title">全栈技术与工程能力评测矩阵</h2>
+        <p class="modules-desc">
+          每个评测模块均拥有独立的物理隔离与自动判分机制，满足从日常刷题、随堂课练到正规机考的全流程需求。
+        </p>
       </div>
 
-      <div class="swiss-grid">
-        <RouterLink
-          v-for="item in capabilities"
-          :key="item.num"
-          :to="item.path"
-          class="swiss-cell"
-        >
-          <div class="cell-top mono">
-            <span class="cell-num">{{ item.num }}</span>
-            <span class="cell-arrow">↗</span>
+      <div class="modules-grid">
+        <!-- 01 算法 OJ -->
+        <RouterLink to="/questions" class="module-card">
+          <div class="module-card-top">
+            <div class="module-icon-box">
+              <svg class="module-svg" viewBox="0 0 48 48" fill="none">
+                <rect x="6" y="6" width="36" height="36" rx="0" stroke="currentColor" stroke-width="2.5" />
+                <path d="M18 20L14 24L18 28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M30 20L34 24L30 28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M26 17L22 31" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+              </svg>
+            </div>
+            <span class="module-arch-tag mono">CGROUPS V2</span>
           </div>
-          <h3 class="cell-title">{{ item.title }}</h3>
-          <p class="cell-desc">{{ item.desc }}</p>
-          <div class="cell-spec mono">{{ item.spec }}</div>
+
+          <h3 class="module-title">算法编程 OJ</h3>
+          <p class="module-desc">支持 C++、Java、Python 等多语言在线编译，毫秒级时空限制判定与测试点对拍。</p>
+          <div class="module-foot">
+            <span class="module-num mono">01 / ALGO</span>
+            <span class="module-arrow">进入题库 →</span>
+          </div>
+        </RouterLink>
+
+        <!-- 02 数据库 OJ -->
+        <RouterLink to="/database" class="module-card">
+          <div class="module-card-top">
+            <div class="module-icon-box">
+              <svg class="module-svg" viewBox="0 0 48 48" fill="none">
+                <ellipse cx="24" cy="14" rx="14" ry="5.5" stroke="currentColor" stroke-width="2.5" />
+                <path d="M10 14V24C10 27 16.3 29.5 24 29.5C31.7 29.5 38 27 38 24V14" stroke="currentColor" stroke-width="2.5" />
+                <path d="M10 24V34C10 37 16.3 39.5 24 39.5C31.7 39.5 38 37 38 34V24" stroke="currentColor" stroke-width="2.5" />
+              </svg>
+            </div>
+            <span class="module-arch-tag mono">MYSQL 8.0</span>
+          </div>
+
+          <h3 class="module-title">数据库 SQL OJ</h3>
+          <p class="module-desc">单次提交独占物理隔离临时库，支持 Schema 表结构可视化预览与查询结果集精准比对。</p>
+          <div class="module-foot">
+            <span class="module-num mono">02 / SQL</span>
+            <span class="module-arrow">进入题库 →</span>
+          </div>
+        </RouterLink>
+
+        <!-- 03 前端 AI 评测 -->
+        <RouterLink to="/frontend" class="module-card">
+          <div class="module-card-top">
+            <div class="module-icon-box">
+              <svg class="module-svg" viewBox="0 0 48 48" fill="none">
+                <rect x="7" y="9" width="34" height="30" rx="0" stroke="currentColor" stroke-width="2.5" />
+                <line x1="7" y1="18" x2="41" y2="18" stroke="currentColor" stroke-width="2.5" />
+                <circle cx="13" cy="13.5" r="1.5" fill="currentColor" />
+                <circle cx="18" cy="13.5" r="1.5" fill="currentColor" />
+                <circle cx="23" cy="13.5" r="1.5" fill="currentColor" />
+                <path d="M16 29L20 33L32 23" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <span class="module-arch-tag mono">PLAYWRIGHT</span>
+          </div>
+
+          <h3 class="module-title">前端 AI 智能评测</h3>
+          <p class="module-desc">基于无头浏览器 DOM 交互断言与多模态大模型，自动完成页面渲染校验与代码审计。</p>
+          <div class="module-foot">
+            <span class="module-num mono">03 / WEB AI</span>
+            <span class="module-arrow">体验评测 →</span>
+          </div>
+        </RouterLink>
+
+        <!-- 04 标准客观题 -->
+        <RouterLink to="/objective" class="module-card">
+          <div class="module-card-top">
+            <div class="module-icon-box">
+              <svg class="module-svg" viewBox="0 0 48 48" fill="none">
+                <rect x="9" y="7" width="30" height="34" rx="0" stroke="currentColor" stroke-width="2.5" />
+                <line x1="16" y1="16" x2="32" y2="16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+                <line x1="16" y1="23" x2="32" y2="23" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+                <line x1="16" y1="30" x2="26" y2="30" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+                <circle cx="13" cy="16" r="1" fill="currentColor" />
+                <circle cx="13" cy="23" r="1" fill="currentColor" />
+                <circle cx="13" cy="30" r="1" fill="currentColor" />
+              </svg>
+            </div>
+            <span class="module-arch-tag mono">LATEX MATH</span>
+          </div>
+
+          <h3 class="module-title">标准客观题库</h3>
+          <p class="module-desc">涵盖单选、多选与填空题型，原生支持 Markdown 与数学公式渲染，提交即刻生成解析。</p>
+          <div class="module-foot">
+            <span class="module-num mono">04 / QUIZ</span>
+            <span class="module-arrow">进入题库 →</span>
+          </div>
+        </RouterLink>
+
+        <!-- 05 随堂课练系统 -->
+        <RouterLink to="/practice" class="module-card">
+          <div class="module-card-top">
+            <div class="module-icon-box">
+              <svg class="module-svg" viewBox="0 0 48 48" fill="none">
+                <rect x="6" y="9" width="36" height="30" rx="0" stroke="currentColor" stroke-width="2.5" />
+                <path d="M14 29L21 21L27 26L35 17" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <span class="module-arch-tag mono">LIVE LAB</span>
+          </div>
+
+          <h3 class="module-title">随堂课练实训</h3>
+          <p class="module-desc">面向日常教学的编程与客观题混排实训，提供教师端实时完成率统计与督学监控看板。</p>
+          <div class="module-foot">
+            <span class="module-num mono">05 / PRACTICE</span>
+            <span class="module-arrow">进入课练 →</span>
+          </div>
+        </RouterLink>
+
+        <!-- 06 在线考试系统 -->
+        <RouterLink to="/exams" class="module-card">
+          <div class="module-card-top">
+            <div class="module-icon-box">
+              <svg class="module-svg" viewBox="0 0 48 48" fill="none">
+                <circle cx="24" cy="26" r="14" stroke="currentColor" stroke-width="2.5" />
+                <path d="M24 18V26L29 29" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                <line x1="21" y1="7" x2="27" y2="7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+                <line x1="24" y1="7" x2="24" y2="12" stroke="currentColor" stroke-width="2.5" />
+                <line x1="34" y1="14" x2="37" y2="11" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+              </svg>
+            </div>
+            <span class="module-arch-tag mono">ACM / OI</span>
+          </div>
+
+          <h3 class="module-title">在线考试系统</h3>
+          <p class="module-desc">支持 ACM 罚时与 OI 按点计分双赛制，内置题目快照防作弊锁定、切屏监测与实时榜单。</p>
+          <div class="module-foot">
+            <span class="module-num mono">06 / EXAM</span>
+            <span class="module-arrow">进入机考 →</span>
+          </div>
         </RouterLink>
       </div>
     </section>
 
-    <!-- ============================================================
-         02 · 沙箱闭环：左文右码（与首屏形成视觉呼应，保留代码与语法高亮）
-         ============================================================ -->
-    <section class="sandbox-section container">
-      <div class="sandbox-layout">
-        <!-- 左侧：大留白叙事与极简模式切换列表（无外框，呼应首屏左栏） -->
-        <div class="sandbox-left">
-          <div class="sec-eyebrow mono">// 02 · SANDBOX VERDICT</div>
-          <h2 class="sec-title">真实评测闭环体验</h2>
-          <p class="sandbox-intro">
-            从代码提交、沙箱隔离运行到多维度结果校验，每一次评测均在受控环境中以毫秒级完成。
-          </p>
+    <!-- 交互式技术体验区：实时沙箱评测终端（保留全宽结构与代码语法高亮） -->
+    <section class="demo-section container">
+      <div class="demo-header">
+        <div class="demo-eyebrow mono">// SANDBOX RUNNER · LIVE VERDICT</div>
+        <h2 class="demo-title">真实评测闭环体验</h2>
+        <p class="demo-desc">
+          基于 Linux 强隔离容器沙箱与独立 MySQL 临时库，提供毫秒级、防作弊、确定性的技术评测。
+        </p>
+      </div>
 
-          <div class="mode-list" role="tablist">
-            <button
-              v-for="mode in demoList"
-              :key="mode"
-              type="button"
-              class="mode-item"
-              :class="{ active: activeTab === mode }"
-              @click="activeTab = mode"
-            >
-              <span class="mode-num mono">{{ demos[mode].num }}</span>
-              <div class="mode-text">
-                <div class="mode-name">{{ demos[mode].label }}</div>
-                <div class="mode-summary">{{ demos[mode].summary }}</div>
-              </div>
-            </button>
+      <div class="terminal-card">
+        <div class="terminal-top">
+          <div class="terminal-badge">
+            <span class="live-dot"></span>
+            <span>JUDGE RUNNER #01</span>
           </div>
 
-          <div class="sandbox-action">
-            <RouterLink :to="demos[activeTab].targetPath" class="link-explore mono">
-              前往 {{ demos[activeTab].label }} 实测 →
-            </RouterLink>
+          <div class="terminal-tabs">
+            <button
+              class="terminal-tab"
+              :class="{ active: activeTab === 'algo' }"
+              @click="activeTab = 'algo'"
+            >
+              Java 算法 OJ
+            </button>
+            <button
+              class="terminal-tab"
+              :class="{ active: activeTab === 'sql' }"
+              @click="activeTab = 'sql'"
+            >
+              SQL 数据库 OJ
+            </button>
+            <button
+              class="terminal-tab"
+              :class="{ active: activeTab === 'exam' }"
+              @click="activeTab = 'exam'"
+            >
+              ACM 考试结算
+            </button>
           </div>
         </div>
 
-        <!-- 右侧：保留代码展示与 Prism 关键字语法高亮 -->
-        <div class="terminal-card">
-          <div class="terminal-top">
-            <div class="terminal-badge">
-              <span class="live-dot"></span>
-              <span>{{ demos[activeTab].filename }}</span>
-            </div>
-            <span class="lang-tag mono">{{ demos[activeTab].langBadge }}</span>
-          </div>
+        <div class="terminal-meta-bar">
+          <span class="file-name">{{ demos[activeTab].filename }}</span>
+          <span class="lang-tag">{{ demos[activeTab].langBadge }}</span>
+        </div>
 
-          <div class="terminal-body">
-            <pre class="code-view"><code v-html="highlightedCode"></code></pre>
-          </div>
+        <div class="terminal-body">
+          <pre class="code-view"><code v-html="highlightedCode"></code></pre>
+        </div>
 
-          <div class="terminal-foot mono">
+        <div class="terminal-hud">
+          <div class="hud-status-row">
             <span class="verdict-tag" :class="demos[activeTab].verdict.statusClass">
               ● {{ demos[activeTab].verdict.status }}
             </span>
-            <div class="foot-metrics">
-              <span v-for="m in demos[activeTab].verdict.metrics" :key="m.label" class="foot-metric-item">
-                <span class="fm-k">{{ m.label }}</span>
-                <span class="fm-v">{{ m.value }}</span>
-              </span>
+            <span class="verdict-detail">{{ demos[activeTab].verdict.details }}</span>
+          </div>
+          <div class="hud-metric-row">
+            <div
+              v-for="m in demos[activeTab].verdict.metrics"
+              :key="m.label"
+              class="metric-item"
+            >
+              <div class="metric-title">{{ m.label }}</div>
+              <div class="metric-data">{{ m.value }}</div>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ============================================================
-         03 · 极简底部行动横栏
-         ============================================================ -->
-    <section class="closing-section container">
-      <div class="closing-bar">
-        <div class="closing-left">
-          <div class="sec-eyebrow mono">// 03 · GET STARTED</div>
-          <h2 class="closing-title">准备好开启技术评测了吗？</h2>
+    <!-- 底部行动区 CTA（对齐项目浅色直角工业风） -->
+    <section class="cta-section container">
+      <div class="cta-card">
+        <div class="cta-left">
+          <div class="cta-eyebrow mono">// READY FOR ASSESSMENT</div>
+          <h2 class="cta-title">准备好开启专业级技术测评了吗？</h2>
+          <p class="cta-desc">
+            无论是日常算法与 SQL 训练，还是举办随堂课练与正规机考，KECE 现已全面就绪。
+          </p>
         </div>
-        <div class="closing-actions">
+        <div class="cta-right">
           <button class="btn btn-primary btn-lg" @click="start">开始使用 →</button>
-          <RouterLink to="/rankings" class="btn btn-ghost btn-lg">查看全站排名</RouterLink>
+          <RouterLink to="/exams" class="btn btn-ghost btn-lg">参加在线考试</RouterLink>
         </div>
       </div>
     </section>
@@ -417,7 +475,7 @@ onMounted(async () => {
 
 <style scoped>
 .home {
-  padding-bottom: 96px;
+  padding-bottom: 84px;
 }
 
 .mono {
@@ -433,7 +491,7 @@ onMounted(async () => {
   gap: 48px;
   align-items: flex-start;
   padding-top: 52px;
-  padding-bottom: 72px;
+  padding-bottom: 64px;
 }
 
 .hero-text {
@@ -558,290 +616,297 @@ onMounted(async () => {
 }
 
 /* =========================================
-   通用极简章节头部
+   2. 6 大核心能力评测矩阵（3x2 均衡直角卡片）
    ========================================= */
-.sec-eyebrow {
+.modules-section {
+  padding-top: 16px;
+  padding-bottom: 68px;
+}
+
+.modules-header {
+  text-align: center;
+  max-width: 620px;
+  margin: 0 auto 36px;
+}
+
+.modules-eyebrow {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.8px;
   color: var(--ink-tertiary);
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
-.sec-title {
+.modules-title {
   font-size: 28px;
   font-weight: 700;
-  letter-spacing: -0.5px;
-  color: var(--ink);
-  margin: 0;
-  line-height: 1.25;
-}
-
-/* =========================================
-   2. 极简瑞士十字通栏网格 (Swiss Architectural Grid)
-   ========================================= */
-.matrix-section {
-  padding-top: 48px;
-  padding-bottom: 80px;
-  border-top: 1px solid var(--line);
-}
-
-.sec-header {
-  margin-bottom: 36px;
-}
-
-.sec-head-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 24px;
-  flex-wrap: wrap;
-}
-
-.sec-sub {
-  font-size: 14.5px;
-  color: var(--ink-secondary);
-  margin: 0;
-}
-
-/* 单一 1px 细线交织的 3x2 建筑感网格，彻底告别碎片化嵌套边框 */
-.swiss-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
-}
-
-.swiss-cell {
-  padding: 36px 32px;
-  background: #ffffff;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  text-decoration: none;
-  color: inherit;
-  position: relative;
-  transition: background 0.2s ease;
-}
-
-.swiss-cell::before {
-  content: '';
-  position: absolute;
-  top: -1px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--ink);
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.swiss-cell:hover {
-  background: #fafafa;
-}
-
-.swiss-cell:hover::before {
-  transform: scaleX(1);
-}
-
-.cell-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
-  font-size: 12px;
-  color: var(--ink-tertiary);
-}
-
-.cell-num {
-  font-weight: 600;
-}
-
-.cell-arrow {
-  font-size: 14px;
-  color: var(--ink-tertiary);
-  transition: transform 0.2s ease, color 0.2s ease;
-}
-
-.swiss-cell:hover .cell-arrow {
-  color: var(--ink);
-  transform: translate(3px, -3px);
-}
-
-.cell-title {
-  font-size: 19px;
-  font-weight: 700;
+  letter-spacing: -0.4px;
   color: var(--ink);
   margin: 0 0 10px;
-  letter-spacing: -0.3px;
 }
 
-.cell-desc {
-  font-size: 14px;
-  line-height: 1.65;
+.modules-desc {
+  font-size: 14.5px;
   color: var(--ink-secondary);
-  margin: 0 0 28px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.modules-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.module-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 26px 24px 22px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  text-decoration: none;
+  color: inherit;
+}
+
+.module-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--line-strong);
+  background: #ffffff;
+  box-shadow: 0 14px 32px rgba(17, 24, 39, 0.07);
+}
+
+.module-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.module-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 0;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  transition: all 0.22s ease;
+}
+
+.module-card:hover .module-icon-box {
+  background: var(--ink);
+  color: #ffffff;
+  border-color: var(--ink);
+}
+
+.module-svg {
+  width: 22px;
+  height: 22px;
+}
+
+.module-arch-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  color: var(--ink-tertiary);
+  letter-spacing: 0.4px;
+}
+
+.module-title {
+  font-size: 17.5px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 8px;
+}
+
+.module-desc {
+  font-size: 13.5px;
+  color: var(--ink-secondary);
+  line-height: 1.6;
+  margin: 0 0 20px;
   flex: 1;
 }
 
-.cell-spec {
-  font-size: 11.5px;
+.module-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.module-num {
+  font-size: 11px;
+  font-weight: 600;
   color: var(--ink-tertiary);
-  padding-top: 16px;
-  border-top: 1px dashed #e5e7eb;
 }
 
-/* =========================================
-   3. 沙箱闭环体验：左文右码（呼应首屏布局）
-   ========================================= */
-.sandbox-section {
-  padding-top: 64px;
-  padding-bottom: 80px;
-  border-top: 1px solid var(--line);
-}
-
-.sandbox-layout {
-  display: grid;
-  grid-template-columns: 380px 1fr;
-  gap: 56px;
-  align-items: flex-start;
-}
-
-.sandbox-left {
-  display: flex;
-  flex-direction: column;
-}
-
-.sandbox-intro {
-  font-size: 14.5px;
-  line-height: 1.65;
+.module-arrow {
+  font-size: 13px;
+  font-weight: 600;
   color: var(--ink-secondary);
-  margin: 14px 0 32px;
-}
-
-/* 极简纵向切换列表 */
-.mode-list {
-  display: flex;
-  flex-direction: column;
-  border-top: 1px solid var(--line);
-}
-
-.mode-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 18px 16px;
-  text-align: left;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--line);
-  border-left: 3px solid transparent;
-  cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.mode-item:hover {
-  background: var(--surface);
+.module-card:hover .module-arrow {
+  color: var(--ink);
+  transform: translateX(3px);
 }
 
-.mode-item.active {
-  background: var(--surface);
-  border-left-color: var(--ink);
+/* =========================================
+   3. 交互式沙箱评测终端（保留全宽结构与语法高亮）
+   ========================================= */
+.demo-section {
+  padding-top: 12px;
+  padding-bottom: 68px;
 }
 
-.mode-num {
-  font-size: 12px;
+.demo-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.demo-eyebrow {
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.8px;
   color: var(--ink-tertiary);
-  padding-top: 2px;
+  margin-bottom: 8px;
 }
 
-.mode-item.active .mode-num {
-  color: var(--ink);
-}
-
-.mode-name {
-  font-size: 15px;
+.demo-title {
+  font-size: 28px;
   font-weight: 700;
+  letter-spacing: -0.4px;
   color: var(--ink);
-  margin-bottom: 4px;
+  margin: 0 0 10px;
 }
 
-.mode-summary {
-  font-size: 12.5px;
+.demo-desc {
+  font-size: 14.5px;
   color: var(--ink-secondary);
+  margin: 0 auto;
+  max-width: 580px;
 }
 
-.sandbox-action {
-  margin-top: 24px;
-}
-
-.link-explore {
-  display: inline-flex;
-  align-items: center;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--ink);
-  padding-bottom: 3px;
-  border-bottom: 1.5px solid var(--ink);
-  transition: opacity 0.15s ease;
-}
-
-.link-explore:hover {
-  opacity: 0.7;
-}
-
-/* 右侧：暗色代码终端与语法高亮 */
 .terminal-card {
   background: #141415;
-  border-radius: 0;
+  border-radius: var(--radius);
   border: 1px solid #28282a;
   color: #f1f1f1;
   overflow: hidden;
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.12);
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.14),
+    0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
 .terminal-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 13px 20px;
+  padding: 12px 20px;
   background: #1b1b1d;
   border-bottom: 1px solid #28282a;
+  gap: 12px;
 }
 
 .terminal-badge {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: #d4d6dd;
+  color: #8c8c90;
+  letter-spacing: 0.5px;
 }
 
 .live-dot {
   width: 7px;
   height: 7px;
+  border-radius: 0;
   background: #40c057;
   box-shadow: 0 0 8px rgba(64, 192, 87, 0.7);
 }
 
+.terminal-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.terminal-tab {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  padding: 5px 14px;
+  border-radius: var(--pill);
+  color: #88888e;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.terminal-tab:hover {
+  color: #ffffff;
+  background: #252528;
+}
+
+.terminal-tab.active {
+  color: #ffffff;
+  background: #2c2c30;
+  border-color: #404046;
+}
+
+.terminal-meta-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 20px;
+  background: #171719;
+  border-bottom: 1px solid #232326;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: #66666e;
+}
+
+.file-name {
+  color: #9da0a8;
+}
+
 .lang-tag {
-  font-size: 11.5px;
   color: #7b7e87;
 }
 
 .terminal-body {
-  padding: 24px 22px;
+  padding: 20px;
   background: #111112;
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 13.5px;
-  line-height: 1.65;
+  line-height: 1.6;
   overflow-x: auto;
-  min-height: 290px;
+  min-height: 200px;
+  scrollbar-width: thin;
+  scrollbar-color: #2c2c30 #111112;
+}
+
+.terminal-body::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.terminal-body::-webkit-scrollbar-track {
+  background: #111112;
+}
+
+.terminal-body::-webkit-scrollbar-thumb {
+  background: #2c2c30;
 }
 
 .code-view {
@@ -899,92 +964,130 @@ onMounted(async () => {
   color: #abb2bf;
 }
 
-/* 终端底部极简一行流遥测条 */
-.terminal-foot {
+.terminal-hud {
+  padding: 16px 20px;
+  background: #171719;
+  border-top: 1px solid #262629;
+}
+
+.hud-status-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding: 12px 20px;
-  background: #18181a;
-  border-top: 1px solid #262629;
-  font-size: 12px;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
 .verdict-tag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
   font-weight: 700;
+  padding: 3px 12px;
+  border-radius: var(--pill);
 }
 
 .verdict-tag.status-ac {
+  background: rgba(47, 158, 68, 0.16);
   color: #40c057;
+  border: 1px solid rgba(47, 158, 68, 0.35);
 }
 
 .verdict-tag.status-exam {
+  background: rgba(34, 139, 230, 0.16);
   color: #4dabf7;
+  border: 1px solid rgba(34, 139, 230, 0.35);
 }
 
-.foot-metrics {
-  display: flex;
-  align-items: center;
-  gap: 20px;
+.verdict-detail {
+  font-size: 12px;
+  color: #8c8f98;
 }
 
-.foot-metric-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.hud-metric-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
 }
 
-.fm-k {
+.metric-item {
+  background: #1f1f22;
+  border: 1px solid #2a2a2e;
+  border-radius: 0;
+  padding: 9px 12px;
+}
+
+.metric-title {
+  font-size: 11px;
   color: #72747d;
+  margin-bottom: 2px;
 }
 
-.fm-v {
-  color: #e2e4e9;
+.metric-data {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
   font-weight: 600;
+  color: #ffffff;
 }
 
 /* =========================================
-   4. 极简底部行动横栏
+   4. 底部 CTA 行动区（对齐项目浅色直角卡片风格）
    ========================================= */
-.closing-section {
-  padding-top: 48px;
-  border-top: 1px solid var(--line);
+.cta-section {
+  padding-top: 8px;
 }
 
-.closing-bar {
+.cta-card {
+  background: var(--surface);
+  border-radius: 0;
+  border: 1px solid var(--line);
+  padding: 40px 44px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 32px;
-  flex-wrap: wrap;
+  box-shadow: var(--shadow-sm);
 }
 
-.closing-title {
-  font-size: 26px;
+.cta-eyebrow {
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: -0.4px;
-  color: var(--ink);
-  margin: 0;
+  letter-spacing: 0.8px;
+  color: var(--ink-tertiary);
+  margin-bottom: 8px;
 }
 
-.closing-actions {
+.cta-title {
+  font-size: 25px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 8px;
+  letter-spacing: -0.4px;
+}
+
+.cta-desc {
+  font-size: 14.5px;
+  color: var(--ink-secondary);
+  margin: 0;
+  max-width: 520px;
+  line-height: 1.6;
+}
+
+.cta-right {
   display: flex;
-  align-items: center;
   gap: 14px;
+  flex-shrink: 0;
+}
+
+.cta-card .btn-ghost {
+  background: #ffffff;
 }
 
 /* =========================================
    5. 响应式适配
    ========================================= */
 @media (max-width: 960px) {
-  .swiss-grid {
+  .modules-grid {
     grid-template-columns: repeat(2, 1fr);
-  }
-  .sandbox-layout {
-    grid-template-columns: 1fr;
-    gap: 32px;
   }
 }
 
@@ -1008,18 +1111,32 @@ onMounted(async () => {
   .hero-spec-strip {
     justify-content: center;
   }
+  .cta-card {
+    flex-direction: column;
+    text-align: center;
+    padding: 32px 24px;
+  }
+  .cta-right {
+    width: 100%;
+    flex-direction: column;
+  }
+  .cta-right .btn {
+    width: 100%;
+  }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 540px) {
   .hero-title {
     font-size: 34px;
   }
-  .swiss-grid {
+  .modules-grid {
     grid-template-columns: 1fr;
   }
-  .closing-bar {
-    flex-direction: column;
-    align-items: flex-start;
+  .hud-metric-row {
+    grid-template-columns: 1fr;
+  }
+  .terminal-tabs {
+    display: none;
   }
 }
 </style>
