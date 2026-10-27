@@ -706,31 +706,12 @@ onMounted(load)
   transition: transform 0.15s ease;
 }
 
-/* 状态加载与空箱 */
+/* 加载与空状态 */
 .loading-box,
 .empty-box {
-  padding: 48px 0;
+  padding: 48px 24px;
   text-align: center;
   border-radius: 0;
-}
-.loading-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-.loading-spin {
-  width: 22px;
-  height: 22px;
-  border: 2px solid var(--line);
-  border-top-color: var(--ink);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 .empty-title {
   margin: 0 0 4px;
