@@ -482,6 +482,7 @@ onMounted(loadDetail)
   display: grid;
   grid-template-columns: 1fr 300px;
   gap: 32px;
+  align-items: start;
 }
 
 .hero-main {
@@ -560,6 +561,16 @@ onMounted(loadDetail)
   color: var(--ink-secondary);
   line-height: 1.65;
   margin: 0 0 16px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.set-desc :deep(img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 12px 0;
+  display: block;
 }
 
 .set-desc :deep(p) {
@@ -653,7 +664,9 @@ onMounted(loadDetail)
   padding: 20px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  align-self: start;
+  position: sticky;
+  top: 24px;
 }
 
 .prog-header {
