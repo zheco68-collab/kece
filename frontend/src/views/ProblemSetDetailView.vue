@@ -8,6 +8,7 @@ import {
 } from '@/api/problemSet'
 import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
+import { renderMarkdown } from '@/utils/markdown'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,6 +17,7 @@ const toast = useToast()
 
 const setId = computed(() => Number(route.params.id))
 const detail = ref<ProblemSetDetail | null>(null)
+const descriptionHtml = computed(() => renderMarkdown(detail.value?.description || ''))
 const loading = ref(true)
 const error = ref('')
 const collapsedSections = ref<Set<number>>(new Set())
@@ -191,7 +193,12 @@ onMounted(loadDetail)
 
             <h1 class="set-title">{{ detail.title }}</h1>
             <div v-if="detail.subtitle" class="set-subtitle">{{ detail.subtitle }}</div>
-            <p v-if="detail.description" class="set-desc">{{ detail.description }}</p>
+            <!-- eslint-disable-next-line vue/no-v-html -- 内容已由 renderMarkdown 清洗 -->
+            <div
+              v-if="detail.description"
+              class="set-desc markdown-body"
+              v-html="descriptionHtml"
+            ></div>
 
             <div v-if="detail.tags && detail.tags.length > 0" class="tag-row">
               <span v-for="t in detail.tags" :key="t" class="tag-chip"># {{ t }}</span>
@@ -553,6 +560,76 @@ onMounted(loadDetail)
   color: var(--ink-secondary);
   line-height: 1.65;
   margin: 0 0 16px;
+}
+
+.set-desc :deep(p) {
+  margin: 0 0 8px;
+}
+
+.set-desc :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.set-desc :deep(strong) {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.set-desc :deep(code) {
+  padding: 2px 6px;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 13px;
+}
+
+.set-desc :deep(pre) {
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  margin: 10px 0;
+  overflow-x: auto;
+}
+
+.set-desc :deep(pre code) {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+}
+
+.set-desc :deep(ul),
+.set-desc :deep(ol) {
+  margin: 6px 0 8px 20px;
+  padding: 0;
+}
+
+.set-desc :deep(li) {
+  margin-bottom: 4px;
+}
+
+.set-desc :deep(blockquote) {
+  margin: 8px 0;
+  padding: 6px 14px;
+  border-left: 3px solid var(--line-strong, #ccc);
+  color: var(--ink-secondary);
+}
+
+.set-desc :deep(a) {
+  color: var(--primary, #10b981);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.set-desc :deep(h1),
+.set-desc :deep(h2),
+.set-desc :deep(h3),
+.set-desc :deep(h4) {
+  color: var(--ink);
+  font-weight: 700;
+  margin: 12px 0 6px;
 }
 
 .tag-row {
