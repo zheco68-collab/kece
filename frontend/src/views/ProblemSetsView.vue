@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { problemSetApi, type ProblemSetSummary } from '@/api/problemSet'
 import { useUserStore } from '@/stores/user'
@@ -48,9 +48,7 @@ const difficultyLabels: Record<string, string> = {
   HARD: '困难',
 }
 
-const canManage = computed(
-  () => userStore.hasRole('ADMIN') || userStore.hasRole('TEACHER'),
-)
+// 题集创建与管理严格收敛于后台管理系统
 
 async function load() {
   loading.value = true
@@ -131,14 +129,7 @@ onMounted(load)
           按知识体系与工程专题结构化编排算法、SQL 与客观题，全局实时互通 AC 进度并支持断点续刷。
         </p>
       </div>
-      <div v-if="canManage" class="head-actions">
-        <RouterLink to="/admin/problem-sets/new" class="btn btn-primary">
-          + 新建题集
-        </RouterLink>
-        <RouterLink to="/admin/problem-sets" class="btn btn-ghost">
-          管理题集
-        </RouterLink>
-      </div>
+
     </header>
 
     <!-- 多维筛选工具栏 -->

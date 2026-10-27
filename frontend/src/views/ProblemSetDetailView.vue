@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter, RouterLink } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   problemSetApi,
   type ProblemSetDetail,
@@ -46,14 +46,7 @@ const typeLabels: Record<string, string> = {
   OBJECTIVE: '客观题',
 }
 
-const canEdit = computed(() => {
-  if (!detail.value) return false
-  if (userStore.hasRole('ADMIN')) return true
-  return (
-    userStore.hasRole('TEACHER') &&
-    userStore.userInfo?.id === detail.value.createdBy
-  )
-})
+// 题集编排修改仅在管理后台中开放
 
 const progressPercent = computed(() => {
   if (!detail.value || !detail.value.itemCount) return 0
@@ -159,13 +152,7 @@ onMounted(loadDetail)
           </button>
 
           <div class="top-right-actions">
-            <RouterLink
-              v-if="canEdit"
-              :to="`/admin/problem-sets/${detail.id}/edit`"
-              class="btn btn-ghost btn-sm"
-            >
-              编辑题集编排
-            </RouterLink>
+
             <button
               type="button"
               class="btn-fav"
