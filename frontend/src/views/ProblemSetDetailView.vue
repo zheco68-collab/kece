@@ -665,8 +665,6 @@ onMounted(loadDetail)
   display: flex;
   flex-direction: column;
   align-self: start;
-  position: sticky;
-  top: 24px;
 }
 
 .prog-header {
