@@ -34,6 +34,27 @@ const difficultyLabels: Record<string, string> = {
   HARD: '困难',
 }
 
+function getItemBadge(item: ProblemSetItemVO) {
+  const d = (item.difficulty || '').toUpperCase()
+  // 1. 算法题难度（与算法题库 pill-easy / pill-medium / pill-hard 保持一致）
+  if (d === 'EASY') return { label: '简单', cls: 'pill-easy' }
+  if (d === 'MEDIUM') return { label: '中等', cls: 'pill-medium' }
+  if (d === 'HARD') return { label: '困难', cls: 'pill-hard' }
+
+  // 2. 数据库题型（与数据库题库 pill-select / pill-dml 保持一致）
+  if (d === 'SELECT') return { label: 'SELECT 查询', cls: 'pill-select' }
+  if (d === 'DML') return { label: 'DML 操作', cls: 'pill-dml' }
+
+  // 3. 客观题题型（与客观题题库对应，鲜明可见，绝不出现白字白底）
+  if (d === 'SINGLE') return { label: '单选题', cls: 'pill-single' }
+  if (d === 'MULTIPLE') return { label: '多选题', cls: 'pill-multiple' }
+  if (d === 'JUDGE') return { label: '判断题', cls: 'pill-judge' }
+  if (d === 'FILL') return { label: '填空题', cls: 'pill-fill' }
+
+  // 兜底
+  return { label: item.difficulty || '综合', cls: 'pill-default' }
+}
+
 const progressPercent = computed(() => {
   if (!detail.value || !detail.value.itemCount) return 0
   return Math.min(
@@ -359,9 +380,9 @@ onMounted(loadDetail)
               <div class="q-right-layout">
                 <span
                   class="difficulty-pill"
-                  :class="`pill-${(item.difficulty || 'MEDIUM').toLowerCase()}`"
+                  :class="getItemBadge(item).cls"
                 >
-                  {{ difficultyLabels[item.difficulty] || item.difficulty }}
+                  {{ getItemBadge(item).label }}
                 </span>
 
                 <span class="action-cta">
@@ -922,32 +943,78 @@ onMounted(loadDetail)
 }
 
 .difficulty-pill {
-  min-width: 52px;
+  min-width: 58px;
   padding: 3px 10px;
   font-size: 12px;
   font-weight: 600;
   text-align: center;
   border-radius: 0;
   letter-spacing: 0.3px;
-  color: #fff;
+  color: #ffffff;
+  white-space: nowrap;
 }
 
+/* 算法题难度 (ALGO - 与算法题库一致) */
 .pill-easy {
   background: #2b8a3e;
-  color: #fff;
+  color: #ffffff;
   border: 1px solid #237032;
 }
 
 .pill-medium {
   background: #e67700;
-  color: #fff;
+  color: #ffffff;
   border: 1px solid #c96500;
 }
 
 .pill-hard {
   background: #c92a2a;
-  color: #fff;
+  color: #ffffff;
   border: 1px solid #b02525;
+}
+
+/* 数据库 SQL 题型 (DB - 与数据库题库一致) */
+.pill-select {
+  background: #1e1e1e;
+  color: #ffffff;
+  border: 1px solid #111111;
+}
+
+.pill-dml {
+  background: #495057;
+  color: #ffffff;
+  border: 1px solid #343a40;
+}
+
+/* 客观题题型 (OBJECTIVE - 鲜明清晰，绝不白字白底) */
+.pill-single {
+  background: #7048e8;
+  color: #ffffff;
+  border: 1px solid #5f3dc4;
+}
+
+.pill-multiple {
+  background: #1098ad;
+  color: #ffffff;
+  border: 1px solid #0c8599;
+}
+
+.pill-judge {
+  background: #2f9e44;
+  color: #ffffff;
+  border: 1px solid #2b8a3e;
+}
+
+.pill-fill {
+  background: #343a40;
+  color: #ffffff;
+  border: 1px solid #212529;
+}
+
+.pill-default {
+  background: #495057;
+  color: #ffffff;
+  border: 1px solid #343a40;
 }
 
 .action-cta {
