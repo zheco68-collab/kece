@@ -94,6 +94,18 @@ const router = createRouter({
           component: () => import('@/views/ObjectiveAnswerView.vue'),
         },
         {
+          path: 'problem-sets',
+          name: 'problem-sets',
+          component: () => import('@/views/ProblemSetsView.vue'),
+          meta: { title: '精选与专题题集' },
+        },
+        {
+          path: 'problem-sets/:id',
+          name: 'problem-set-detail',
+          component: () => import('@/views/ProblemSetDetailView.vue'),
+          meta: { title: '题集详情' },
+        },
+        {
           path: 'rankings',
           name: 'rankings',
           component: () => import('@/views/RankingsView.vue'),
@@ -293,6 +305,24 @@ const router = createRouter({
           name: 'admin-objective-question-edit',
           component: () => import('@/views/admin/ObjectiveQuestionEditView.vue'),
           meta: { roles: ['ADMIN', 'TEACHER'], title: '编辑客观题' },
+        },
+        {
+          path: 'problem-sets',
+          name: 'admin-problem-sets',
+          component: () => import('@/views/admin/AdminProblemSetsView.vue'),
+          meta: { roles: ['ADMIN', 'TEACHER'], title: '题集管理' },
+        },
+        {
+          path: 'problem-sets/new',
+          name: 'admin-problem-set-new',
+          component: () => import('@/views/admin/ProblemSetEditView.vue'),
+          meta: { roles: ['ADMIN', 'TEACHER'], title: '新建题集' },
+        },
+        {
+          path: 'problem-sets/:id/edit',
+          name: 'admin-problem-set-edit',
+          component: () => import('@/views/admin/ProblemSetEditView.vue'),
+          meta: { roles: ['ADMIN', 'TEACHER'], title: '编辑题集' },
         },
         {
           path: 'exams',

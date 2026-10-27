@@ -17,6 +17,7 @@ import com.kece.database.entity.DbTestCase;
 import com.kece.database.mapper.DbQuestionMapper;
 import com.kece.database.mapper.DbSubmissionMapper;
 import com.kece.database.mapper.DbTestCaseMapper;
+import com.kece.problemset.service.ProblemSetService;
 import com.kece.submission.dto.ProgressVO;
 import com.kece.submission.dto.SubmissionResultVO;
 import com.kece.submission.dto.SubmissionVO;
@@ -55,6 +56,7 @@ public class DbSubmissionService {
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final UserDailyAcService userDailyAcService;
+    private final ProblemSetService problemSetService;
 
     /** 提交 SQL：入库、压队列、写 Redis 初始状态，返回任务 ID 与 PENDING。 */
     @Transactional
@@ -350,6 +352,7 @@ public class DbSubmissionService {
             LocalDate date =
                     sub.getCreatedAt() != null ? sub.getCreatedAt().toLocalDate() : LocalDate.now();
             userDailyAcService.recordDbAc(sub.getUserId(), date);
+            problemSetService.onQuestionSolved(sub.getUserId(), "DB", sub.getQuestionId());
         }
     }
 

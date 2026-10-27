@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kece.problemset.mapper.ProblemSetMapper">
+
+    <resultMap id="ProblemSetMap" type="com.kece.problemset.entity.ProblemSet">
+        <id property="id" column="id"/>
+        <result property="title" column="title"/>
+        <result property="subtitle" column="subtitle"/>
+        <result property="description" column="description"/>
+        <result property="category" column="category"/>
+        <result property="difficulty" column="difficulty"/>
+        <result property="tags" column="tags"/>
+        <result property="itemCount" column="item_count"/>
+        <result property="algoCount" column="algo_count"/>
+        <result property="dbCount" column="db_count"/>
+        <result property="objectiveCount" column="objective_count"/>
+        <result property="participantCount" column="participant_count"/>
+        <result property="isOfficial" column="is_official"/>
+        <result property="status" column="status"/>
+        <result property="version" column="version"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="Columns">
+        id, title, subtitle, description, category, difficulty, tags,
+        item_count, algo_count, db_count, objective_count, participant_count,
+        is_official, status, version, created_by, created_at, updated_at
+    </sql>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO `problem_set` (
+            title, subtitle, description, category, difficulty, tags,
+            item_count, algo_count, db_count, objective_count, participant_count,
+            is_official, status, version, created_by
+        ) VALUES (
+            #{title}, #{subtitle}, #{description}, #{category}, #{difficulty}, #{tags},
+            #{itemCount}, #{algoCount}, #{dbCount}, #{objectiveCount}, #{participantCount},
+            #{isOfficial}, #{status}, 1, #{createdBy}
+        )
+    </insert>
+
+    <select id="findById" resultMap="ProblemSetMap">
+        SELECT <include refid="Columns"/>
+        FROM `problem_set`
+        WHERE id = #{id} AND status != -1
+    </select>
+
+    <select id="findByTitle" resultMap="ProblemSetMap">
+        SELECT <include refid="Columns"/>
+        FROM `problem_set`
+        WHERE title = #{title} AND status != -1
+        LIMIT 1
+    </select>
+
+    <select id="findByIds" resultMap="ProblemSetMap">
+        SELECT <include refid="Columns"/>
+        FROM `problem_set`
+        WHERE status != -1
+          AND id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <sql id="PublicWhere">
+        <where>
+            status = 1
+            <if test="category != null and category != ''">
+                AND category = #{category}
+            </if>
+            <if test="difficulty != null and difficulty != ''">
+                AND difficulty = #{difficulty}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (title LIKE CONCAT('%', #{keyword}, '%')
+                  OR subtitle LIKE CONCAT('%', #{keyword}, '%')
+                  OR tags LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="onlyIds != null">
+                <choose>
+                    <when test="onlyIds.size() > 0">
+                        AND id IN
+                        <foreach collection="onlyIds" item="id" open="(" separator="," close=")">
+                            #{id}
+                        </foreach>
+                    </when>
+                    <otherwise>
+                        AND 1 = 0
+                    </otherwise>
+                </choose>
+            </if>
+        </where>
+    </sql>
+
+    <select id="findPublicPage" resultMap="ProblemSetMap">
+        SELECT <include refid="Columns"/>
+        FROM `problem_set`
+        <include refid="PublicWhere"/>
+        ORDER BY is_official DESC, id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countPublic" resultType="long">
+        SELECT COUNT(*)
+        FROM `problem_set`
+        <include refid="PublicWhere"/>
+    </select>
+
+    <sql id="AdminWhere">
+        <where>
+            status != -1
+            <if test="category != null and category != ''">
+                AND category = #{category}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (title LIKE CONCAT('%', #{keyword}, '%')
+                  OR tags LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="createdBy != null">
+                AND created_by = #{createdBy}
+            </if>
+        </where>
+    </sql>
+
+    <select id="findAdminPage" resultMap="ProblemSetMap">
+        SELECT <include refid="Columns"/>
+        FROM `problem_set`
+        <include refid="AdminWhere"/>
+        ORDER BY id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countAdmin" resultType="long">
+        SELECT COUNT(*)
+        FROM `problem_set`
+        <include refid="AdminWhere"/>
+    </select>
+
+    <update id="updateWithVersion">
+        UPDATE `problem_set`
+        SET title = #{title},
+            subtitle = #{subtitle},
+            description = #{description},
+            category = #{category},
+            difficulty = #{difficulty},
+            tags = #{tags},
+            item_count = #{itemCount},
+            algo_count = #{algoCount},
+            db_count = #{dbCount},
+            objective_count = #{objectiveCount},
+            is_official = #{isOfficial},
+            status = #{status},
+            version = version + 1
+        WHERE id = #{id}
+          AND status != -1
+          <if test="version != null">
+              AND version = #{version}
+          </if>
+    </update>
+
+    <update id="softDelete">
+        UPDATE `problem_set`
+        SET status = -1
+        WHERE id = #{id}
+    </update>
+
+    <update id="adjustParticipantCount">
+        UPDATE `problem_set`
+        SET participant_count = GREATEST(0, participant_count + #{delta})
+        WHERE id = #{id}
+    </update>
+
+</mapper>

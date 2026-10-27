@@ -20,6 +20,7 @@ const navSections: NavSection[] = [
   { path: '/admin/questions', label: '编程题管理', icon: 'code' },
   { path: '/admin/db-questions', label: '数据库题管理', icon: 'database' },
   { path: '/admin/objective-questions', label: '客观题管理', icon: 'checklist' },
+  { path: '/admin/problem-sets', label: '题集管理', icon: 'problemset' },
   { path: '/admin/exams', label: '考试与组卷', icon: 'exam' },
   { path: '/admin/practices', label: '随堂课练', icon: 'practice' },
   { path: '/admin/submissions', label: '提交监控', icon: 'monitor' },
@@ -77,6 +78,11 @@ function logout() {
             <polyline points="14 2 14 8 20 8" />
             <line x1="16" y1="13" x2="8" y2="13" />
             <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+          <!-- 题集管理图标 -->
+          <svg v-else-if="s.icon === 'problemset'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
           </svg>
           <!-- 考试管理图标 -->
           <svg v-else-if="s.icon === 'exam'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

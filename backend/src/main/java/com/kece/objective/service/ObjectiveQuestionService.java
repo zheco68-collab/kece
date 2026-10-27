@@ -19,6 +19,7 @@ import com.kece.objective.entity.ObjectiveQuestion;
 import com.kece.objective.entity.ObjectiveSubmission;
 import com.kece.objective.mapper.ObjectiveQuestionMapper;
 import com.kece.objective.mapper.ObjectiveSubmissionMapper;
+import com.kece.problemset.service.ProblemSetService;
 import com.kece.user.entity.User;
 import com.kece.user.mapper.UserMapper;
 import java.util.List;
@@ -36,6 +37,9 @@ public class ObjectiveQuestionService {
     private final ObjectiveGrader grader;
     private final ObjectMapper objectMapper;
     private final UserMapper userMapper;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ProblemSetService problemSetService;
 
     public PageResult<ObjectiveQuestionVO> list(String type, String keyword, int page, int size) {
         PageParam p = PageParam.of(page, size);
@@ -179,6 +183,9 @@ public class ObjectiveQuestionService {
             submission.setCorrect(result.isCorrect() ? 1 : 0);
             submission.setScore(result.getScore());
             submissionMapper.insert(submission);
+            if (result.isCorrect() && problemSetService != null) {
+                problemSetService.onQuestionSolved(userId, "OBJECTIVE", id);
+            }
         }
         return result;
     }

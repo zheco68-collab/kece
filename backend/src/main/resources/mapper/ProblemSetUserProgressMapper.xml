@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kece.problemset.mapper.ProblemSetUserProgressMapper">
+
+    <resultMap id="ProgressMap" type="com.kece.problemset.entity.ProblemSetUserProgress">
+        <id property="id" column="id"/>
+        <result property="setId" column="set_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="isFavorited" column="is_favorited"/>
+        <result property="solvedCount" column="solved_count"/>
+        <result property="solvedItemIds" column="solved_item_ids"/>
+        <result property="lastItemId" column="last_item_id"/>
+        <result property="lastActiveAt" column="last_active_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="findBySetAndUser" resultMap="ProgressMap">
+        SELECT id, set_id, user_id, is_favorited, solved_count,
+               solved_item_ids, last_item_id, last_active_at, created_at, updated_at
+        FROM `problem_set_user_progress`
+        WHERE set_id = #{setId} AND user_id = #{userId}
+        LIMIT 1
+    </select>
+
+    <select id="findByUserAndSetIds" resultMap="ProgressMap">
+        SELECT id, set_id, user_id, is_favorited, solved_count,
+               solved_item_ids, last_item_id, last_active_at, created_at, updated_at
+        FROM `problem_set_user_progress`
+        WHERE user_id = #{userId}
+          AND set_id IN
+        <foreach collection="setIds" item="sid" open="(" separator="," close=")">
+            #{sid}
+        </foreach>
+    </select>
+
+    <select id="findFavoritedSetIds" resultType="long">
+        SELECT set_id
+        FROM `problem_set_user_progress`
+        WHERE user_id = #{userId} AND is_favorited = 1
+        ORDER BY last_active_at DESC
+    </select>
+
+    <insert id="upsertProgress">
+        INSERT INTO `problem_set_user_progress` (
+            set_id, user_id, is_favorited, solved_count, solved_item_ids, last_active_at
+        ) VALUES (
+            #{setId}, #{userId}, 0, #{solvedCount}, #{solvedItemIds}, NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+            solved_count = #{solvedCount},
+            solved_item_ids = #{solvedItemIds},
+            last_active_at = NOW()
+    </insert>
+
+    <insert id="upsertFavorite">
+        INSERT INTO `problem_set_user_progress` (
+            set_id, user_id, is_favorited, solved_count, last_active_at
+        ) VALUES (
+            #{setId}, #{userId}, #{isFavorited}, 0, NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+            is_favorited = #{isFavorited},
+            last_active_at = NOW()
+    </insert>
+
+    <insert id="upsertLastItem">
+        INSERT INTO `problem_set_user_progress` (
+            set_id, user_id, is_favorited, solved_count, last_item_id, last_active_at
+        ) VALUES (
+            #{setId}, #{userId}, 0, 0, #{lastItemId}, NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+            last_item_id = #{lastItemId},
+            last_active_at = NOW()
+    </insert>
+
+</mapper>

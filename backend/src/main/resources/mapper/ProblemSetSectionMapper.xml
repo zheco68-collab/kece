@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kece.problemset.mapper.ProblemSetSectionMapper">
+
+    <resultMap id="SectionMap" type="com.kece.problemset.entity.ProblemSetSection">
+        <id property="id" column="id"/>
+        <result property="setId" column="set_id"/>
+        <result property="title" column="title"/>
+        <result property="description" column="description"/>
+        <result property="sortOrder" column="sort_order"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO `problem_set_section` (set_id, title, description, sort_order)
+        VALUES (#{setId}, #{title}, #{description}, #{sortOrder})
+    </insert>
+
+    <select id="findBySetId" resultMap="SectionMap">
+        SELECT id, set_id, title, description, sort_order, created_at
+        FROM `problem_set_section`
+        WHERE set_id = #{setId}
+        ORDER BY sort_order ASC, id ASC
+    </select>
+
+    <delete id="deleteBySetId">
+        DELETE FROM `problem_set_section`
+        WHERE set_id = #{setId}
+    </delete>
+
+</mapper>

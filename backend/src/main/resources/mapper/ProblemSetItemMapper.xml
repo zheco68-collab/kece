@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kece.problemset.mapper.ProblemSetItemMapper">
+
+    <resultMap id="ItemMap" type="com.kece.problemset.entity.ProblemSetItem">
+        <id property="id" column="id"/>
+        <result property="setId" column="set_id"/>
+        <result property="sectionId" column="section_id"/>
+        <result property="questionType" column="question_type"/>
+        <result property="questionId" column="question_id"/>
+        <result property="titleSnapshot" column="title_snapshot"/>
+        <result property="difficultySnapshot" column="difficulty_snapshot"/>
+        <result property="sourceAlive" column="source_alive"/>
+        <result property="sortOrder" column="sort_order"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insertBatch" useGeneratedKeys="true" keyProperty="id">
+        INSERT IGNORE INTO `problem_set_item` (
+            set_id, section_id, question_type, question_id,
+            title_snapshot, difficulty_snapshot, source_alive, sort_order
+        ) VALUES
+        <foreach collection="items" item="it" separator=",">
+            (
+                #{it.setId}, #{it.sectionId}, #{it.questionType}, #{it.questionId},
+                #{it.titleSnapshot}, #{it.difficultySnapshot}, #{it.sourceAlive}, #{it.sortOrder}
+            )
+        </foreach>
+    </insert>
+
+    <select id="findBySetId" resultMap="ItemMap">
+        SELECT id, set_id, section_id, question_type, question_id,
+               title_snapshot, difficulty_snapshot, source_alive, sort_order, created_at
+        FROM `problem_set_item`
+        WHERE set_id = #{setId}
+        ORDER BY sort_order ASC, id ASC
+    </select>
+
+    <delete id="deleteBySetId">
+        DELETE FROM `problem_set_item`
+        WHERE set_id = #{setId}
+    </delete>
+
+    <select id="findByQuestion" resultMap="ItemMap">
+        SELECT id, set_id, section_id, question_type, question_id,
+               title_snapshot, difficulty_snapshot, source_alive, sort_order, created_at
+        FROM `problem_set_item`
+        WHERE question_type = #{questionType}
+          AND question_id = #{questionId}
+    </select>
+
+    <update id="markSourceDead">
+        UPDATE `problem_set_item`
+        SET source_alive = 0
+        WHERE question_type = #{questionType}
+          AND question_id = #{questionId}
+    </update>
+
+</mapper>

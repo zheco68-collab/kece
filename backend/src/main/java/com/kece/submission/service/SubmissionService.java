@@ -11,6 +11,7 @@ import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
 import com.kece.common.security.AuthUser;
 import com.kece.common.security.Role;
+import com.kece.problemset.service.ProblemSetService;
 import com.kece.question.entity.Question;
 import com.kece.question.entity.TestCase;
 import com.kece.question.mapper.QuestionMapper;
@@ -59,6 +60,7 @@ public class SubmissionService {
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final UserDailyAcService userDailyAcService;
+    private final ProblemSetService problemSetService;
 
     /** 提交代码：入库、压队列、写 Redis 初始状态，返回任务 ID 与 PENDING。 */
     @Transactional
@@ -371,6 +373,7 @@ public class SubmissionService {
             LocalDate date =
                     sub.getCreatedAt() != null ? sub.getCreatedAt().toLocalDate() : LocalDate.now();
             userDailyAcService.recordAlgoAc(sub.getUserId(), date);
+            problemSetService.onQuestionSolved(sub.getUserId(), "ALGO", sub.getQuestionId());
         }
     }
 
