@@ -24,29 +24,15 @@ const statusFilter = ref<'ALL' | 'UNSOLVED' | 'SOLVED'>('ALL')
 const categoryLabels: Record<string, string> = {
   ALGO: '算法编程',
   DB: '数据库 SQL',
-  OBJECTIVE: '客观题',
-  MIXED: '全栈综合',
-  COURSE: '课程同步',
+  OBJECTIVE: '标准客观',
+  MIXED: '综合题集',
 }
 
 const difficultyLabels: Record<string, string> = {
   EASY: '简单',
   MEDIUM: '中等',
   HARD: '困难',
-  SELECT: 'SELECT 查询',
-  DML: 'DML 变更',
-  SINGLE: '单选题',
-  MULTIPLE: '多选题',
-  FILL: '填空题',
 }
-
-const typeLabels: Record<string, string> = {
-  ALGO: '算法编程',
-  DB: 'SQL 数据库',
-  OBJECTIVE: '客观题',
-}
-
-// 题集编排修改仅在管理后台中开放
 
 const progressPercent = computed(() => {
   if (!detail.value || !detail.value.itemCount) return 0
@@ -152,7 +138,6 @@ onMounted(loadDetail)
           </button>
 
           <div class="top-right-actions">
-
             <button
               type="button"
               class="btn-fav"
@@ -295,7 +280,11 @@ onMounted(loadDetail)
             </div>
           </div>
 
-          <div v-if="!collapsedSections.has(sec.id)" class="section-items">
+          <div
+            v-if="!collapsedSections.has(sec.id)"
+            class="section-items"
+            :key="`${sec.id}-${statusFilter}`"
+          >
             <div
               v-if="filteredSectionItems(sec.items).length === 0"
               class="section-empty muted"
@@ -303,55 +292,85 @@ onMounted(loadDetail)
               当前筛选条件下暂无题目
             </div>
 
+            <!-- 题目条目：样式与相应题库完全对齐，并保持相同的下落动效 -->
             <div
               v-for="(item, idx) in filteredSectionItems(sec.items)"
               :key="item.id"
-              class="item-row"
-              :class="{
-                'is-solved': item.solved,
-                'is-dead': !item.sourceAlive,
-              }"
+              class="question-item card"
+              :class="{ 'is-dead': !item.sourceAlive }"
+              :style="{ '--drop-index': idx }"
               @click="openItem(item)"
             >
-              <!-- 状态圈 -->
-              <span
-                class="status-circle mono"
-                :class="{ solved: item.solved }"
-                :title="item.solved ? '已攻克' : '未解答'"
-              >
-                {{ item.solved ? '✓' : String(idx + 1).padStart(2, '0') }}
-              </span>
+              <!-- 左侧：解题状态图标 + 题号 + 标题与元数据 -->
+              <div class="q-main-layout">
+                <!-- 解题状态图标（与题库完全一致的绿圆勾或未完成圆环） -->
+                <div class="q-status-wrap">
+                  <span
+                    v-if="item.solved"
+                    class="status-icon solved"
+                    title="已攻克 (Accepted)"
+                  >
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05Z" />
+                    </svg>
+                  </span>
+                  <span v-else class="status-icon unsolved" title="尚未解答">
+                    <span class="unsolved-ring"></span>
+                  </span>
+                </div>
 
-              <!-- 题型徽章 -->
-              <span
-                class="qtype-badge mono"
-                :class="`qtype-${(item.questionType || 'ALGO').toLowerCase()}`"
-              >
-                {{ typeLabels[item.questionType] || item.questionType }}
-              </span>
+                <!-- 题号 (Mono) -->
+                <span class="q-number mono">#{{ item.questionId }}</span>
 
-              <!-- 题目标题 -->
-              <span class="item-title">
-                <span class="item-qid mono">#{{ item.questionId }}</span>
-                <span>{{ item.title }}</span>
-                <span v-if="!item.sourceAlive" class="dead-tag">
-                  [原题已归档]
+                <!-- 标题与次级信息 -->
+                <div class="q-content">
+                  <h3 class="q-title">
+                    {{ item.title }}
+                    <span v-if="!item.sourceAlive" class="dead-tag">[原题已归档]</span>
+                  </h3>
+
+                  <!-- 相应题库对应的次级元数据行 -->
+                  <div class="q-tags-row">
+                    <!-- 算法编程 (ALGO) 题库元数据标签 -->
+                    <template v-if="(item.questionType || detail.category) === 'ALGO'">
+                      <span class="meta-tag limits mono">1000ms / 256MB</span>
+                      <span class="meta-tag lang mono">C++</span>
+                      <span class="meta-tag lang mono">Java</span>
+                      <span class="meta-tag lang mono">Python</span>
+                      <span class="meta-tag lang mono">arkts</span>
+                    </template>
+
+                    <!-- 数据库 SQL (DB) 题库元数据标签 -->
+                    <template v-else-if="(item.questionType || detail.category) === 'DB'">
+                      <span class="meta-tag dialect mono">MySQL 8.0</span>
+                      <span class="meta-tag limits mono">无序比对</span>
+                    </template>
+
+                    <!-- 客观题 (OBJECTIVE) 题库元数据标签 -->
+                    <template v-else>
+                      <span class="meta-tag type mono">标准客观题</span>
+                      <span class="meta-tag limits mono">即时判分</span>
+                    </template>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 右侧：难度徽章 + 快速答题按钮（与题库完全一致） -->
+              <div class="q-right-layout">
+                <span
+                  class="difficulty-pill"
+                  :class="`pill-${(item.difficulty || 'MEDIUM').toLowerCase()}`"
+                >
+                  {{ difficultyLabels[item.difficulty] || item.difficulty }}
                 </span>
-              </span>
 
-              <!-- 难度或子题型徽标 -->
-              <span
-                v-if="item.difficulty"
-                class="badge item-diff"
-                :class="`difficulty-${item.difficulty.toLowerCase()}`"
-              >
-                {{ difficultyLabels[item.difficulty] || item.difficulty }}
-              </span>
-
-              <!-- 操作指引 -->
-              <span class="item-action">
-                {{ !item.sourceAlive ? '不可用' : item.solved ? '复盘 →' : '做题 →' }}
-              </span>
+                <span class="action-cta">
+                  <span class="cta-text">开始做题</span>
+                  <svg class="cta-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M6 3l5 5-5 5" />
+                  </svg>
+                </span>
+              </div>
             </div>
           </div>
         </section>
@@ -407,10 +426,16 @@ onMounted(loadDetail)
 
 .btn-fav {
   padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 600;
   border: 1px solid var(--line);
   background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  transition: all 0.15s ease;
+}
+
+.btn-fav:hover {
+  border-color: var(--ink);
   color: var(--ink);
 }
 
@@ -421,15 +446,19 @@ onMounted(loadDetail)
 }
 
 .fav-count {
-  font-size: 11.5px;
-  opacity: 0.85;
+  margin-left: 4px;
+  font-size: 12px;
 }
 
 .hero-body {
   display: grid;
-  grid-template-columns: 1fr 310px;
+  grid-template-columns: 1fr 300px;
   gap: 32px;
-  align-items: stretch;
+}
+
+.hero-main {
+  display: flex;
+  flex-direction: column;
 }
 
 .badge-row {
@@ -446,6 +475,7 @@ onMounted(loadDetail)
   padding: 2px 8px;
   background: var(--ink);
   color: #ffffff;
+  letter-spacing: 0.5px;
 }
 
 .badge-cat {
@@ -479,14 +509,15 @@ onMounted(loadDetail)
 .author-meta {
   font-size: 12px;
   color: var(--ink-tertiary);
+  margin-left: 4px;
 }
 
 .set-title {
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 26px;
+  font-weight: 800;
   color: var(--ink);
   margin: 0 0 6px;
-  letter-spacing: -0.4px;
+  letter-spacing: -0.5px;
 }
 
 .set-subtitle {
@@ -627,7 +658,7 @@ onMounted(loadDetail)
   border-color: var(--ink);
 }
 
-/* 章节卡片 */
+/* 章节卡片列表 */
 .sections-list {
   display: flex;
   flex-direction: column;
@@ -636,6 +667,7 @@ onMounted(loadDetail)
 
 .section-block {
   background: #ffffff;
+  border: 1px solid var(--line);
   overflow: hidden;
 }
 
@@ -697,9 +729,15 @@ onMounted(loadDetail)
   color: var(--ink);
 }
 
+/* ============================================================
+   题目列表容器与条目：与题库列表 1:1 完全对齐并具有相同的掉落动效
+============================================================ */
 .section-items {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--bg);
 }
 
 .section-empty {
@@ -708,106 +746,253 @@ onMounted(loadDetail)
   font-size: 13px;
 }
 
-.item-row {
+.question-item {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 22px;
-  border-bottom: 1px solid #eef0f3;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 0;
+  text-decoration: none;
+  color: inherit;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  /* 题目卡片入场从章节下方按序掉落效果，与题库完全一致 */
+  animation: cardDropIn 0.44s cubic-bezier(0.25, 1.15, 0.5, 1) backwards;
+  animation-delay: calc(var(--drop-index, 0) * 45ms);
+  will-change: transform, opacity;
 }
 
-.item-row:last-child {
-  border-bottom: none;
+.question-item:hover {
+  border-color: var(--ink);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px) !important;
 }
 
-.item-row:hover {
-  background: #f8f9fb;
-}
-
-.item-row.is-dead {
+.question-item.is-dead {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
-.status-circle {
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink-tertiary);
-  font-size: 11.5px;
-  font-weight: 700;
+@keyframes cardDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-38px) scale(0.985);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(3px) scale(1.002);
+  }
+  82% {
+    opacity: 1;
+    transform: translateY(-1.5px) scale(0.999);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .question-item {
+    animation: none !important;
+  }
+}
+
+.q-main-layout {
   display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex: 1;
+}
+
+.q-status-wrap {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
 
-.status-circle.solved {
-  background: #2b8a3e;
-  border-color: #2b8a3e;
-  color: #ffffff;
+.status-icon.solved {
+  color: #2b8a3e;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
 }
 
-.qtype-badge {
-  font-size: 11px;
+.status-icon.unsolved {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.unsolved-ring {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #d0d0d0;
+  border-radius: 50%;
+}
+
+.q-number {
+  font-size: 14px;
   font-weight: 700;
-  padding: 2px 8px;
-  border: 1px solid var(--line);
+  color: var(--ink-secondary);
+  min-width: 36px;
   flex-shrink: 0;
 }
 
-.qtype-algo {
-  background: #111111;
-  color: #ffffff;
-  border-color: #111111;
+.q-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 
-.qtype-db {
-  background: #495057;
-  color: #ffffff;
-  border-color: #495057;
-}
-
-.qtype-objective {
-  background: var(--surface);
-  color: var(--ink);
-}
-
-.item-title {
-  flex: 1;
-  font-size: 14.5px;
+.q-title {
+  margin: 0;
+  font-size: 16px;
   font-weight: 600;
   color: var(--ink);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.item-qid {
-  font-size: 12px;
-  color: var(--ink-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dead-tag {
-  font-size: 11.5px;
   color: var(--danger);
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: 6px;
+}
+
+.q-tags-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.meta-tag {
+  font-size: 11.5px;
+  padding: 1px 7px;
+  line-height: 1.4;
+  border-radius: 0;
+}
+
+.meta-tag.limits {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--ink-secondary);
+}
+
+.meta-tag.lang {
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  color: #3f3f46;
   font-weight: 600;
 }
 
-.item-diff {
-  font-size: 11px;
-  padding: 2px 8px;
+.meta-tag.dialect {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  font-weight: 600;
 }
 
-.item-action {
+.meta-tag.type {
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  color: #3f3f46;
+  font-weight: 600;
+}
+
+/* 右侧：难度徽标与操作入口 */
+.q-right-layout {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.difficulty-pill {
+  min-width: 52px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 0;
+  letter-spacing: 0.3px;
+  color: #fff;
+}
+
+.pill-easy {
+  background: #2b8a3e;
+  color: #fff;
+  border: 1px solid #237032;
+}
+
+.pill-medium {
+  background: #e67700;
+  color: #fff;
+  border: 1px solid #c96500;
+}
+
+.pill-hard {
+  background: #c92a2a;
+  color: #fff;
+  border: 1px solid #b02525;
+}
+
+.action-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  transition: all 0.15s ease;
+}
+
+.question-item:hover .action-cta {
   color: var(--ink);
-  min-width: 56px;
-  text-align: right;
+}
+
+.question-item:hover .cta-arrow {
+  transform: translateX(3px);
+}
+
+.cta-arrow {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s ease;
+}
+
+/* 状态卡片 */
+.state-card {
+  padding: 56px 0;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.error-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--danger);
+  margin-bottom: 8px;
+}
+
+.error-msg {
+  font-size: 14px;
+  color: var(--ink-secondary);
+  margin-bottom: 20px;
 }
 
 @media (max-width: 860px) {
