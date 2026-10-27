@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
 import AppHeader from '@/components/AppHeader.vue'
-import ProblemSetContextBar from '@/components/ProblemSetContextBar.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import ToastHost from '@/components/ToastHost.vue'
 </script>
@@ -9,7 +8,6 @@ import ToastHost from '@/components/ToastHost.vue'
 <template>
   <div class="layout">
     <AppHeader />
-    <ProblemSetContextBar />
     <main class="main">
       <RouterView />
     </main>
