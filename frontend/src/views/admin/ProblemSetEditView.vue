@@ -34,7 +34,7 @@ const form = reactive({
   title: '',
   description: '',
   category: 'ALGO',
-  difficulty: 'MIXED',
+  difficulty: 'MEDIUM',
   tagsText: '',
   isOfficial: 1,
   status: 1,
@@ -148,10 +148,29 @@ interface SourceCandidate {
   difficulty: string
 }
 
+function getItemBadge(diffOrType?: string, qType?: 'ALGO' | 'DB' | 'OBJECTIVE') {
+  const d = (diffOrType || '').toUpperCase()
+  if (d === 'EASY') return { label: '简单', cls: 'pill-easy' }
+  if (d === 'MEDIUM') return { label: '中等', cls: 'pill-medium' }
+  if (d === 'HARD') return { label: '困难', cls: 'pill-hard' }
+
+  if (d === 'SELECT') return { label: 'SELECT 查询', cls: 'pill-select' }
+  if (d === 'DML') return { label: 'DML 操作', cls: 'pill-dml' }
+
+  if (d === 'SINGLE') return { label: '单选题', cls: 'pill-single' }
+  if (d === 'MULTIPLE') return { label: '多选题', cls: 'pill-multiple' }
+  if (d === 'JUDGE') return { label: '判断题', cls: 'pill-judge' }
+  if (d === 'FILL') return { label: '填空题', cls: 'pill-fill' }
+
+  if (qType === 'DB') return { label: 'SQL', cls: 'pill-select' }
+  if (qType === 'OBJECTIVE') return { label: '客观', cls: 'pill-single' }
+  return { label: '编程', cls: 'pill-medium' }
+}
+
 const sourceCandidates = computed<SourceCandidate[]>(() => {
   if (form.category === 'ALGO') {
     return algoList.value.map((q) => ({
-      questionType: 'ALGO',
+      questionType: 'ALGO' as const,
       questionId: q.id,
       title: q.title,
       difficulty: q.difficulty || 'MEDIUM'
@@ -159,17 +178,17 @@ const sourceCandidates = computed<SourceCandidate[]>(() => {
   }
   if (form.category === 'DB') {
     return dbList.value.map((q) => ({
-      questionType: 'DB',
+      questionType: 'DB' as const,
       questionId: q.id,
       title: q.title,
-      difficulty: 'MEDIUM'
+      difficulty: q.type || 'SELECT'
     }))
   }
   return objList.value.map((q) => ({
-    questionType: 'OBJECTIVE',
+    questionType: 'OBJECTIVE' as const,
     questionId: q.id,
     title: q.content ? q.content.replace(/\s+/g, ' ').slice(0, 64) : `客观题 #${q.id}`,
-    difficulty: 'EASY'
+    difficulty: q.type || 'SINGLE'
   }))
 })
 
@@ -229,7 +248,7 @@ async function loadExisting() {
     form.title = detail.title || ''
     form.description = detail.description || ''
     form.category = detail.category || 'ALGO'
-    form.difficulty = detail.difficulty || 'MIXED'
+    form.difficulty = detail.difficulty || 'MEDIUM'
     form.tagsText = (detail.tags || []).join(', ')
     form.isOfficial = detail.isOfficial ?? 1
     form.status = detail.status ?? 1
@@ -312,7 +331,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="pset-edit container">
+  <div class="pset-edit">
     <div class="page-head">
       <div>
         <h1 class="page-title">{{ isEdit ? `编辑题集 #${problemSetId}` : '新建题集' }}</h1>
@@ -364,12 +383,11 @@ onMounted(() => {
             </select>
           </FormField>
 
-          <FormField label="整体难度">
+          <FormField label="题集难度" required>
             <select v-model="form.difficulty" class="input">
-              <option value="EASY">入门 (EASY)</option>
-              <option value="MEDIUM">进阶 (MEDIUM)</option>
-              <option value="HARD">挑战 (HARD)</option>
-              <option value="MIXED">循序渐进 / 综合 (MIXED)</option>
+              <option value="EASY">简单 (EASY)</option>
+              <option value="MEDIUM">中等 (MEDIUM)</option>
+              <option value="HARD">困难 (HARD)</option>
             </select>
           </FormField>
 
@@ -484,17 +502,11 @@ onMounted(() => {
                   class="sec-item-row"
                 >
                   <span class="item-order mono">{{ iIdx + 1 }}.</span>
-                  <span class="type-pill" :class="`type-${item.questionType.toLowerCase()}`">
-                    {{
-                      item.questionType === 'ALGO'
-                        ? '编程'
-                        : item.questionType === 'DB'
-                          ? 'SQL'
-                          : '客观'
-                    }}
+                  <span class="difficulty-pill" :class="getItemBadge(item.difficulty, item.questionType).cls">
+                    {{ getItemBadge(item.difficulty, item.questionType).label }}
                   </span>
                   <span class="item-id mono">#{{ item.questionId }}</span>
-                  <span class="item-title">{{ item.title }}</span>
+                  <span class="item-title" :title="item.title">{{ item.title }}</span>
                   <span v-if="item.sourceAlive === false" class="graveyard-pill">原题已归档</span>
                   <div class="item-actions">
                     <button
@@ -562,7 +574,10 @@ onMounted(() => {
             >
               <div class="cand-info">
                 <span class="cand-id mono">#{{ cand.questionId }}</span>
-                <span class="cand-title">{{ cand.title }}</span>
+                <span class="difficulty-pill" :class="getItemBadge(cand.difficulty, cand.questionType).cls">
+                  {{ getItemBadge(cand.difficulty, cand.questionType).label }}
+                </span>
+                <span class="cand-title" :title="cand.title">{{ cand.title }}</span>
               </div>
               <button
                 type="button"
@@ -591,7 +606,8 @@ onMounted(() => {
 
 <style scoped>
 .pset-edit {
-  padding-top: 28px;
+  width: 100%;
+  max-width: 100%;
   padding-bottom: 64px;
 }
 
@@ -648,8 +664,8 @@ onMounted(() => {
 .form-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 20px;
+  margin-bottom: 20px;
 }
 
 .textarea {
@@ -659,8 +675,8 @@ onMounted(() => {
 
 .composer-grid {
   display: grid;
-  grid-template-columns: 1.25fr 1fr;
-  gap: 20px;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 24px;
   align-items: start;
 }
 
@@ -918,4 +934,78 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 }
+
+/* 题目徽标样式（与前台题集及题库一致，客观题由白到黑渐变） */
+.difficulty-pill {
+  min-width: 58px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 0;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pill-easy {
+  background: #2b8a3e;
+  color: #ffffff;
+  border: 1px solid #237032;
+}
+
+.pill-medium {
+  background: #e67700;
+  color: #ffffff;
+  border: 1px solid #c96500;
+}
+
+.pill-hard {
+  background: #c92a2a;
+  color: #ffffff;
+  border: 1px solid #b02525;
+}
+
+.pill-select {
+  background: #1e1e1e;
+  color: #ffffff;
+  border: 1px solid #111111;
+}
+
+.pill-dml {
+  background: #495057;
+  color: #ffffff;
+  border: 1px solid #343a40;
+}
+
+.pill-single {
+  background: #f8f9fa;
+  color: #18181b;
+  border: 1px solid #d4d4d8;
+}
+
+.pill-multiple {
+  background: #d4d4d8;
+  color: #18181b;
+  border: 1px solid #a1a1aa;
+}
+
+.pill-judge {
+  background: #52525b;
+  color: #ffffff;
+  border: 1px solid #3f3f46;
+}
+
+.pill-fill {
+  background: #18181b;
+  color: #ffffff;
+  border: 1px solid #09090b;
+}
+
+.pill-default {
+  background: #495057;
+  color: #ffffff;
+  border: 1px solid #343a40;
+}
+
 </style>

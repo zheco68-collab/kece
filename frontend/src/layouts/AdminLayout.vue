@@ -469,6 +469,9 @@ function logout() {
 
 /* 优化管理端内部的 container 布局，使其充满主工作区 */
 :deep(.admin.container),
+:deep(.pset-edit),
+:deep(.pset-edit.container),
+:deep(.admin-problem-sets.container),
 :deep(.admin-practices.container),
 :deep(.admin-exams.container) {
   max-width: 100% !important;
