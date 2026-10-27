@@ -27,14 +27,14 @@ const loading = ref(false)
 const loadError = ref('')
 
 const columns = [
-  { key: 'id', label: 'ID', width: '56px', align: 'center' as const },
+  { key: 'id', label: 'ID', width: '48px', align: 'center' as const },
   { key: 'title', label: '题集标题' },
-  { key: 'category', label: '题型', width: '105px', align: 'center' as const },
-  { key: 'difficulty', label: '难度', width: '68px', align: 'center' as const },
-  { key: 'itemCount', label: '题数', width: '68px', align: 'center' as const },
-  { key: 'participantCount', label: '学习人数', width: '80px', align: 'center' as const },
-  { key: 'isOfficial', label: '属性', width: '82px', align: 'center' as const },
-  { key: 'status', label: '状态', width: '68px', align: 'center' as const }
+  { key: 'category', label: '题型', width: '115px', align: 'center' as const },
+  { key: 'difficulty', label: '难度', width: '76px', align: 'center' as const },
+  { key: 'itemCount', label: '题数', width: '64px', align: 'center' as const },
+  { key: 'participantCount', label: '学习人数', width: '82px', align: 'center' as const },
+  { key: 'isOfficial', label: '属性', width: '90px', align: 'center' as const },
+  { key: 'status', label: '状态', width: '76px', align: 'center' as const }
 ]
 
 const categoryMap: Record<string, string> = {
@@ -248,7 +248,7 @@ onMounted(load)
   flex-shrink: 0;
 }
 
-/* 表格布局：100% 宽度固定排版，彻底消除横向滚动条 */
+/* 表格布局：100% 宽度固定排版，彻底消除横向滚动条与各单元格多余省略号 */
 :deep(.data-table) {
   table-layout: fixed;
   width: 100%;
@@ -256,8 +256,7 @@ onMounted(load)
 
 :deep(.data-table th),
 :deep(.data-table td) {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 10px 8px;
   vertical-align: middle;
 }
 
@@ -267,11 +266,11 @@ onMounted(load)
 
 :deep(.data-table th:last-child),
 :deep(.data-table td:last-child) {
-  width: 170px;
+  width: 175px;
   text-align: center;
 }
 
-/* 标题列多行省略与说明提示 */
+/* 仅在标题列限制单行超出文本省略，不污染其它徽章与按钮列 */
 .title-cell {
   display: flex;
   flex-direction: column;
@@ -296,7 +295,17 @@ onMounted(load)
   text-overflow: ellipsis;
 }
 
-/* 题型与属性徽章 */
+/* 徽章基础紧凑化：避免默认 20px 横向 padding 挤压 */
+:deep(.badge) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 .cat-badge {
   background: #f5f5f5;
   color: #262626;
@@ -357,7 +366,7 @@ onMounted(load)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 10px;
+  padding: 3px 8px;
   font-size: 12px;
   line-height: 1.2;
   border: 1px solid var(--line);
