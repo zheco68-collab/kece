@@ -986,29 +986,29 @@ onMounted(loadDetail)
   border: 1px solid #343a40;
 }
 
-/* 客观题题型 (OBJECTIVE - 鲜明清晰，绝不白字白底) */
+/* 客观题题型 (由白到黑渐变: 单选题 -> 多选题 -> 判断题 -> 填空题) */
 .pill-single {
-  background: #7048e8;
-  color: #ffffff;
-  border: 1px solid #5f3dc4;
+  background: #f8f9fa;
+  color: #18181b;
+  border: 1px solid #d4d4d8;
 }
 
 .pill-multiple {
-  background: #1098ad;
-  color: #ffffff;
-  border: 1px solid #0c8599;
+  background: #d4d4d8;
+  color: #18181b;
+  border: 1px solid #a1a1aa;
 }
 
 .pill-judge {
-  background: #2f9e44;
+  background: #52525b;
   color: #ffffff;
-  border: 1px solid #2b8a3e;
+  border: 1px solid #3f3f46;
 }
 
 .pill-fill {
-  background: #343a40;
+  background: #18181b;
   color: #ffffff;
-  border: 1px solid #212529;
+  border: 1px solid #09090b;
 }
 
 .pill-default {
