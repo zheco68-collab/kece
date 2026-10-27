@@ -18,6 +18,19 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const id = computed(() => Number(route.params.id))
+
+const fromSetId = computed(() => {
+  const s = route.query.setId
+  return s ? String(s) : null
+})
+
+function goBack() {
+  if (fromSetId.value) {
+    router.push(`/problem-sets/${fromSetId.value}`)
+  } else {
+    router.push('/objective')
+  }
+}
 const question = ref<ObjectiveQuestion | null>(null)
 const loading = ref(true)
 const error = ref('')
@@ -117,7 +130,7 @@ onMounted(async () => {
 
 <template>
   <div class="answer container">
-    <button class="back" @click="router.back()">← 返回</button>
+    <button class="back" @click="goBack">{{ fromSetId ? '← 返回题集' : '← 返回' }}</button>
 
     <div v-if="loading" class="state-card card"><div class="loading-spinner"></div><p class="muted">正在加载客观题详情与选项…</p></div>
     <div v-else-if="error" class="submit-error">{{ error }}</div>

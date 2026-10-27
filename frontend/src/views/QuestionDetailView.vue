@@ -39,8 +39,24 @@ async function copyText(text: string | null | undefined, label: string) {
   }
 }
 
+const fromSetId = computed(() => {
+  const s = route.query.setId
+  return s ? String(s) : null
+})
+
+function goBack() {
+  if (fromSetId.value) {
+    router.push(`/problem-sets/${fromSetId.value}`)
+  } else {
+    router.push('/questions')
+  }
+}
+
 function goToSubmit() {
-  router.push(`/questions/${id.value}/submit`)
+  const query = fromSetId.value
+    ? { setId: fromSetId.value, itemId: String(route.query.itemId || '') }
+    : undefined
+  router.push({ path: `/questions/${id.value}/submit`, query })
 }
 
 async function loadSolvedStatus() {
@@ -87,7 +103,7 @@ onMounted(async () => {
     <div v-else-if="error" class="state-card card">
       <div class="error-title">加载失败</div>
       <p class="error-msg">{{ error }}</p>
-      <button class="btn btn-outline" @click="router.push('/questions')">返回题目列表</button>
+      <button class="btn btn-outline" @click="goBack">{{ fromSetId ? '返回题集' : '返回题目列表' }}</button>
     </div>
 
     <!-- 题目主内容区 -->
@@ -95,12 +111,12 @@ onMounted(async () => {
       <!-- 顶部面包屑与标题卡片 -->
       <header class="q-header card">
         <div class="header-top">
-          <button class="btn-back" @click="router.push('/questions')">
+          <button class="btn-back" @click="goBack">
             <svg class="back-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="19" y1="12" x2="5" y2="12" />
               <polyline points="12 19 5 12 12 5" />
             </svg>
-            <span>返回题库列表</span>
+            <span>{{ fromSetId ? '返回题集' : '返回题库列表' }}</span>
           </button>
           <div class="header-status-tags">
             <span v-if="isSolved" class="solved-pill">✓ 已通过此题</span>

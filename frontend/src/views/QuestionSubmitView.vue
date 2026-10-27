@@ -24,6 +24,18 @@ const { confirm } = useConfirm()
 
 const id = computed(() => Number(route.params.id))
 
+const fromSetId = computed(() => {
+  const s = route.query.setId
+  return s ? String(s) : null
+})
+
+function goBackToDetail() {
+  const query = fromSetId.value
+    ? { setId: fromSetId.value, itemId: String(route.query.itemId || '') }
+    : undefined
+  router.push({ path: `/questions/${id.value}`, query })
+}
+
 const question = ref<Question | null>(null)
 const loading = ref(true)
 const error = ref('')
@@ -96,7 +108,10 @@ async function submit() {
       codeContent: { [FILENAMES[language.value]]: code },
     })
     // 提交成功后立即跳转至独立的结果页面
-    router.push(`/questions/${id.value}/result/${s.submissionId}`)
+    const query = fromSetId.value
+      ? { setId: fromSetId.value, itemId: String(route.query.itemId || '') }
+      : undefined
+    router.push({ path: `/questions/${id.value}/result/${s.submissionId}`, query })
   } catch (e) {
     submitError.value = e instanceof Error ? e.message : '提交失败'
     toastError(submitError.value)
@@ -146,7 +161,7 @@ onBeforeUnmount(() => {
     <div v-else-if="error" class="state-card card">
       <div class="error-title">加载失败</div>
       <p class="error-msg">{{ error }}</p>
-      <button class="btn btn-outline" @click="router.push(`/questions/${id}`)">返回题目描述</button>
+      <button class="btn btn-outline" @click="goBackToDetail">返回题目描述</button>
     </div>
 
     <!-- 提交主工作区 -->
@@ -154,7 +169,7 @@ onBeforeUnmount(() => {
       <!-- 顶栏导航卡片 -->
       <header class="submit-header card">
         <div class="header-left">
-          <button class="btn-back" @click="router.push(`/questions/${id}`)">
+          <button class="btn-back" @click="goBackToDetail">
             <svg class="back-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="19" y1="12" x2="5" y2="12" />
               <polyline points="12 19 5 12 12 5" />
@@ -233,7 +248,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="footer-btns">
-            <button class="btn btn-outline" @click="router.push(`/questions/${id}`)">
+            <button class="btn btn-outline" @click="goBackToDetail">
               取消
             </button>
             <button

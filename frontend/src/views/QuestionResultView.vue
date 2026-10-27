@@ -114,17 +114,28 @@ async function loadData() {
 
 function reEdit() {
   if (questionId.value > 0) {
-    router.push(`/questions/${questionId.value}/submit`)
+    const query = fromSetId.value
+      ? { setId: fromSetId.value, itemId: String(route.query.itemId || '') }
+      : undefined
+    router.push({ path: `/questions/${questionId.value}/submit`, query })
   } else {
-    router.push('/questions')
+    router.push(fromSetId.value ? `/problem-sets/${fromSetId.value}` : '/questions')
   }
 }
 
+const fromSetId = computed(() => {
+  const s = route.query.setId
+  return s ? String(s) : null
+})
+
 function backToQuestion() {
   if (questionId.value > 0) {
-    router.push(`/questions/${questionId.value}`)
+    const query = fromSetId.value
+      ? { setId: fromSetId.value, itemId: String(route.query.itemId || '') }
+      : undefined
+    router.push({ path: `/questions/${questionId.value}`, query })
   } else {
-    router.push('/questions')
+    router.push(fromSetId.value ? `/problem-sets/${fromSetId.value}` : '/questions')
   }
 }
 

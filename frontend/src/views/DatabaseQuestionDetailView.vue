@@ -30,8 +30,24 @@ const typeLabels: Record<DbQuestionType, string> = {
 const descriptionHtml = computed(() => renderMarkdown(question.value?.description ?? ''))
 const sampleCases = computed(() => (question.value?.testCases ?? []).filter((tc) => tc.isSample === 1))
 
+const fromSetId = computed(() => {
+  const s = route.query.setId
+  return s ? String(s) : null
+})
+
+function goBack() {
+  if (fromSetId.value) {
+    router.push(`/problem-sets/${fromSetId.value}`)
+  } else {
+    router.push('/database')
+  }
+}
+
 function goToSubmit() {
-  router.push(`/database/${id.value}/submit`)
+  const query = fromSetId.value
+    ? { setId: fromSetId.value, itemId: String(route.query.itemId || '') }
+    : undefined
+  router.push({ path: `/database/${id.value}/submit`, query })
 }
 
 async function loadSolvedStatus() {
@@ -78,7 +94,7 @@ onMounted(async () => {
     <div v-else-if="error" class="state-card card">
       <div class="error-title">加载失败</div>
       <p class="error-msg">{{ error }}</p>
-      <button class="btn btn-outline" @click="router.push('/database')">返回数据库题库</button>
+      <button class="btn btn-outline" @click="goBack">{{ fromSetId ? '返回题集' : '返回数据库题库' }}</button>
     </div>
 
     <!-- 题目主内容区 -->
@@ -86,12 +102,12 @@ onMounted(async () => {
       <!-- 顶部信息与导航卡片 -->
       <header class="q-header card">
         <div class="header-top">
-          <button class="btn-back" @click="router.push('/database')">
+          <button class="btn-back" @click="goBack">
             <svg class="back-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="19" y1="12" x2="5" y2="12" />
               <polyline points="12 19 5 12 12 5" />
             </svg>
-            <span>返回数据库题库</span>
+            <span>{{ fromSetId ? '返回题集' : '返回数据库题库' }}</span>
           </button>
 
           <div class="header-status-tags">
