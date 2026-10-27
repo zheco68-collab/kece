@@ -24,11 +24,9 @@ const favoritedOnly = ref(false)
 
 const categoryTabs = [
   { value: '', label: '全部题集' },
-  { value: 'ALGO', label: '算法专项' },
-  { value: 'DB', label: '数据库 SQL' },
-  { value: 'OBJECTIVE', label: '客观题专项' },
-  { value: 'MIXED', label: '全栈综合' },
-  { value: 'COURSE', label: '课程同步' },
+  { value: 'ALGO', label: '算法编程题集' },
+  { value: 'DB', label: '数据库 SQL 题集' },
+  { value: 'OBJECTIVE', label: '标准客观题集' },
 ]
 
 const difficultyTabs = [
@@ -39,11 +37,9 @@ const difficultyTabs = [
 ]
 
 const categoryLabels: Record<string, string> = {
-  ALGO: '算法编程',
-  DB: '数据库 SQL',
-  OBJECTIVE: '客观题',
-  MIXED: '全栈综合',
-  COURSE: '课程同步',
+  ALGO: '算法编程题集',
+  DB: '数据库 SQL 题集',
+  OBJECTIVE: '标准客观题集',
 }
 
 const difficultyLabels: Record<string, string> = {
@@ -268,13 +264,11 @@ onMounted(load)
           </span>
         </div>
 
-        <!-- 题型构成规格栏 -->
+        <!-- 题型规格栏 -->
         <div class="set-composition mono">
           <span class="comp-total">共 {{ ps.itemCount }} 题</span>
-          <span class="comp-sep">|</span>
-          <span v-if="ps.algoCount > 0" class="comp-item">算法 {{ ps.algoCount }}</span>
-          <span v-if="ps.dbCount > 0" class="comp-item">SQL {{ ps.dbCount }}</span>
-          <span v-if="ps.objectiveCount > 0" class="comp-item">客观 {{ ps.objectiveCount }}</span>
+          <span class="comp-sep">·</span>
+          <span class="comp-item">{{ categoryLabels[ps.category] || ps.category }}</span>
           <span class="comp-author">{{ ps.authorName }}</span>
         </div>
 

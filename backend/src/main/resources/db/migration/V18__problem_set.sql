@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS `problem_set` (
     `title`             VARCHAR(255) NOT NULL COMMENT '题集标题',
     `subtitle`          VARCHAR(255) DEFAULT NULL COMMENT '副标题/简短标语',
     `description`       TEXT         DEFAULT NULL COMMENT '题集详细介绍（Markdown）',
-    `category`          VARCHAR(32)  NOT NULL DEFAULT 'MIXED' COMMENT '分类：ALGO(算法)/DB(数据库)/OBJECTIVE(客观题)/MIXED(综合)/COURSE(课程同步)',
+    `category`          VARCHAR(32)  NOT NULL DEFAULT 'ALGO' COMMENT '题集专用题型：ALGO(算法编程)/DB(数据库SQL)/OBJECTIVE(客观题)',
     `difficulty`        VARCHAR(16)  NOT NULL DEFAULT 'MEDIUM' COMMENT '综合难度：EASY/MEDIUM/HARD',
     `tags`              VARCHAR(255) DEFAULT NULL COMMENT '标签列表，逗号分隔',
     `item_count`        INT          NOT NULL DEFAULT 0 COMMENT '有效题目总数（冗余字段，避免列表页高频 COUNT 子查询）',
@@ -73,3 +73,4 @@ CREATE TABLE IF NOT EXISTS `problem_set_user_progress` (
     UNIQUE KEY `uk_set_user` (`set_id`, `user_id`),
     KEY `idx_user_fav_active` (`user_id`, `is_favorited`, `last_active_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户题集进度与收藏预聚合表';
+

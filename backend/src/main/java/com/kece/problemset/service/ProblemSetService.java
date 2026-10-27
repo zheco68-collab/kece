@@ -366,12 +366,13 @@ public class ProblemSetService {
         AuthUser user = requireTeacherOrAdmin();
         boolean isAdmin = user.hasRole(Role.ADMIN);
 
+        String setCategory = normalizeCategory(req.getCategory());
         ProblemSet ps =
                 ProblemSet.builder()
                         .title(req.getTitle().trim())
                         .subtitle(trimOrNull(req.getSubtitle()))
                         .description(trimOrNull(req.getDescription()))
-                        .category(normalizeCategory(req.getCategory()))
+                        .category(setCategory)
                         .difficulty(normalizeDifficulty(req.getDifficulty()))
                         .tags(trimOrNull(req.getTags()))
                         .itemCount(0)
@@ -387,7 +388,7 @@ public class ProblemSetService {
                         .build();
 
         problemSetMapper.insert(ps);
-        Counts counts = saveSectionsAndItems(ps.getId(), req);
+        Counts counts = saveSectionsAndItems(ps.getId(), req, setCategory);
 
         ps.setItemCount(counts.total());
         ps.setAlgoCount(counts.algo());
@@ -414,12 +415,13 @@ public class ProblemSetService {
 
         sectionMapper.deleteBySetId(setId);
         itemMapper.deleteBySetId(setId);
-        Counts counts = saveSectionsAndItems(setId, req);
+        String setCategory = normalizeCategory(req.getCategory());
+        Counts counts = saveSectionsAndItems(setId, req, setCategory);
 
         existing.setTitle(req.getTitle().trim());
         existing.setSubtitle(trimOrNull(req.getSubtitle()));
         existing.setDescription(trimOrNull(req.getDescription()));
-        existing.setCategory(normalizeCategory(req.getCategory()));
+        existing.setCategory(setCategory);
         existing.setDifficulty(normalizeDifficulty(req.getDifficulty()));
         existing.setTags(trimOrNull(req.getTags()));
         existing.setItemCount(counts.total());
@@ -528,7 +530,7 @@ public class ProblemSetService {
 
     private record Counts(int total, int algo, int db, int objective) {}
 
-    private Counts saveSectionsAndItems(Long setId, SaveProblemSetRequest req) {
+    private Counts saveSectionsAndItems(Long setId, SaveProblemSetRequest req, String setCategory) {
         List<ProblemSetItem> toInsert = new ArrayList<>();
         Set<String> dedupKeys = new HashSet<>();
         int algoCount = 0;
@@ -558,7 +560,12 @@ public class ProblemSetService {
                     for (SaveProblemSetRequest.ItemInput itemIn : secIn.getItems()) {
                         ProblemSetItem built =
                                 buildItemEntity(
-                                        setId, sec.getId(), itemIn, globalOrder++, dedupKeys);
+                                        setId,
+                                        sec.getId(),
+                                        itemIn,
+                                        setCategory,
+                                        globalOrder++,
+                                        dedupKeys);
                         if (built != null) {
                             toInsert.add(built);
                             if ("ALGO".equals(built.getQuestionType())) algoCount++;
@@ -572,7 +579,8 @@ public class ProblemSetService {
 
         if (req.getItems() != null && !req.getItems().isEmpty()) {
             for (SaveProblemSetRequest.ItemInput itemIn : req.getItems()) {
-                ProblemSetItem built = buildItemEntity(setId, 0L, itemIn, globalOrder++, dedupKeys);
+                ProblemSetItem built =
+                        buildItemEntity(setId, 0L, itemIn, setCategory, globalOrder++, dedupKeys);
                 if (built != null) {
                     toInsert.add(built);
                     if ("ALGO".equals(built.getQuestionType())) algoCount++;
@@ -585,19 +593,33 @@ public class ProblemSetService {
         if (!toInsert.isEmpty()) {
             itemMapper.insertBatch(toInsert);
         }
-        return new Counts(toInsert.size(), algoCount, dbCount, objCount);
+        int total = toInsert.size();
+        int algo = "ALGO".equals(setCategory) ? total : 0;
+        int db = "DB".equals(setCategory) ? total : 0;
+        int obj = "OBJECTIVE".equals(setCategory) ? total : 0;
+        return new Counts(total, algo, db, obj);
     }
 
     private ProblemSetItem buildItemEntity(
             Long setId,
             Long sectionId,
             SaveProblemSetRequest.ItemInput itemIn,
+            String setCategory,
             int defaultOrder,
             Set<String> dedupKeys) {
         if (itemIn == null || itemIn.getQuestionId() == null) {
             return null;
         }
-        String qType = normalizeQuestionType(itemIn.getQuestionType());
+        String rawType = itemIn.getQuestionType();
+        String qType =
+                (rawType != null && !rawType.isBlank())
+                        ? normalizeQuestionType(rawType)
+                        : setCategory;
+        if (!qType.equalsIgnoreCase(setCategory)) {
+            throw new BusinessException(
+                    ResultCode.PARAM_ERROR,
+                    "题集只能包含同类型的题目（当前题集为 " + setCategory + " 题集，不可混入 " + qType + " 题目）");
+        }
         String uk = qType + ":" + itemIn.getQuestionId();
         if (!dedupKeys.add(uk)) {
             return null;
@@ -756,12 +778,14 @@ public class ProblemSetService {
     }
 
     private String normalizeCategory(String raw) {
-        if (raw == null || raw.isBlank()) return "MIXED";
+        if (raw == null || raw.isBlank()) return "ALGO";
         String upper = raw.trim().toUpperCase();
-        if (Set.of("ALGO", "DB", "OBJECTIVE", "MIXED", "COURSE").contains(upper)) {
+        if ("DATABASE".equals(upper) || "SQL".equals(upper)) return "DB";
+        if ("QUIZ".equals(upper) || "OBJ".equals(upper)) return "OBJECTIVE";
+        if (Set.of("ALGO", "DB", "OBJECTIVE").contains(upper)) {
             return upper;
         }
-        return "MIXED";
+        return "ALGO";
     }
 
     private String normalizeDifficulty(String raw) {

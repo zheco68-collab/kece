@@ -38,10 +38,9 @@ const columns = [
 ]
 
 const categoryMap: Record<string, string> = {
-  ALGO: '算法专题',
-  DB: 'SQL 专题',
-  OBJECTIVE: '理论巩固',
-  MIXED: '综合混排'
+  ALGO: '算法编程题集',
+  DB: '数据库 SQL 题集',
+  OBJECTIVE: '标准客观题集'
 }
 
 const difficultyMap: Record<string, string> = {
@@ -118,10 +117,9 @@ onMounted(load)
       />
       <select v-model="categoryFilter" class="input">
         <option value="">全部分类</option>
-        <option value="ALGO">算法专题</option>
-        <option value="DB">SQL 专题</option>
-        <option value="OBJECTIVE">理论巩固</option>
-        <option value="MIXED">综合混排</option>
+        <option value="ALGO">算法编程题集 (ALGO)</option>
+        <option value="DB">数据库 SQL 题集 (DB)</option>
+        <option value="OBJECTIVE">标准客观题集 (OBJECTIVE)</option>
       </select>
       <button
         class="btn btn-primary"

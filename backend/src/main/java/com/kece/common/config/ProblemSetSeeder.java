@@ -23,7 +23,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 
-/** 官方精选题集初始化播种器：在算法、数据库、客观题播种完成后运行（{@code @Order(10)}）， 自动根据库内现有题目装配 3 套官方精选题集，按标题幂等防重。 */
+/**
+ * 官方精选题集初始化播种器：每个题集严格限定为单一专属题型（ALGO / DB / OBJECTIVE），
+ * 在算法、数据库、客观题播种完成后运行（{@code @Order(10)}），按标题幂等防重。
+ */
 @Slf4j
 @Configuration
 @RequiredArgsConstructor
@@ -56,7 +59,7 @@ public class ProblemSetSeeder {
 
                 seedAlgoSet(authorId, algoList);
                 seedDbSet(authorId, dbList);
-                seedMixedSet(authorId, algoList, dbList, objList);
+                seedObjectiveSet(authorId, objList);
             } catch (Exception e) {
                 log.warn("官方精选题集初始化跳过或异常: {}", e.getMessage());
             }
@@ -125,7 +128,7 @@ public class ProblemSetSeeder {
         if (!items.isEmpty()) {
             itemMapper.insertBatch(items);
         }
-        log.info("已播种官方题集: {} ({} 题)", title, items.size());
+        log.info("已播种官方算法题集: {} ({} 题)", title, items.size());
     }
 
     private void seedDbSet(Long authorId, List<DbQuestion> dbList) {
@@ -180,42 +183,28 @@ public class ProblemSetSeeder {
         if (!items.isEmpty()) {
             itemMapper.insertBatch(items);
         }
-        log.info("已播种官方题集: {} ({} 题)", title, items.size());
+        log.info("已播种官方数据库题集: {} ({} 题)", title, items.size());
     }
 
-    private void seedMixedSet(
-            Long authorId,
-            List<Question> algoList,
-            List<DbQuestion> dbList,
-            List<ObjectiveQuestion> objList) {
-        String title = "全栈工程师综合技术评测题集";
-        if (problemSetMapper.findByTitle(title) != null) {
-            return;
-        }
-        List<Question> subAlgo =
-                algoList != null ? algoList.subList(0, Math.min(3, algoList.size())) : List.of();
-        List<DbQuestion> subDb =
-                dbList != null ? dbList.subList(0, Math.min(3, dbList.size())) : List.of();
-        List<ObjectiveQuestion> subObj =
-                objList != null ? objList.subList(0, Math.min(4, objList.size())) : List.of();
-        int total = subAlgo.size() + subDb.size() + subObj.size();
-        if (total == 0) {
+    private void seedObjectiveSet(Long authorId, List<ObjectiveQuestion> objList) {
+        String title = "计算机核心理论客观题专题";
+        if (problemSetMapper.findByTitle(title) != null || objList == null || objList.isEmpty()) {
             return;
         }
 
         ProblemSet ps =
                 ProblemSet.builder()
                         .title(title)
-                        .subtitle("理论客观题 + SQL 数据库 + 算法编程三合一")
-                        .description("对标企业研发岗位笔试与高校综合期末机考结构，涵盖计算机核心理论客观题、SQL 数据分析与算法编程。")
-                        .category("MIXED")
-                        .difficulty("HARD")
-                        .tags("全栈综合,校招笔试,三合一")
-                        .itemCount(total)
-                        .algoCount(subAlgo.size())
-                        .dbCount(subDb.size())
-                        .objectiveCount(subObj.size())
-                        .participantCount(18)
+                        .subtitle("单选 · 多选 · 判断与填空专项巩固")
+                        .description("覆盖操作系统、计算机网络、数据结构与数据库原理高频考点客观题，支持即时判分与解析反馈。")
+                        .category("OBJECTIVE")
+                        .difficulty("MEDIUM")
+                        .tags("理论基础,期末复习,客观题专项")
+                        .itemCount(objList.size())
+                        .algoCount(0)
+                        .dbCount(0)
+                        .objectiveCount(objList.size())
+                        .participantCount(15)
                         .isOfficial(1)
                         .status(1)
                         .version(1)
@@ -223,91 +212,40 @@ public class ProblemSetSeeder {
                         .build();
         problemSetMapper.insert(ps);
 
+        ProblemSetSection sObj =
+                ProblemSetSection.builder()
+                        .setId(ps.getId())
+                        .title("第一部分 · 核心理论考点")
+                        .description("夯实计算机基础知识与概念辨析")
+                        .sortOrder(1)
+                        .build();
+        sectionMapper.insert(sObj);
+
         List<ProblemSetItem> items = new ArrayList<>();
         int order = 1;
-
-        if (!subObj.isEmpty()) {
-            ProblemSetSection sObj =
-                    ProblemSetSection.builder()
-                            .setId(ps.getId())
-                            .title("第一关 · 计算机基础与客观题")
-                            .description("夯实数据结构、网络与数据库理论基础")
-                            .sortOrder(1)
-                            .build();
-            sectionMapper.insert(sObj);
-            for (ObjectiveQuestion q : subObj) {
-                String cleanTitle =
-                        q.getContent() != null
-                                ? q.getContent().replaceAll("\\s+", " ").trim()
-                                : ("客观题 #" + q.getId());
-                if (cleanTitle.length() > 48) {
-                    cleanTitle = cleanTitle.substring(0, 48) + "…";
-                }
-                items.add(
-                        ProblemSetItem.builder()
-                                .setId(ps.getId())
-                                .sectionId(sObj.getId())
-                                .questionType("OBJECTIVE")
-                                .questionId(q.getId())
-                                .titleSnapshot(cleanTitle)
-                                .difficultySnapshot(q.getType())
-                                .sourceAlive(1)
-                                .sortOrder(order++)
-                                .build());
+        for (ObjectiveQuestion q : objList) {
+            String cleanTitle =
+                    q.getContent() != null
+                            ? q.getContent().replaceAll("\\s+", " ").trim()
+                            : ("客观题 #" + q.getId());
+            if (cleanTitle.length() > 48) {
+                cleanTitle = cleanTitle.substring(0, 48) + "…";
             }
-        }
-
-        if (!subDb.isEmpty()) {
-            ProblemSetSection sDb =
-                    ProblemSetSection.builder()
+            items.add(
+                    ProblemSetItem.builder()
                             .setId(ps.getId())
-                            .title("第二关 · 数据库 SQL 实战")
-                            .description("真实业务表结构下的查询与更新")
-                            .sortOrder(2)
-                            .build();
-            sectionMapper.insert(sDb);
-            for (DbQuestion q : subDb) {
-                items.add(
-                        ProblemSetItem.builder()
-                                .setId(ps.getId())
-                                .sectionId(sDb.getId())
-                                .questionType("DB")
-                                .questionId(q.getId())
-                                .titleSnapshot(q.getTitle())
-                                .difficultySnapshot(q.getType())
-                                .sourceAlive(1)
-                                .sortOrder(order++)
-                                .build());
-            }
+                            .sectionId(sObj.getId())
+                            .questionType("OBJECTIVE")
+                            .questionId(q.getId())
+                            .titleSnapshot(cleanTitle)
+                            .difficultySnapshot(q.getType())
+                            .sourceAlive(1)
+                            .sortOrder(order++)
+                            .build());
         }
-
-        if (!subAlgo.isEmpty()) {
-            ProblemSetSection sAlgo =
-                    ProblemSetSection.builder()
-                            .setId(ps.getId())
-                            .title("第三关 · 核心算法编程")
-                            .description("时空受限沙箱下的代码实现")
-                            .sortOrder(3)
-                            .build();
-            sectionMapper.insert(sAlgo);
-            for (Question q : subAlgo) {
-                items.add(
-                        ProblemSetItem.builder()
-                                .setId(ps.getId())
-                                .sectionId(sAlgo.getId())
-                                .questionType("ALGO")
-                                .questionId(q.getId())
-                                .titleSnapshot(q.getTitle())
-                                .difficultySnapshot(q.getDifficulty())
-                                .sourceAlive(1)
-                                .sortOrder(order++)
-                                .build());
-            }
-        }
-
         if (!items.isEmpty()) {
             itemMapper.insertBatch(items);
         }
-        log.info("已播种官方题集: {} ({} 题)", title, items.size());
+        log.info("已播种官方客观题集: {} ({} 题)", title, items.size());
     }
 }

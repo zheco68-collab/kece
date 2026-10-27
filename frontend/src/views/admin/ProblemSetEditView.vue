@@ -103,9 +103,7 @@ function moveSectionDown(idx: number) {
   activeSectionIndex.value = idx + 1
 }
 
-// ---- 题库检索与选取 ----
-type PickTab = 'ALGO' | 'DB' | 'OBJECTIVE'
-const tab = ref<PickTab>('ALGO')
+// ---- 题库检索与选取（严格限定当前题集题型，单一题型不混排） ----
 const tabKeyword = ref('')
 const algoList = ref<Question[]>([])
 const dbList = ref<DbQuestion[]>([])
@@ -116,9 +114,9 @@ async function loadSource() {
   listLoading.value = true
   try {
     const keyword = tabKeyword.value.trim() || undefined
-    if (tab.value === 'ALGO') {
+    if (form.category === 'ALGO') {
       algoList.value = (await adminApi.listQuestions({ keyword, page: 1, size: 100 })).list
-    } else if (tab.value === 'DB') {
+    } else if (form.category === 'DB') {
       dbList.value = (await adminApi.listDbQuestions({ keyword, page: 1, size: 100 })).list
     } else {
       objList.value = (await adminApi.listObjectiveQuestions({ keyword, page: 1, size: 100 })).list
@@ -133,7 +131,15 @@ watch(tabKeyword, () => {
   if (tabKeywordTimer !== null) clearTimeout(tabKeywordTimer)
   tabKeywordTimer = setTimeout(loadSource, 300)
 })
-watch(tab, loadSource)
+
+function onCategoryChange() {
+  if (totalSelectedCount.value > 0) {
+    const ok = window.confirm('切换题集题型将清空当前已添加的所有题目，确定切换吗？')
+    if (!ok) return
+    sections.value.forEach((s) => (s.items = []))
+  }
+  loadSource()
+}
 
 interface SourceCandidate {
   questionType: 'ALGO' | 'DB' | 'OBJECTIVE'
@@ -143,7 +149,7 @@ interface SourceCandidate {
 }
 
 const sourceCandidates = computed<SourceCandidate[]>(() => {
-  if (tab.value === 'ALGO') {
+  if (form.category === 'ALGO') {
     return algoList.value.map((q) => ({
       questionType: 'ALGO',
       questionId: q.id,
@@ -151,7 +157,7 @@ const sourceCandidates = computed<SourceCandidate[]>(() => {
       difficulty: q.difficulty || 'MEDIUM'
     }))
   }
-  if (tab.value === 'DB') {
+  if (form.category === 'DB') {
     return dbList.value.map((q) => ({
       questionType: 'DB',
       questionId: q.id,
@@ -350,12 +356,11 @@ onMounted(() => {
             />
           </FormField>
 
-          <FormField label="专题分类">
-            <select v-model="form.category" class="input">
-              <option value="ALGO">算法专题 (ALGO)</option>
-              <option value="DB">SQL 专题 (DB)</option>
-              <option value="OBJECTIVE">理论巩固 (OBJECTIVE)</option>
-              <option value="MIXED">综合混排 (MIXED)</option>
+          <FormField label="题集专用题型 (单题型)" required>
+            <select v-model="form.category" class="input" @change="onCategoryChange">
+              <option value="ALGO">算法编程题集 (ALGO)</option>
+              <option value="DB">数据库 SQL 题集 (DB)</option>
+              <option value="OBJECTIVE">标准客观题集 (OBJECTIVE)</option>
             </select>
           </FormField>
 
@@ -531,31 +536,10 @@ onMounted(() => {
             </span>
           </div>
 
-          <div class="picker-tabs">
-            <button
-              type="button"
-              class="picker-tab"
-              :class="{ active: tab === 'ALGO' }"
-              @click="tab = 'ALGO'"
-            >
-              算法编程题
-            </button>
-            <button
-              type="button"
-              class="picker-tab"
-              :class="{ active: tab === 'DB' }"
-              @click="tab = 'DB'"
-            >
-              数据库 SQL 题
-            </button>
-            <button
-              type="button"
-              class="picker-tab"
-              :class="{ active: tab === 'OBJECTIVE' }"
-              @click="tab = 'OBJECTIVE'"
-            >
-              标准客观题
-            </button>
+          <div class="picker-type-banner">
+            <span class="mono">专属题型：</span>
+            <strong>{{ form.category === 'ALGO' ? '算法编程题' : form.category === 'DB' ? '数据库 SQL 题' : '标准客观题' }}</strong>
+            <span class="banner-sub">（本题集内题目均严格限定为此单一题型）</span>
           </div>
 
           <input
@@ -831,6 +815,20 @@ onMounted(() => {
   color: var(--ink-secondary);
 }
 
+.picker-type-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #f5f5f5;
+  border: 1px solid var(--line);
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.banner-sub {
+  color: var(--ink-tertiary);
+  font-size: 12px;
+}
 .picker-tabs {
   display: flex;
   border: 1px solid var(--line);
