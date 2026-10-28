@@ -452,10 +452,10 @@ onMounted(async () => {
 .detail-tag-chip {
   font-size: 11.5px;
   padding: 2px 8px;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  color: #1d4ed8;
-  font-weight: 500;
+  background: #1d4ed8;
+  border: 1px solid #1e40af;
+  color: #ffffff;
+  font-weight: 600;
 }
 
 .header-meta-row {
