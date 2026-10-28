@@ -284,6 +284,14 @@ onMounted(() => {
               <span class="meta-tag limits mono">
                 {{ q.timeLimit ?? 1000 }}ms / {{ q.memoryLimit ?? 256 }}MB
               </span>
+              <!-- 支持语言徽标 -->
+              <span
+                v-for="lang in (q.languages && q.languages.length ? q.languages : ['CPP', 'JAVA', 'PYTHON'])"
+                :key="lang"
+                class="meta-tag lang mono"
+              >
+                {{ LANGUAGE_MAP[lang] || lang }}
+              </span>
               <!-- 题目算法标签 -->
               <span
                 v-for="t in q.tags"
@@ -294,14 +302,6 @@ onMounted(() => {
                 @click.stop.prevent="selectedTag = (selectedTag === t ? '' : t)"
               >
                 #{{ t }}
-              </span>
-              <!-- 支持语言徽标 -->
-              <span
-                v-for="lang in (q.languages && q.languages.length ? q.languages : ['CPP', 'JAVA', 'PYTHON'])"
-                :key="lang"
-                class="meta-tag lang mono"
-              >
-                {{ LANGUAGE_MAP[lang] || lang }}
               </span>
             </div>
           </div>
