@@ -158,6 +158,12 @@ onMounted(async () => {
             <span class="meta-label">测评环境</span>
             <span class="meta-val">Docker 沙箱隔离执行</span>
           </div>
+          <div v-if="question.tags && question.tags.length > 0" class="meta-item meta-item-tags">
+            <span class="meta-label">算法分类标签</span>
+            <div class="meta-tags-list">
+              <span v-for="t in question.tags" :key="t" class="detail-tag-chip mono">#{{ t }}</span>
+            </div>
+          </div>
           <div v-if="question.createdBy" class="meta-item meta-item-author">
             <span class="meta-label">出题人</span>
             <RouterLink
@@ -435,6 +441,20 @@ onMounted(async () => {
 .cta-arrow {
   width: 16px;
   height: 16px;
+}
+
+.meta-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.detail-tag-chip {
+  font-size: 11.5px;
+  padding: 2px 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--ink-secondary);
 }
 
 .header-meta-row {

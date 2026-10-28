@@ -38,11 +38,18 @@ public class QuestionController {
     public ApiResponse<PageResult<QuestionVO>> list(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String difficulty,
+            @RequestParam(required = false) String tag,
             @RequestParam(required = false) String userStatus,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "false") boolean all) {
-        return ApiResponse.success(questionService.list(keyword, difficulty, userStatus, page, size, all));
+        return ApiResponse.success(questionService.list(keyword, difficulty, tag, userStatus, page, size, all));
+    }
+
+    @Operation(summary = "获取所有已使用的算法标签")
+    @GetMapping("/tags")
+    public ApiResponse<List<String>> listTags() {
+        return ApiResponse.success(questionService.listAllTags());
     }
 
     @Operation(summary = "题目详情")

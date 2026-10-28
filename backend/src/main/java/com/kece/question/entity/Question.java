@@ -25,6 +25,9 @@ public class Question {
     /** 支持的语言，逗号分隔。 */
     private String languages;
 
+    /** 算法知识点分类标签，逗号分隔。 */
+    private String tags;
+
     private Long createdBy;
 
     /** 状态：1 公开 0 私有。 */

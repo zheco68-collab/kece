@@ -40,7 +40,7 @@ public class QuestionService {
     private final TestCaseStorageService testCaseStorageService;
 
     public PageResult<QuestionVO> list(
-            String keyword, String difficulty, String userStatus, int page, int size, boolean all) {
+            String keyword, String difficulty, String tag, String userStatus, int page, int size, boolean all) {
         PageParam p = PageParam.of(page, size);
         Integer status = (all && isPrivileged()) ? null : 1;
 
@@ -71,6 +71,7 @@ public class QuestionService {
                 questionMapper.findPage(
                         keyword,
                         difficulty,
+                        tag,
                         status,
                         null,
                         includeIds,
@@ -78,14 +79,19 @@ public class QuestionService {
                         p.offset(),
                         p.size());
         long total =
-                questionMapper.count(keyword, difficulty, status, null, includeIds, excludeIds);
+                questionMapper.count(keyword, difficulty, tag, status, null, includeIds, excludeIds);
         return new PageResult<>(
                 questions.stream().map(this::toListVO).toList(), total, p.page(), p.size());
     }
 
+    public PageResult<QuestionVO> list(
+            String keyword, String difficulty, String userStatus, int page, int size, boolean all) {
+        return list(keyword, difficulty, null, userStatus, page, size, all);
+    }
+
     /** 后台算法题列表：ADMIN 可按 createdBy 筛选，非 ADMIN 仅见自己出的题。 */
     public PageResult<QuestionVO> listAdmin(
-            String keyword, String difficulty, Integer status, Long createdBy, int page, int size) {
+            String keyword, String difficulty, String tag, Integer status, Long createdBy, int page, int size) {
         PageParam p = PageParam.of(page, size);
         Long targetCreatedBy = createdBy;
         AuthUser user = AuthContextHolder.get();
@@ -96,15 +102,21 @@ public class QuestionService {
                 questionMapper.findPage(
                         keyword,
                         difficulty,
+                        tag,
                         status,
                         targetCreatedBy,
                         null,
                         null,
                         p.offset(),
                         p.size());
-        long total = questionMapper.count(keyword, difficulty, status, targetCreatedBy, null, null);
+        long total = questionMapper.count(keyword, difficulty, tag, status, targetCreatedBy, null, null);
         return new PageResult<>(
                 questions.stream().map(this::toListVO).toList(), total, p.page(), p.size());
+    }
+
+    public PageResult<QuestionVO> listAdmin(
+            String keyword, String difficulty, Integer status, Long createdBy, int page, int size) {
+        return listAdmin(keyword, difficulty, null, status, createdBy, page, size);
     }
 
     public QuestionVO detail(Long id) {
@@ -407,6 +419,14 @@ public class QuestionService {
         question.setLanguages(
                 request.getLanguages() == null ? "cpp,java,python" : request.getLanguages());
         question.setStatus(request.getStatus() == null ? 1 : request.getStatus());
+        if (request.getTags() != null) {
+            String joined = request.getTags().stream()
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .distinct()
+                    .collect(java.util.stream.Collectors.joining(","));
+            question.setTags(joined.isEmpty() ? null : joined);
+        }
     }
 
     private QuestionVO toListVO(Question question) {
@@ -418,6 +438,7 @@ public class QuestionService {
                 .memoryLimit(question.getMemoryLimit())
                 .languages(splitLanguages(question.getLanguages()))
                 .status(question.getStatus())
+                .tags(splitTags(question.getTags()))
                 .createdBy(question.getCreatedBy())
                 .createdAt(question.getCreatedAt())
                 .updatedAt(question.getUpdatedAt())
@@ -445,6 +466,7 @@ public class QuestionService {
                 .createdBy(question.getCreatedBy())
                 .authorName(author != null ? author.getUsername() : null)
                 .authorAvatarUrl(author != null ? author.getAvatarUrl() : null)
+                .tags(splitTags(question.getTags()))
                 .sampleTestCases(samples)
                 .createdAt(question.getCreatedAt())
                 .updatedAt(question.getUpdatedAt())
@@ -509,5 +531,29 @@ public class QuestionService {
                 .isSample(testCase.getIsSample())
                 .isLarge(isLarge)
                 .build();
+    }
+
+    private List<String> splitTags(String tags) {
+        if (tags == null || tags.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(tags.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+    }
+
+    public List<String> listAllTags() {
+        List<String> rawList = questionMapper.findAllRawTags();
+        if (rawList == null || rawList.isEmpty()) {
+            return List.of();
+        }
+        return rawList.stream()
+                .flatMap(t -> java.util.Arrays.stream(t.split(",")))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .distinct()
+                .sorted()
+                .toList();
     }
 }

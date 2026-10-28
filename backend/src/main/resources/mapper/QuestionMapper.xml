@@ -10,6 +10,7 @@
         <result column="time_limit" property="timeLimit"/>
         <result column="memory_limit" property="memoryLimit"/>
         <result column="languages" property="languages"/>
+        <result column="tags" property="tags"/>
         <result column="created_by" property="createdBy"/>
         <result column="status" property="status"/>
         <result column="created_at" property="createdAt"/>
@@ -21,6 +22,7 @@
             <if test="status != null">status = #{status}</if>
             <if test="difficulty != null and difficulty != ''">AND difficulty = #{difficulty}</if>
             <if test="keyword != null and keyword != ''">AND title LIKE CONCAT('%', #{keyword}, '%')</if>
+            <if test="tag != null and tag != ''">AND FIND_IN_SET(#{tag}, tags)</if>
             <if test="createdBy != null">AND created_by = #{createdBy}</if>
             <if test="includeIds != null and includeIds.size() > 0">
                 AND id IN
@@ -49,6 +51,10 @@
         <include refid="filters"/>
     </select>
 
+    <select id="findAllRawTags" resultType="string">
+        SELECT DISTINCT tags FROM `question` WHERE status = 1 AND tags IS NOT NULL AND tags != ''
+    </select>
+
     <select id="findById" resultMap="BaseResultMap">
         SELECT * FROM `question` WHERE id = #{id}
     </select>
@@ -59,9 +65,9 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO `question`
-            (title, description, difficulty, time_limit, memory_limit, languages, created_by, status)
+            (title, description, difficulty, time_limit, memory_limit, languages, tags, created_by, status)
         VALUES
-            (#{title}, #{description}, #{difficulty}, #{timeLimit}, #{memoryLimit}, #{languages}, #{createdBy}, #{status})
+            (#{title}, #{description}, #{difficulty}, #{timeLimit}, #{memoryLimit}, #{languages}, #{tags}, #{createdBy}, #{status})
     </insert>
 
     <update id="update">
@@ -73,6 +79,7 @@
             <if test="timeLimit != null">time_limit = #{timeLimit},</if>
             <if test="memoryLimit != null">memory_limit = #{memoryLimit},</if>
             <if test="languages != null">languages = #{languages},</if>
+            <if test="tags != null">tags = #{tags},</if>
             <if test="status != null">status = #{status},</if>
         </set>
         WHERE id = #{id}

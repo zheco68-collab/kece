@@ -23,6 +23,7 @@ public interface QuestionMapper {
     List<Question> findPage(
             @Param("keyword") String keyword,
             @Param("difficulty") String difficulty,
+            @Param("tag") String tag,
             @Param("status") Integer status,
             @Param("createdBy") Long createdBy,
             @Param("includeIds") List<Long> includeIds,
@@ -33,8 +34,12 @@ public interface QuestionMapper {
     long count(
             @Param("keyword") String keyword,
             @Param("difficulty") String difficulty,
+            @Param("tag") String tag,
             @Param("status") Integer status,
             @Param("createdBy") Long createdBy,
             @Param("includeIds") List<Long> includeIds,
             @Param("excludeIds") List<Long> excludeIds);
+
+    /** 查询所有已使用的非空标签列表。 */
+    List<String> findAllRawTags();
 }

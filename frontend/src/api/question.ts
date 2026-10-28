@@ -4,6 +4,7 @@ import type { Difficulty, PageResult, Question, TestCase } from '@/types'
 export interface QuestionListParams {
   keyword?: string
   difficulty?: string
+  tag?: string
   userStatus?: string
   page?: number
   size?: number
@@ -18,6 +19,7 @@ export interface QuestionWriteRequest {
   memoryLimit?: number
   /** 支持语言，逗号分隔（如 "cpp,java,python"）。 */
   languages?: string
+  tags?: string[]
   /** 状态：1 公开 0 私有。 */
   status?: number
 }
@@ -42,6 +44,7 @@ export interface TestCaseSummaryVO {
 
 export const questionApi = {
   list: (params: QuestionListParams) => http.get<PageResult<Question>>('/questions', { params }),
+  listTags: () => http.get<string[]>('/questions/tags'),
   detail: (id: number | string) => http.get<Question>(`/questions/${id}`),
   create: (body: QuestionWriteRequest) => http.post<Question>('/questions', body),
   update: (id: number | string, body: QuestionWriteRequest) =>

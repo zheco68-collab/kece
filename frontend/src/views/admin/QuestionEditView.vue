@@ -72,6 +72,31 @@ function clearJudgers() {
   selectedLanguages.value = []
 }
 
+const PRESET_TAG_CATEGORIES = [
+  {
+    name: '基础与模拟',
+    tags: ['基础语法', '变量与I/O', '分支与循环', '模拟', '高精度'],
+  },
+  {
+    name: '数据结构',
+    tags: ['数组', '链表', '栈与队列', '哈希表', '二叉树', '并查集'],
+  },
+  {
+    name: '算法核心',
+    tags: ['排序', '二分查找', '双指针', '滑动窗口', '贪心', '递归与递推', '动态规划'],
+  },
+  {
+    name: '搜索与图论',
+    tags: ['深度优先搜索(DFS)', '广度优先搜索(BFS)', '最短路', '拓扑排序'],
+  },
+  {
+    name: '数学与逻辑',
+    tags: ['位运算', '数论', '组合数学', '博弈论'],
+  },
+]
+
+const customTagInput = ref('')
+
 const form = reactive({
   title: '',
   description: '',
@@ -79,7 +104,33 @@ const form = reactive({
   status: 1,
   timeLimit: 1000,
   memoryLimit: 256,
+  tags: [] as string[],
 })
+
+function toggleTag(tag: string) {
+  const idx = form.tags.indexOf(tag)
+  if (idx >= 0) {
+    form.tags.splice(idx, 1)
+  } else {
+    form.tags.push(tag)
+  }
+}
+
+function addCustomTag() {
+  const t = customTagInput.value.trim()
+  if (!t) return
+  if (!form.tags.includes(t)) {
+    form.tags.push(t)
+  }
+  customTagInput.value = ''
+}
+
+function removeTag(tag: string) {
+  const idx = form.tags.indexOf(tag)
+  if (idx >= 0) {
+    form.tags.splice(idx, 1)
+  }
+}
 
 const formErrors = reactive({
   title: '',
@@ -246,6 +297,7 @@ async function loadQuestion() {
     form.status = q.status
     form.timeLimit = q.timeLimit ?? 1000
     form.memoryLimit = q.memoryLimit ?? 256
+    form.tags = Array.isArray(q.tags) ? [...q.tags] : []
     if (Array.isArray(q.languages) && q.languages.length > 0) {
       selectedLanguages.value = [...q.languages]
     } else {
@@ -293,6 +345,7 @@ async function save() {
       title: form.title.trim(),
       description: form.description,
       difficulty: form.difficulty,
+      tags: form.tags,
       status: form.status,
       timeLimit: form.timeLimit,
       memoryLimit: form.memoryLimit,
@@ -355,6 +408,61 @@ onMounted(() => {
             <input v-model.number="form.memoryLimit" class="input" type="number" min="1" max="4096" />
           </FormField>
         </div>
+        <FormField
+          label="题目分类标签"
+          hint="多选分类标签，可在预设库中勾选，也可在输入框输入自定义标签后按回车添加"
+        >
+          <div class="tags-manager">
+            <!-- 已选标签池 -->
+            <div class="selected-tags-box">
+              <span class="selected-tags-title">已选标签 ({{ form.tags.length }}):</span>
+              <div v-if="form.tags.length > 0" class="selected-tags-list">
+                <span v-for="t in form.tags" :key="t" class="selected-tag-pill mono">
+                  #{{ t }}
+                  <button type="button" class="btn-remove-tag" title="移除标签" @click="removeTag(t)">×</button>
+                </span>
+              </div>
+              <span v-else class="muted no-tags-hint">暂无选择标签</span>
+            </div>
+
+            <!-- 自定义标签输入框 -->
+            <div class="custom-tag-input-row">
+              <input
+                v-model="customTagInput"
+                class="input custom-tag-input"
+                placeholder="输入自定义标签名称，按 Enter 添加…"
+                @keydown.enter.prevent="addCustomTag"
+              />
+              <button type="button" class="btn btn-outline btn-sm btn-add-tag" @click="addCustomTag">
+                + 添加标签
+              </button>
+            </div>
+
+            <!-- 预设标签库 -->
+            <div class="preset-categories-grid">
+              <div
+                v-for="cat in PRESET_TAG_CATEGORIES"
+                :key="cat.name"
+                class="preset-cat-group"
+              >
+                <div class="preset-cat-name mono">{{ cat.name }}</div>
+                <div class="preset-cat-tags">
+                  <button
+                    v-for="pt in cat.tags"
+                    :key="pt"
+                    type="button"
+                    class="preset-tag-btn"
+                    :class="{ active: form.tags.includes(pt) }"
+                    @click="toggleTag(pt)"
+                  >
+                    {{ form.tags.includes(pt) ? '✓ ' : '' }}{{ pt }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </FormField>
+
         <FormField
           label="测评机选择"
           required
@@ -863,6 +971,121 @@ onMounted(() => {
 }
 
 /* 测评机多选卡片样式 */
+.tags-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 16px;
+}
+.selected-tags-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--line);
+}
+.selected-tags-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-secondary);
+}
+.selected-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.selected-tag-pill {
+  font-size: 12px;
+  padding: 2px 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-remove-tag {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  transition: color 0.15s ease;
+}
+.btn-remove-tag:hover {
+  color: var(--danger, #c92a2a);
+}
+.no-tags-hint {
+  font-size: 12px;
+}
+.custom-tag-input-row {
+  display: flex;
+  gap: 8px;
+  max-width: 420px;
+}
+.custom-tag-input {
+  height: 32px;
+  font-size: 13px;
+  border-radius: 0;
+}
+.btn-add-tag {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: 0;
+  white-space: nowrap;
+}
+.preset-categories-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+.preset-cat-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.preset-cat-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-tertiary);
+  width: 72px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+.preset-cat-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+.preset-tag-btn {
+  font-size: 11.5px;
+  padding: 3px 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border-radius: 0;
+}
+.preset-tag-btn:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.preset-tag-btn.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+  font-weight: 600;
+}
+
 .judger-select-box {
   display: flex;
   flex-direction: column;

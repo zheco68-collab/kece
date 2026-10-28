@@ -50,6 +50,7 @@ export interface Question {
   timeLimit: number | null
   memoryLimit: number | null
   languages: string[]
+  tags?: string[]
   status: number
   createdBy: number
   authorName?: string | null

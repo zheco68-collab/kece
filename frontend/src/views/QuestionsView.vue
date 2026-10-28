@@ -13,6 +13,8 @@ const userStore = useUserStore()
 const keyword = ref('')
 const difficulty = ref<Difficulty | ''>('')
 const statusFilter = ref<'ALL' | 'UNSOLVED' | 'SOLVED'>('ALL')
+const selectedTag = ref('')
+const allTags = ref<string[]>([])
 const page = ref(1)
 const size = 10
 
@@ -56,6 +58,7 @@ async function load() {
     const res = await questionApi.list({
       keyword: keyword.value.trim() || undefined,
       difficulty: difficulty.value || undefined,
+      tag: selectedTag.value || undefined,
       userStatus: statusFilter.value === 'ALL' ? undefined : statusFilter.value,
       page: page.value,
       size,
@@ -72,6 +75,15 @@ async function load() {
 function changePage(p: number) {
   page.value = p
   load()
+}
+
+
+async function loadTags() {
+  try {
+    allTags.value = await questionApi.listTags()
+  } catch {
+    /* 忽略标签加载失败 */
+  }
 }
 
 async function loadSolved() {
@@ -96,7 +108,7 @@ function pickRandomQuestion() {
   }
 }
 
-watch([keyword, difficulty, statusFilter], () => {
+watch([keyword, difficulty, statusFilter, selectedTag], () => {
   page.value = 1
   load()
 })
@@ -104,6 +116,7 @@ watch([keyword, difficulty, statusFilter], () => {
 onMounted(() => {
   load()
   loadSolved()
+  loadTags()
 })
 </script>
 
@@ -199,6 +212,29 @@ onMounted(() => {
       </div>
     </div>
 
+    <!-- 算法类型标签快捷过滤条 -->
+    <div v-if="allTags.length > 0" class="tag-filter-bar">
+      <span class="tag-filter-label mono">TAG:</span>
+      <button
+        type="button"
+        class="tag-filter-chip"
+        :class="{ active: !selectedTag }"
+        @click="selectedTag = ''"
+      >
+        全部
+      </button>
+      <button
+        v-for="t in allTags"
+        :key="t"
+        type="button"
+        class="tag-filter-chip"
+        :class="{ active: selectedTag === t }"
+        @click="selectedTag = (selectedTag === t ? '' : t)"
+      >
+        #{{ t }}
+      </button>
+    </div>
+
     <!-- 列表加载与错误状态 -->
     <p v-if="error" class="submit-error">{{ error }}</p>
     <div v-if="loading" class="loading-box card muted">
@@ -247,6 +283,17 @@ onMounted(() => {
               <!-- 时空限制 -->
               <span class="meta-tag limits mono">
                 {{ q.timeLimit ?? 1000 }}ms / {{ q.memoryLimit ?? 256 }}MB
+              </span>
+              <!-- 题目算法标签 -->
+              <span
+                v-for="t in q.tags"
+                :key="t"
+                class="meta-tag question-tag mono"
+                :class="{ 'tag-active': selectedTag === t }"
+                :title="`分类标签：${t}，点击按此标签筛选`"
+                @click.stop.prevent="selectedTag = (selectedTag === t ? '' : t)"
+              >
+                #{{ t }}
               </span>
               <!-- 支持语言徽标 -->
               <span
@@ -607,6 +654,62 @@ onMounted(() => {
   border: 1px solid var(--line);
   color: var(--ink-secondary);
 }
+.meta-tag.question-tag {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.meta-tag.question-tag:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.meta-tag.question-tag.tag-active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.tag-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: -10px;
+  margin-bottom: 20px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.tag-filter-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-tertiary);
+  margin-right: 4px;
+  letter-spacing: 0.5px;
+}
+.tag-filter-chip {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border-radius: 0;
+}
+.tag-filter-chip:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.tag-filter-chip.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+  font-weight: 600;
+}
+
 .meta-tag.lang {
   background: #f4f4f5;
   border: 1px solid #e4e4e7;

@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 import lombok.Data;
 
 /** 算法题目创建/更新请求。 */
@@ -29,6 +30,9 @@ public class QuestionRequest {
     private Integer memoryLimit = 256;
 
     private String languages = "cpp,java,python";
+
+    /** 算法分类标签列表。 */
+    private List<String> tags;
 
     /** 状态：1 公开 0 私有。 */
     @Min(value = 0, message = "状态取值只能为 0 或 1")

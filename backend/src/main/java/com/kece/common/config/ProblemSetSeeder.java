@@ -51,7 +51,7 @@ public class ProblemSetSeeder {
                         admin != null ? admin.getId() : (teacher != null ? teacher.getId() : 1L);
 
                 List<Question> algoList =
-                        questionMapper.findPage(null, null, 1, null, null, null, 0, 20);
+                        questionMapper.findPage(null, null, null, 1, null, null, null, 0, 20);
                 List<DbQuestion> dbList =
                         dbQuestionMapper.findPage(null, null, 1, null, null, null, 0, 20);
                 List<ObjectiveQuestion> objList =

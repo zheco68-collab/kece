@@ -17,6 +17,7 @@ public class QuestionVO {
     private Integer timeLimit;
     private Integer memoryLimit;
     private List<String> languages;
+    private List<String> tags;
     private Integer status;
     private Long createdBy;
     private String authorName;
