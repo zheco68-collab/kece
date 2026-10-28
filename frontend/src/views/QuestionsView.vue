@@ -15,6 +15,7 @@ const difficulty = ref<Difficulty | ''>('')
 const statusFilter = ref<'ALL' | 'UNSOLVED' | 'SOLVED'>('ALL')
 const selectedTag = ref('')
 const allTags = ref<string[]>([])
+const showTags = ref(false)
 const page = ref(1)
 const size = 10
 
@@ -172,6 +173,36 @@ onMounted(() => {
             {{ lv ? difficultyLabels[lv] : '全部难度' }}
           </button>
         </div>
+
+        <!-- 算法标签展开/收起切换按钮 -->
+        <button
+          v-if="allTags.length > 0"
+          type="button"
+          class="tab-btn tag-toggle-btn"
+          :class="{
+            active: showTags,
+            'has-selected': !!selectedTag
+          }"
+          :title="showTags ? '收起算法标签栏' : '展开算法标签筛选'"
+          @click="showTags = !showTags"
+        >
+          <span>标签筛选</span>
+          <span v-if="selectedTag" class="tag-badge-indicator">#{{ selectedTag }}</span>
+          <span
+            v-if="selectedTag"
+            class="tag-clear-x"
+            title="清除当前标签筛选"
+            @click.stop="selectedTag = ''"
+          >×</span>
+          <svg
+            class="toggle-arrow"
+            :class="{ 'is-open': showTags }"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+          >
+            <path d="M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z" />
+          </svg>
+        </button>
       </div>
 
       <div class="toolbar-right">
@@ -212,26 +243,36 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 算法类型标签快捷过滤条 -->
-    <div v-if="allTags.length > 0" class="tag-filter-bar">
-      <span class="tag-filter-label mono">TAG:</span>
+    <!-- 算法类型标签快捷过滤条（默认收起） -->
+    <div v-if="showTags && allTags.length > 0" class="tag-filter-bar">
+      <div class="tag-filter-chips">
+        <span class="tag-filter-label mono">TAG:</span>
+        <button
+          type="button"
+          class="tag-filter-chip"
+          :class="{ active: !selectedTag }"
+          @click="selectedTag = ''"
+        >
+          全部
+        </button>
+        <button
+          v-for="t in allTags"
+          :key="t"
+          type="button"
+          class="tag-filter-chip"
+          :class="{ active: selectedTag === t }"
+          @click="selectedTag = (selectedTag === t ? '' : t)"
+        >
+          #{{ t }}
+        </button>
+      </div>
       <button
         type="button"
-        class="tag-filter-chip"
-        :class="{ active: !selectedTag }"
-        @click="selectedTag = ''"
+        class="btn-collapse-tags"
+        title="收起标签筛选"
+        @click="showTags = false"
       >
-        全部
-      </button>
-      <button
-        v-for="t in allTags"
-        :key="t"
-        type="button"
-        class="tag-filter-chip"
-        :class="{ active: selectedTag === t }"
-        @click="selectedTag = (selectedTag === t ? '' : t)"
-      >
-        #{{ t }}
+        收起 ▴
       </button>
     </div>
 
@@ -299,7 +340,7 @@ onMounted(() => {
                 class="meta-tag question-tag mono"
                 :class="{ 'tag-active': selectedTag === t }"
                 :title="`分类标签：${t}，点击按此标签筛选`"
-                @click.stop.prevent="selectedTag = (selectedTag === t ? '' : t)"
+                @click.stop.prevent="selectedTag = (selectedTag === t ? '' : t); showTags = true"
               >
                 #{{ t }}
               </span>
@@ -674,7 +715,92 @@ onMounted(() => {
   box-shadow: 0 0 0 1.5px #93c5fd;
 }
 
+.tag-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  border-radius: 0;
+}
+.tag-toggle-btn.has-selected {
+  background: #1d4ed8;
+  border-color: #1e40af;
+  color: #ffffff;
+  font-weight: 600;
+}
+.tag-badge-indicator {
+  font-size: 11px;
+  padding: 1px 5px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 2px;
+}
+.tag-clear-x {
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.8;
+  transition: opacity 0.15s ease;
+}
+.tag-clear-x:hover {
+  opacity: 1;
+}
+.toggle-arrow {
+  width: 9px;
+  height: 9px;
+  transition: transform 0.2s ease;
+  margin-left: 1px;
+}
+.toggle-arrow.is-open {
+  transform: rotate(180deg);
+}
+
 .tag-filter-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -10px;
+  margin-bottom: 20px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  animation: tagSlideDown 0.16s ease-out;
+}
+@keyframes tagSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.tag-filter-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+.btn-collapse-tags {
+  font-size: 12px;
+  color: var(--ink-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+.btn-collapse-tags:hover {
+  color: var(--ink);
+}
+
+.tag-filter-bar-old {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
