@@ -1000,18 +1000,19 @@ onMounted(() => {
 .selected-tag-pill {
   font-size: 12px;
   padding: 2px 8px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  color: var(--ink);
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-weight: 500;
 }
 .btn-remove-tag {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--ink-tertiary);
+  color: #60a5fa;
   font-size: 14px;
   line-height: 1;
   padding: 0;
@@ -1076,13 +1077,14 @@ onMounted(() => {
   border-radius: 0;
 }
 .preset-tag-btn:hover {
-  border-color: var(--ink);
-  color: var(--ink);
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #eff6ff;
 }
 .preset-tag-btn.active {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: #fff;
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #ffffff;
   font-weight: 600;
 }
 
