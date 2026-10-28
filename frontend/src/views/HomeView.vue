@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import ClusterConsole from '@/components/ClusterConsole.vue'
 import { systemApi } from '@/api/system'
@@ -361,12 +361,39 @@ function startTypewriter() {
 onBeforeUnmount(() => {
   if (glitchTimer) clearTimeout(glitchTimer)
   if (typewriterTimer) clearTimeout(typewriterTimer)
+  if (codeTypeTimer) clearTimeout(codeTypeTimer)
+  if (terminalObserver) {
+    terminalObserver.disconnect()
+    terminalObserver = null
+  }
 })
 
-// 针对首页沙箱评测终端演示代码的代码与关键字高亮（支持 Java / SQL / JSON）
+// =========================================
+// 交互终端代码演示：惰性加载与打字机特效
+// =========================================
+const typedCode = ref('')
+const isTyping = ref(false)
+const isVerdictReady = ref(false)
+const testingProgress = ref(1)
+const hasTriggeredScroll = ref(false)
+const terminalSectionRef = ref<HTMLElement | null>(null)
+const terminalBodyRef = ref<HTMLElement | null>(null)
+let codeTypeTimer: ReturnType<typeof setTimeout> | null = null
+let terminalObserver: IntersectionObserver | null = null
+
+const totalLines = computed(() => {
+  const code = hasTriggeredScroll.value
+    ? (typedCode.value || ' ')
+    : (demos[activeTab.value]?.code || ' ')
+  return Math.max(1, code.split('\n').length)
+})
+
+// 针对首页沙箱评测终端演示代码的高亮（支持 Java / SQL / JSON，在打字过程中实时渲染）
 const highlightedCode = computed(() => {
   const current = demos[activeTab.value]
-  if (!current || !current.code) return ''
+  if (!current) return ''
+  const text = hasTriggeredScroll.value ? typedCode.value : ''
+  if (!text) return ''
 
   let grammar = Prism.languages.clike
   let langId = 'clike'
@@ -383,15 +410,114 @@ const highlightedCode = computed(() => {
   }
 
   try {
-    return Prism.highlight(current.code, grammar, langId)
+    return Prism.highlight(text, grammar, langId)
   } catch {
-    return current.code
+    return text
+  }
+})
+
+function startCodeTyping() {
+  if (codeTypeTimer) {
+    clearTimeout(codeTypeTimer)
+    codeTypeTimer = null
+  }
+  const fullCode = demos[activeTab.value]?.code || ''
+  if (!fullCode) return
+
+  typedCode.value = ''
+  isTyping.value = true
+  isVerdictReady.value = false
+  testingProgress.value = 1
+
+  let index = 0
+  const totalLen = fullCode.length
+
+  const typeNext = () => {
+    if (index < totalLen) {
+      // 真实编码打字节奏：缩进空白一次性快速跃进
+      if (
+        fullCode.slice(index, index + 4) === '    ' ||
+        fullCode.slice(index, index + 2) === '  '
+      ) {
+        index += fullCode.slice(index, index + 4) === '    ' ? 4 : 2
+      } else if (fullCode[index] === '\t') {
+        index += 1
+      } else {
+        const step = Math.min(totalLen - index, Math.random() > 0.45 ? 2 : 1)
+        index += step
+      }
+
+      typedCode.value = fullCode.slice(0, index)
+
+      // 动态推进测试点进度 (1 -> 10)
+      const ratio = index / totalLen
+      testingProgress.value = Math.min(10, Math.max(1, Math.ceil(ratio * 10)))
+
+      // 终端视口随光标自动滚动
+      nextTick(() => {
+        if (terminalBodyRef.value) {
+          terminalBodyRef.value.scrollTop = terminalBodyRef.value.scrollHeight
+        }
+      })
+
+      const lastChar = fullCode[index - 1]
+      let delay = 10 + Math.random() * 12
+
+      if (lastChar === '\n') {
+        delay = 55 + Math.random() * 30
+      } else if (lastChar === ';' || lastChar === '{' || lastChar === '}') {
+        delay = 35 + Math.random() * 20
+      }
+
+      codeTypeTimer = setTimeout(typeNext, delay)
+    } else {
+      typedCode.value = fullCode
+      // 代码敲完，模拟沙箱 280ms 综合判定延迟，随后 ACCEPTED 判定落地
+      codeTypeTimer = setTimeout(() => {
+        isTyping.value = false
+        isVerdictReady.value = true
+        testingProgress.value = 10
+      }, 280)
+    }
+  }
+
+  codeTypeTimer = setTimeout(typeNext, 160)
+}
+
+function replayTyping() {
+  startCodeTyping()
+}
+
+watch(activeTab, () => {
+  if (hasTriggeredScroll.value) {
+    startCodeTyping()
   }
 })
 
 // 动态拉取后端每日更新的随机 Java 算法模板（秒级响应，离线/超时高可用保底）
 onMounted(async () => {
   startTypewriter()
+
+  // 惰性加载：当且仅当用户滚动翻到沙箱演示区时才启动代码打字动效
+  if (typeof IntersectionObserver !== 'undefined' && terminalSectionRef.value) {
+    terminalObserver = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        if (entry && entry.isIntersecting) {
+          if (!hasTriggeredScroll.value) {
+            hasTriggeredScroll.value = true
+            startCodeTyping()
+          }
+        }
+      },
+      { threshold: 0.2 }
+    )
+    terminalObserver.observe(terminalSectionRef.value)
+  } else {
+    hasTriggeredScroll.value = true
+    startCodeTyping()
+  }
+
   try {
     const res = await systemApi.getDemoSnippet()
     if (res && res.code && res.code.trim()) {
@@ -566,8 +692,8 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- 交互式技术体验区：实时沙箱评测终端（保留全宽结构与代码语法高亮） -->
-    <section class="demo-section container">
+    <!-- 交互式技术体验区：实时沙箱评测终端（支持惰性加载打字动效与真实沙箱评测联动） -->
+    <section class="demo-section container" ref="terminalSectionRef">
       <div class="demo-header">
         <div class="demo-eyebrow mono">// SANDBOX RUNNER · LIVE VERDICT</div>
         <h2 class="demo-title">真实评测闭环体验</h2>
@@ -579,8 +705,9 @@ onMounted(async () => {
       <div class="terminal-card">
         <div class="terminal-top">
           <div class="terminal-badge">
-            <span class="live-dot"></span>
+            <span class="live-dot" :class="{ 'is-running': isTyping }"></span>
             <span>JUDGE RUNNER #01</span>
+            <span v-if="isTyping" class="badge-running-pill mono">RUNNING</span>
           </div>
 
           <div class="terminal-tabs">
@@ -605,6 +732,18 @@ onMounted(async () => {
             >
               ACM 考试结算
             </button>
+            <button
+              type="button"
+              class="terminal-tab btn-replay"
+              title="重新播放代码打字与沙箱判定动效"
+              @click="replayTyping"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" class="replay-icon">
+                <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+              </svg>
+              <span>重播</span>
+            </button>
           </div>
         </div>
 
@@ -613,16 +752,38 @@ onMounted(async () => {
           <span class="lang-tag">{{ demos[activeTab].langBadge }}</span>
         </div>
 
-        <div class="terminal-body">
-          <pre class="code-view"><code v-html="highlightedCode"></code></pre>
+        <div class="terminal-body" ref="terminalBodyRef">
+          <div class="terminal-code-wrapper">
+            <div class="line-numbers mono" aria-hidden="true">
+              <span v-for="n in totalLines" :key="n">{{ n }}</span>
+            </div>
+            <pre class="code-view"><template v-if="!hasTriggeredScroll"><span class="waiting-hint mono">// 终端待命中 · 滚动进入视口自动启动沙箱...</span></template><template v-else><code v-html="highlightedCode"></code><span class="terminal-cursor" :class="{ typing: isTyping }"></span></template></pre>
+          </div>
         </div>
 
         <div class="terminal-hud">
           <div class="hud-status-row">
-            <span class="verdict-tag" :class="demos[activeTab].verdict.statusClass">
-              ● {{ demos[activeTab].verdict.status }}
-            </span>
-            <span class="verdict-detail">{{ demos[activeTab].verdict.details }}</span>
+            <template v-if="!hasTriggeredScroll">
+              <span class="verdict-tag status-idle mono">
+                ● STANDBY 待命
+              </span>
+              <span class="verdict-detail">沙箱环境就绪 · 滚动至此加载全流程评测</span>
+            </template>
+            <template v-else-if="!isVerdictReady">
+              <span class="verdict-tag status-running mono">
+                <span class="pulse-spin"></span>
+                <span>SANDBOX EXECUTING...</span>
+              </span>
+              <span class="verdict-detail mono">
+                Docker Cgroups 隔离测试中 · 对拍用例 {{ testingProgress }} / 10
+              </span>
+            </template>
+            <template v-else>
+              <span class="verdict-tag" :class="[demos[activeTab].verdict.statusClass, 'just-arrived']">
+                ● {{ demos[activeTab].verdict.status }}
+              </span>
+              <span class="verdict-detail">{{ demos[activeTab].verdict.details }}</span>
+            </template>
           </div>
           <div class="hud-metric-row">
             <div
@@ -631,7 +792,16 @@ onMounted(async () => {
               class="metric-item"
             >
               <div class="metric-title">{{ m.label }}</div>
-              <div class="metric-data">{{ m.value }}</div>
+              <div class="metric-data" :class="{ 'is-loading': !isVerdictReady }">
+                <span v-if="isVerdictReady">{{ m.value }}</span>
+                <span v-else-if="!hasTriggeredScroll" class="metric-idle mono">待测</span>
+                <span v-else class="metric-skeleton mono">
+                  <span v-if="m.label.includes('耗时') || m.label.includes('执行')">{{ (testingProgress * 1.5).toFixed(0) }} ms...</span>
+                  <span v-else-if="m.label.includes('内存')">cgroups 采样</span>
+                  <span v-else-if="m.label.includes('测试点') || m.label.includes('数据') || m.label.includes('通过')">{{ testingProgress }} / 10 判定</span>
+                  <span v-else>实时计算中...</span>
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -1232,6 +1402,137 @@ onMounted(async () => {
 
 .lang-tag {
   color: #7b7e87;
+}
+
+.terminal-code-wrapper {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.line-numbers {
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+  color: #4b4b52;
+  text-align: right;
+  font-size: 13.5px;
+  line-height: 1.6;
+  min-width: 22px;
+  padding-right: 8px;
+  border-right: 1px solid #232326;
+}
+
+.terminal-cursor {
+  display: inline-block;
+  width: 7.5px;
+  height: 15px;
+  background: #3b82f6;
+  vertical-align: -2.5px;
+  margin-left: 2px;
+  animation: cursorBlink 0.85s infinite;
+}
+
+.terminal-cursor.typing {
+  background: #60a5fa;
+  animation: none;
+  opacity: 1;
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.waiting-hint {
+  color: #636674;
+  font-style: italic;
+}
+
+.badge-running-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  letter-spacing: 0.5px;
+  animation: pulseRunning 1.2s infinite;
+}
+
+@keyframes pulseRunning {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.45; }
+}
+
+.btn-replay {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.replay-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.live-dot.is-running {
+  background: #3b82f6;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.9);
+}
+
+.verdict-tag.status-idle {
+  background: rgba(140, 140, 144, 0.14);
+  color: #9da0a8;
+  border: 1px solid rgba(140, 140, 144, 0.28);
+}
+
+.verdict-tag.status-running {
+  background: rgba(59, 130, 246, 0.16);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.38);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pulse-spin {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid rgba(96, 165, 250, 0.3);
+  border-top-color: #60a5fa;
+  border-radius: 50%;
+  animation: spinVerdict 0.6s linear infinite;
+}
+
+@keyframes spinVerdict {
+  to { transform: rotate(360deg); }
+}
+
+.verdict-tag.just-arrived {
+  animation: verdictPopIn 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes verdictPopIn {
+  0% { transform: scale(1.08); filter: brightness(1.5); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+.metric-idle {
+  color: #55555c;
+  font-size: 12px;
+}
+
+.metric-skeleton {
+  color: #60a5fa;
+  font-size: 12px;
+  animation: skeletonPulse 1s infinite alternate;
+}
+
+@keyframes skeletonPulse {
+  0% { opacity: 0.6; }
+  100% { opacity: 1; }
 }
 
 .terminal-body {
