@@ -91,9 +91,9 @@ KECE 以直角工业美学与全真工程体验为核心，构建覆盖计算机
 
 系统采用全异步解耦、强物理隔离、确定性对拍的分布式高可用架构。
 
-### 1. 五层协同拓扑架构
+### 1. 系统分层拓扑与执行架构
 
-![五层分布式协同架构拓扑全景图](./docs/images/architecture_topology.png)
+![系统分层拓扑与执行架构全景图](./docs/images/architecture_topology.png)
 
 - **客户端交互层**：Monaco Editor 提供工业级多语言编辑，`DbSchemaViewer` 支持交互式表结构内省，实时诊断抽屉呈现测试点级输入/输出 Diff 对拍。
 - **业务调度与接入层**：Nginx 长连接池复用 + Gzip 动态响应压缩；Spring Boot 执行代码规范化清洗与提交打包；`JudgeResultBlockingListener` 独占常驻守护线程池实时监听。
