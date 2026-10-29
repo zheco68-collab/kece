@@ -153,6 +153,11 @@ KECE 采用**全异步解耦、强物理隔离、确定性对拍**的分布式�
 
 #### 1. 分布式系统五层协同拓扑 (System Topology Map)
 
+![分布式系统五层协同拓扑全景图](./docs/images/architecture_topology.png)
+
+<details>
+<summary>▶ 点击展开查看五层拓扑 Mermaid 源码结构</summary>
+
 ```mermaid
 flowchart TD
     %% ==========================================
@@ -284,7 +289,14 @@ flowchart TD
     UI_Console -.->|"GET /api/v1/system/judgers 遥测透传"| TelemetryService
 ```
 
+</details>
+
 #### 2. 端到端全异步评测执行时序 (End-to-End Sequence Diagram)
+
+![端到端全异步评测执行时序与数据流转图](./docs/images/async_evaluation_sequence.png)
+
+<details>
+<summary>▶ 点击展开查看异步时序 Mermaid 源码结构</summary>
 
 ```mermaid
 sequenceDiagram
@@ -341,6 +353,8 @@ sequenceDiagram
         Web-->>User: 17. 诊断抽屉展开 (输入 vs 输出 Diff 对拍报告)
     end
 ```
+
+</details>
 
 #### 3. 评测沙箱核心状态机生命周期 (State Machine Lifecycle)
 
