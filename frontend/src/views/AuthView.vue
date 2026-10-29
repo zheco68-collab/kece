@@ -14,36 +14,33 @@ const submitError = ref('')
 const showPassword = ref(false)
 
 const form = reactive({
-  username: '',
-  identifier: '',
   email: '',
   password: '',
 })
 
 const errors = reactive({
-  username: '',
-  identifier: '',
+  email: '',
   password: '',
 })
 
 function validate(): boolean {
-  errors.username = ''
-  errors.identifier = ''
+  errors.email = ''
   errors.password = ''
 
   let ok = true
-  if (isRegister.value) {
-    const name = form.username.trim()
-    if (!name) {
-      errors.username = '请输入用户名'
-      ok = false
-    } else if (name.length < 3 || name.length > 32) {
-      errors.username = '用户名需为 3-32 个字符'
-      ok = false
-    }
-  } else if (!form.identifier.trim()) {
-    errors.identifier = '请输入用户名或邮箱'
+  const emailVal = form.email.trim()
+  if (!emailVal) {
+    errors.email = '请输入电子邮箱'
     ok = false
+  } else {
+    const isLegacyUsername = !isRegister.value && !emailVal.includes('@')
+    if (!isLegacyUsername) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(emailVal)) {
+        errors.email = '请输入有效的邮箱地址'
+        ok = false
+      }
+    }
   }
 
   if (!form.password) {
@@ -78,11 +75,13 @@ async function submit() {
   try {
     const auth = isRegister.value
       ? await authApi.register({
-          username: form.username.trim(),
+          email: form.email.trim(),
           password: form.password,
-          email: form.email.trim() || undefined,
         })
-      : await authApi.login({ username: form.identifier.trim(), password: form.password })
+      : await authApi.login({
+          email: form.email.trim(),
+          password: form.password,
+        })
     userStore.setAuth(auth)
     router.push(resolveTarget())
   } catch (e) {
@@ -110,52 +109,16 @@ async function submit() {
       <div class="auth-form-side">
         <div class="auth-card">
           <div class="card-header">
-            <h2 class="card-title">{{ isRegister ? '创建账号' : '欢迎登录' }}</h2>
+            <h2 class="card-title">{{ isRegister ? '邮箱快速注册' : '邮箱登录' }}</h2>
             <p class="card-subtitle">
-              {{ isRegister ? '加入 KECE 开启你的技术成长与能力评测' : '登录你的 KECE 账号以继续作答与考试' }}
+              {{ isRegister ? '输入常用邮箱即可秒级开启你的技术成长之旅' : '输入你的邮箱与密码以继续作答与评测' }}
             </p>
           </div>
 
           <form class="auth-form" @submit.prevent="submit">
-            <!-- 注册模式：用户名 -->
-            <div v-if="isRegister" class="input-group">
-              <div class="input-wrapper" :class="{ 'has-error': errors.username }">
-                <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-                <input
-                  v-model="form.username"
-                  class="native-input"
-                  type="text"
-                  placeholder="请输入用户名（3-32位）"
-                  autocomplete="username"
-                />
-              </div>
-              <p v-if="errors.username" class="error-tip">{{ errors.username }}</p>
-            </div>
-
-            <!-- 登录模式：账号/邮箱 -->
-            <div v-if="!isRegister" class="input-group">
-              <div class="input-wrapper" :class="{ 'has-error': errors.identifier }">
-                <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-                <input
-                  v-model="form.identifier"
-                  class="native-input"
-                  type="text"
-                  placeholder="请输入用户名或邮箱"
-                  autocomplete="username"
-                />
-              </div>
-              <p v-if="errors.identifier" class="error-tip">{{ errors.identifier }}</p>
-            </div>
-
-            <!-- 注册模式：邮箱（选填） -->
-            <div v-if="isRegister" class="input-group">
-              <div class="input-wrapper">
+            <!-- 统一邮箱输入框（登录/注册公用） -->
+            <div class="input-group">
+              <div class="input-wrapper" :class="{ 'has-error': errors.email }">
                 <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
                   <rect x="2" y="4" width="20" height="16" rx="2" />
                   <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
@@ -164,10 +127,11 @@ async function submit() {
                   v-model="form.email"
                   class="native-input"
                   type="email"
-                  placeholder="电子邮箱（选填）"
+                  :placeholder="isRegister ? '请输入电子邮箱（用于登录与通知）' : '请输入注册邮箱'"
                   autocomplete="email"
                 />
               </div>
+              <p v-if="errors.email" class="error-tip">{{ errors.email }}</p>
             </div>
 
             <!-- 密码输入框 -->
@@ -192,7 +156,7 @@ async function submit() {
                   @click="showPassword = !showPassword"
                 >
                   <svg v-if="!showPassword" class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z" />
                     <circle cx="12" cy="12" r="3" />
                   </svg>
                   <svg v-else class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -225,11 +189,11 @@ async function submit() {
           <div class="card-footer">
             <template v-if="!isRegister">
               <span class="footer-link muted-tip">忘记密码？请联系管理员</span>
-              <RouterLink to="/register" class="footer-link primary-action">注册账号</RouterLink>
+              <RouterLink to="/register" class="footer-link primary-action">没有账号？免费注册</RouterLink>
             </template>
             <template v-else>
-              <span class="footer-link muted-tip">已有账号？</span>
-              <RouterLink to="/login" class="footer-link primary-action">去登录</RouterLink>
+              <span class="footer-link muted-tip"></span>
+              <RouterLink to="/login" class="footer-link primary-action">已有账号？去登录</RouterLink>
             </template>
           </div>
         </div>

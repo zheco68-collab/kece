@@ -2,14 +2,15 @@ import { http } from './request'
 import type { AuthResult, UserInfo } from '@/types'
 
 export interface RegisterPayload {
-  username: string
+  email: string
   password: string
-  email?: string
+  username?: string
 }
 
 export interface LoginPayload {
-  username: string
+  email: string
   password: string
+  username?: string
 }
 
 export const authApi = {

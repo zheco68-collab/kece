@@ -13,6 +13,8 @@ import com.kece.user.mapper.UserMapper;
 import io.jsonwebtoken.Claims;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -29,16 +31,52 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userMapper.findByUsername(request.getUsername()) != null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "用户名已存在");
+        if (request.getEmail() == null || request.getEmail().isBlank()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "邮箱不能为空");
         }
-        if (request.getEmail() != null && userMapper.findByEmail(request.getEmail()) != null) {
+        String email = request.getEmail().trim().toLowerCase();
+        if (userMapper.findByEmail(email) != null) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "邮箱已被注册");
         }
+
+        String username;
+        if (request.getUsername() != null && !request.getUsername().isBlank()) {
+            username = request.getUsername().trim();
+            if (userMapper.findByUsername(username) != null) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "用户名已存在");
+            }
+        } else {
+            // 从邮箱前缀自动推导用户名
+            int atIndex = email.indexOf('@');
+            String rawPrefix = atIndex > 0 ? email.substring(0, atIndex) : email;
+            String sanitized = rawPrefix.replaceAll("[^a-zA-Z0-9_]", "");
+            if (sanitized.length() < 3) {
+                sanitized = "user_" + sanitized;
+            }
+            if (sanitized.length() > 50) {
+                sanitized = sanitized.substring(0, 50);
+            }
+
+            String candidate = sanitized;
+            if (userMapper.findByUsername(candidate) != null) {
+                ThreadLocalRandom random = ThreadLocalRandom.current();
+                int attempts = 0;
+                while (userMapper.findByUsername(candidate) != null && attempts < 20) {
+                    int suffix = random.nextInt(1000, 10000);
+                    candidate = sanitized + suffix;
+                    attempts++;
+                }
+                if (userMapper.findByUsername(candidate) != null) {
+                    candidate = "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+                }
+            }
+            username = candidate;
+        }
+
         User user = new User();
-        user.setUsername(request.getUsername());
+        user.setUsername(username);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setEmail(request.getEmail());
+        user.setEmail(email);
         user.setRoles("USER");
         user.setStatus(1);
         userMapper.insert(user);
@@ -46,14 +84,21 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request) {
-        // 登录标识支持用户名或邮箱
-        User user = userMapper.findByUsername(request.getUsername());
+        String account = request.getAccount();
+        if (account == null || account.isBlank()) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "邮箱或密码错误");
+        }
+
+        User user = userMapper.findByEmail(account);
         if (user == null) {
-            user = userMapper.findByEmail(request.getUsername());
+            user = userMapper.findByEmail(account.toLowerCase());
+        }
+        if (user == null && !account.contains("@")) {
+            user = userMapper.findByUsername(account);
         }
         if (user == null
                 || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "用户名或密码错误");
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "邮箱或密码错误");
         }
         if (user.getStatus() == null || user.getStatus() != 1) {
             throw new BusinessException(ResultCode.FORBIDDEN, "账号已被禁用");
