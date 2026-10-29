@@ -34,13 +34,13 @@
 
 ```mermaid
 flowchart LR
-    Core["KECE 核心评测底座"] --> M1["01. 算法编程 OJ\n(C++ / Java / Python / ArkTS)"]
-    Core --> M2["02. 数据库 SQL OJ\n(3307 独立实例动态临时库对拍)"]
-    Core --> M3["03. 精选分类题集\n(章节编排 / 断点续刷 / 自愈校验)"]
-    Core --> M4["04. 前端 AI 智能评测\n(Playwright 无头断言 + 视觉大模型)"]
-    Core --> M5["05. 标准客观题库\n(LaTeX 数学公式 / 漏选扣分 / 正则匹配)"]
-    Core --> M6["06. 随堂课练实训\n(口令准入 / 实时督学 / 历史复盘)"]
-    Core --> M7["07. 在线机考与天梯\n(ACM 罚时 / OI 快照加权 / 内存榜单)"]
+    Core["KECE 核心评测底座"] --> M1["01. 算法编程 OJ<br/>(C++ / Java / Python / ArkTS)"]
+    Core --> M2["02. 数据库 SQL OJ<br/>(3307 独立临时库对拍)"]
+    Core --> M3["03. 精选分类题集<br/>(章节编排 / 断点续刷 / 自愈校验)"]
+    Core --> M4["04. 前端 AI 智能评测<br/>(Playwright 断言 + 视觉大模型)"]
+    Core --> M5["05. 标准客观题库<br/>(LaTeX 公式 / 漏选扣分 / 正则匹配)"]
+    Core --> M6["06. 随堂课练实训<br/>(口令准入 / 实时督学 / 历史复盘)"]
+    Core --> M7["07. 在线机考与天梯<br/>(ACM 罚时 / OI 快照加权 / 内存榜单)"]
 ```
 
 | 编号 | 模块标识 | 模块名称 | 核心技术底座 | 关键功能与业务机制 |
@@ -84,14 +84,9 @@ flowchart LR
 
 平台完全遵循 **0-Radius Industrial System（直角工业设计系统）**，摒弃当下泛滥的圆角与高斯模糊，回归直观、硬朗、精确的工程美学：
 
-```
-┌────────────────────────────────────────────────────────┐
-│  --radius: 0;                                          │
-│  Main Ink: #111111   | Surface Grey: #f4f5f7           │
-│  Solid Blue: #1d4ed8 | Border Line:  #ced4da           │
-│  Font Family: JetBrains Mono / Inter / system-ui       │
-└────────────────────────────────────────────────────────┘
-```
+- **核心几何规范**：全站严格遵循 `--radius: 0` 纯直角定义，消除任何圆角与模糊阴影；
+- **色彩层级体系**：`#111111` 工业主墨黑（主文字与主框线）/ `#f4f5f7` 工作区浅灰底色 / `#ced4da` 结构分割线 / `#1d4ed8` 科技蓝高反差语义强调；
+- **数码排版字体**：优先采用 `JetBrains Mono` 等宽排盘，辅以 `Inter` 与操作系统原生界面字族。
 
 1. **绝对直角规范**：全站所有卡片、按钮、输入框、模态窗与头像均严格执行 `--radius: 0`。
 2. **纯色语义标识体系**：
@@ -156,40 +151,59 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    subgraph Frontend ["前端 (Vue 3 SPA)"]
-        UI_Editor["Monaco 代码编辑器 / SQL 工作台"]
-        UI_Console["ClusterConsole 遥测看板"]
+    subgraph Frontend ["客户端前端 (Vue 3 SPA)"]
+        UI_Submit["代码/SQL 答题工作台"]
+        UI_Polling["评测状态与用例诊断抽屉"]
+        UI_Console["ClusterConsole 遥测控制台"]
     end
 
-    subgraph BackendApp ["业务核心 (Spring Boot 3)"]
-        Auth["JWT 权限守卫 & 拦截器"]
-        SubService["SubmissionService / DbSubmissionService"]
-        CacheService["QuestionService & RankService (Redis 多级缓存)"]
-        Listener["JudgeResultBlockingListener\n(BRPOP 异步收集守护线程)"]
+    subgraph Backend ["服务端业务核心 (Spring Boot 3)"]
+        AuthInterceptor["JWT 鉴权拦截器"]
+        SubmissionService["提交调度服务 (SubmissionService)"]
+        ResultListener["BRPOP 异步收集守护线程 (JudgeResultBlockingListener)"]
+        TelemetryService["系统遥测服务 (SystemStatusService)"]
     end
 
-    subgraph MiddlewareLayer ["存储与消息层"]
-        MySQL_Main[("MySQL 8.0 业务主库 :3306\n(含 V20 覆盖索引)")]
-        Redis_MQ[("Redis 7.0\njudge:queue / judge:results\n多级缓存键池")]
+    subgraph Middleware ["缓存与消息中间件 (Redis 7.0)"]
+        TaskQueue["待判任务队列<br/>judge:queue / judge:sql:queue"]
+        ResultQueue["评测结果队列<br/>judge:results / judge:sql:results"]
+        StatusCache["提交实时状态缓存<br/>sub:status:ID (TTL 1h)"]
+        WorkerRegistry["评测机心跳注册表<br/>judge:workers (Set)"]
     end
 
-    subgraph SandboxCluster ["沙箱集群 (Go Judger)"]
-        Worker["Go Worker 协程池调度器"]
-        CgroupsSandbox["Docker Cgroups v2 沙箱\n(C++ / Java / Python / ArkTS)"]
-        MySQL_Judge[("MySQL 8.0 判题实例 :3307\n(动态临时库即焚)")]
+    subgraph Database ["业务数据持久层 (MySQL 8.0)"]
+        DB_Main[("MySQL 8.0 业务主库 :3306<br/>(含 V20 联合覆盖索引)")]
     end
 
-    UI_Editor -->|1. POST 提交代码 / SQL| Auth --> SubService
-    SubService -->|2. 写入 PENDING 记录| MySQL_Main
-    SubService -->|3. RPUSH 任务| Redis_MQ
-    Redis_MQ -->|4. BLMOVE 认领任务| Worker
-    Worker -->|5a. 编译运行受限评测| CgroupsSandbox
-    Worker -->|5b. 临时库初始化与 DML 对拍| MySQL_Judge
-    Worker -->|6. 状态推入 sub:status & RPUSH| Redis_MQ
-    Redis_MQ -->|7. BRPOP 毫秒级唤醒| Listener
-    Listener -->|8. 异步更新 ACCEPTED / 结果落库| MySQL_Main
-    UI_Editor -.->|9. 极速读取终态 (15~60ms)| CacheService
-    UI_Console -.->|心跳探针| Redis_MQ
+    subgraph SandboxCluster ["评测沙箱集群 (Go Judger)"]
+        JudgeWorker["Go 调度器 (协程池并发认领)"]
+        DockerSandbox["Docker Cgroups v2 容器沙箱<br/>(C++ / Java / Python / ArkTS)"]
+        TempMySQL[("MySQL 8.0 独立判题实例 :3307<br/>(动态临时 Schema 即焚)")]
+    end
+
+    %% 1. 提交与压队
+    UI_Submit -->|1. POST 提交代码或 SQL| AuthInterceptor
+    AuthInterceptor --> SubmissionService
+    SubmissionService -->|2. 写入 PENDING 记录| DB_Main
+    SubmissionService -->|3. 初始化状态缓存| StatusCache
+    SubmissionService -->|4. RPUSH 压入任务| TaskQueue
+
+    %% 2. 判题沙箱认领与执行
+    TaskQueue -->|5. BLMOVE 原子认领| JudgeWorker
+    JudgeWorker -->|6a. 受限编译运行| DockerSandbox
+    JudgeWorker -->|6b. 临时库建表与 DML 对拍| TempMySQL
+    JudgeWorker -->|7. 实时推入评测结果与用例报告| StatusCache
+    JudgeWorker -->|8. RPUSH 提交ID| ResultQueue
+
+    %% 3. 异步监听与结果落库
+    ResultQueue -->|9. BRPOP 毫秒级唤醒| ResultListener
+    ResultListener -->|10. 异步写入终态 ACCEPTED 与得分| DB_Main
+
+    %% 4. 前端状态反馈与遥测探针
+    UI_Polling -.->|极速读取实时评测状态| StatusCache
+    JudgeWorker -.->|定时刷新心跳| WorkerRegistry
+    UI_Console -.->|GET /api/v1/system/judgers| TelemetryService
+    TelemetryService -.->|读取活跃工作节点| WorkerRegistry
 ```
 
 ---
