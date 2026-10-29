@@ -1,17 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { systemApi, type ClusterStatus, type JudgerNode } from '@/api/system'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { systemApi, type ClusterStatus } from '@/api/system'
 
 const loading = ref(false)
 const countdown = ref(6)
 const latency = ref(12)
 const isSweeping = ref(false)
 
-// 节点空闲时的实时健康探测脉冲 (Healthcheck Probe Pulse)，让控制台充满真实的动态生命力
-const probeActive = reactive<Record<string, number>>({
-  'node-algo-01': 1,
-  'node-sql-01': 0,
-})
+
 
 const cluster = ref<ClusterStatus>({
   totalNodes: 2,
@@ -51,13 +47,8 @@ const cluster = ref<ClusterStatus>({
 
 let timer: number | null = null
 let countdownTimer: number | null = null
-let probeTimer: number | null = null
 
-function getEffectiveLoad(node: JudgerNode): number {
-  if (node.status === 'OFFLINE') return 0
-  if (node.currentTasks > 0) return node.currentTasks
-  return probeActive[node.id] || 0
-}
+
 
 function triggerSweep() {
   isSweeping.value = true
@@ -92,17 +83,10 @@ function handleManualRefresh() {
   fetchStatus(true)
 }
 
-function startProbePulse() {
-  probeTimer = window.setInterval(() => {
-    // 周期性模拟后台心跳健康探测（偶尔 1/8 或 2/8 微脉冲，证明 Worker 协程活跃轮询中）
-    probeActive['node-algo-01'] = Math.random() > 0.4 ? (Math.random() > 0.75 ? 2 : 1) : 0
-    probeActive['node-sql-01'] = Math.random() > 0.5 ? 1 : 0
-  }, 2200)
-}
+
 
 onMounted(() => {
   fetchStatus()
-  startProbePulse()
 
   timer = window.setInterval(() => {
     countdown.value = 6
@@ -121,7 +105,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
   if (countdownTimer) clearInterval(countdownTimer)
-  if (probeTimer) clearInterval(probeTimer)
   if (rafId) cancelAnimationFrame(rafId)
 })
 
@@ -311,13 +294,10 @@ const rimStyle = computed(() => {
                   v-for="i in node.maxConcurrency"
                   :key="i"
                   class="load-pip"
-                  :class="{
-                    'is-filled': i <= (node.currentTasks || 0),
-                    'is-probing': (node.currentTasks || 0) === 0 && i <= (probeActive[node.id] || 0)
-                  }"
+                  :class="{ 'is-filled': i <= (node.currentTasks || 0) }"
                 ></span>
               </div>
-              <span class="load-count">{{ getEffectiveLoad(node) }}/{{ node.maxConcurrency }}</span>
+              <span class="load-count">{{ node.currentTasks || 0 }}/{{ node.maxConcurrency }}</span>
             </div>
           </div>
         </div>
@@ -689,12 +669,7 @@ const rimStyle = computed(() => {
   box-shadow: 0 0 4px rgba(47, 158, 68, 0.6);
 }
 
-/* 探针微脉冲点亮（呼吸律动） */
-.load-pip.is-probing {
-  background: #40c057;
-  border-color: #40c057;
-  box-shadow: 0 0 6px rgba(64, 192, 87, 0.75);
-}
+
 
 .load-count {
   font-weight: 600;
