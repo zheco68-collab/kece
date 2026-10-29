@@ -11,9 +11,9 @@
 
 > **KECE（课测）** 是面向高校计算机教学、程序设计竞赛与全真技术机考的一体化技能评测系统。  
 > 平台深度融合多语言算法编程、数据库 SQL 动态隔离对拍、精选进阶题集、客观理论考核、随堂课练实训与 ACM/OI 双赛制机考，依托 Linux Kernel Cgroups v2 容器硬隔离沙箱与 Redis 异步流转引擎，提供高吞吐、毫秒级反馈与确定性工程体验。
-
-- **官方在线体验**：[https://kece.zheco68.asia/](https://kece.zheco68.asia/)
-- **生产 API 契约**：`/api/v1`（集成 OpenAPI / Swagger 交互式文档）
+>
+> - **官方在线体验**：[https://kece.zheco68.asia/](https://kece.zheco68.asia/)
+> - **生产 API 契约**：`/api/v1`（集成 OpenAPI / Swagger 交互式文档）
 
 ---
 
@@ -34,7 +34,8 @@
 
 ## 核心能力矩阵
 
-KECE 以直角工业美学与全真工程体验为核心，构建覆盖计算机实践教学全周期的六大评测工作台：
+> [!NOTE]
+> KECE 以直角工业美学与全真工程体验为核心，构建覆盖计算机实践教学全周期的六大评测工作台。系统全链路打通算法沙箱、临时数据库与多题型试卷，提供确定性对拍与测试点级精准度量。
 
 | 模块标识 | 评测工作台 | 核心技术底座 | 关键功能与业务机制 |
 | :---: | :--- | :--- | :--- |
@@ -49,7 +50,8 @@ KECE 以直角工业美学与全真工程体验为核心，构建覆盖计算机
 
 ## 界面全景展示
 
-全站深度践行 **0-Radius Industrial System**，拒绝圆角与模糊修饰，提供硬朗、直观、高密度的工程视觉体验。
+> [!TIP]
+> 全站深度践行 **0-Radius Industrial System**，拒绝圆角与模糊修饰，提供硬朗、直观、高密度的工程视觉体验。核心看板与交互终端均围绕高密度数据流转展开。
 
 ### 1. 官网核心看板与能力矩阵
 
@@ -90,17 +92,18 @@ KECE 以直角工业美学与全真工程体验为核心，构建覆盖计算机
 
 ## 系统架构与异步评测流转
 
-系统采用全异步解耦、强物理隔离、确定性对拍的分布式高可用架构。
+> [!IMPORTANT]
+> 系统采用全异步解耦、强物理隔离、确定性对拍的分布式高可用架构。提交请求与实际沙箱评测执行物理断开，任务通过 Redis 7.0 内存级总线异步流转，保障高并发下的极速响应与零丢单。
 
 ### 1. 系统分层拓扑与执行架构
 
 ![系统分层拓扑与执行架构全景图](./docs/images/architecture_topology.png)
 
-- **客户端交互层**：Monaco Editor 提供工业级多语言编辑，`DbSchemaViewer` 支持交互式表结构内省，实时诊断抽屉呈现测试点级输入/输出 Diff 对拍。
-- **业务调度与接入层**：Nginx 长连接池复用 + Gzip 动态响应压缩；Spring Boot 执行代码规范化清洗与提交打包；`JudgeResultBlockingListener` 独占常驻守护线程池实时监听。
-- **异步消息与状态总线**：Redis 7.0 承载任务与结果流转。`BLMOVE` 原子转移持有处理租约，防止判题 Worker 宕机丢任务；`sub:status:{id}` 直存测试点报告供前端毫秒级轮询。
-- **强隔离沙箱评测集群**：Go 协程调度守护进程；Docker + Linux Kernel Cgroups v2 施加 CPU、内存、进程数硬限制与网络彻底断开（`--network none`）；专用 MySQL `:3307` 实例执行临时库建表、种子注入、执行比对后即焚销毁。
-- **持久化数据存储层**：MySQL 8.0 InnoDB（Flyway V20 版本化迁移管控），复合覆盖索引支撑高并发作答状态纯内存检测。
+> - **客户端交互层**：Monaco Editor 提供工业级多语言编辑，`DbSchemaViewer` 支持交互式表结构内省，实时诊断抽屉呈现测试点级输入/输出 Diff 对拍。
+> - **业务调度与接入层**：Nginx 长连接池复用 + Gzip 动态响应压缩；Spring Boot 执行代码规范化清洗与提交打包；`JudgeResultBlockingListener` 独占常驻守护线程池实时监听。
+> - **异步消息与状态总线**：Redis 7.0 承载任务与结果流转。`BLMOVE` 原子转移持有处理租约，防止判题 Worker 宕机丢任务；`sub:status:{id}` 直存测试点报告供前端毫秒级轮询。
+> - **强隔离沙箱评测集群**：Go 协程调度守护进程；Docker + Linux Kernel Cgroups v2 施加 CPU、内存、进程数硬限制与网络彻底断开（`--network none`）；专用 MySQL `:3307` 实例执行临时库建表、种子注入、执行比对后即焚销毁。
+> - **持久化数据存储层**：MySQL 8.0 InnoDB（Flyway V20 版本化迁移管控），复合覆盖索引支撑高并发作答状态纯内存检测。
 
 ---
 
@@ -142,26 +145,27 @@ stateDiagram-v2
 
 ## 核心性能工程实践
 
-系统实施了全链路性能加固，确保在高并发交卷洪峰下保持平稳毫秒级响应：
+> [!TIP]
+> 系统实施了全链路性能加固，从网络传输、异步事件驱动、数据索引到多级缓存全面调优，确保在高并发交卷洪峰下保持平稳毫秒级响应。
 
-1. **评测流转零轮询（BRPOP 异步驱动）**
-   - 彻底摒弃 `@Scheduled(fixedDelay = 2000)` 定时轮询机制；
-   - 自研 `JudgeResultBlockingListener`，采用独立守护线程池以 `BRPOP` 阻塞监听 Redis 结果队列。判题机完成推入的 **0.1ms 内被即刻唤醒**，端到端延迟从 **2200ms 降至 <80ms**。
-
-2. **数据库覆盖索引（Covering Index）**
-   - 在 Flyway `V20__performance_indexes.sql` 中为提交表建立核心复合覆盖索引：
-     ```sql
-     ALTER TABLE `submission` ADD INDEX `idx_user_status_qid` (`user_id`, `status`, `question_id`);
-     ```
-   - 题库作答判定转为 **Using index** 纯内存覆盖扫描，彻底消除主表回表磁盘 IO。
-
-3. **多级缓存体系与精准失效**
-   - **公共题库列表缓存**：查询结果存储于 `question:cache:list:*`，结合 Redis Set (`question:cache:list_keys`) 实现题目变更时的 **O(1) 批量精准失效**，无 `KEYS *` 阻塞隐患，查询响应由 70ms 压至 15ms；
-   - **天梯榜防雪崩缓存**：`RankService` 引入带 0~30s 随机 Jitter 的页面防雪崩缓存，避免高并发下窗口函数计算打满 MySQL CPU。
-
-4. **传输压缩与连接池调优**
-   - **全站动态 Gzip 压缩**：Spring Boot 与 Nginx 反代开启压缩，JSON 载荷、Markdown 及测试用例传输体积直降 **70%~75%**；
-   - **JDBC 预编译缓存**：启用 `cachePrepStmts=true` 与 `rewriteBatchedStatements=true`，结合 HikariCP 连接池生命周期管控，杜绝长连接陈旧断链。
+> 1. **评测流转零轮询（BRPOP 异步驱动）**
+>    - 彻底摒弃 `@Scheduled(fixedDelay = 2000)` 定时轮询机制；
+>    - 自研 `JudgeResultBlockingListener`，采用独立守护线程池以 `BRPOP` 阻塞监听 Redis 结果队列。判题机完成推入的 **0.1ms 内被即刻唤醒**，端到端延迟从 **2200ms 降至 <80ms**。
+>
+> 2. **数据库覆盖索引（Covering Index）**
+>    - 在 Flyway `V20__performance_indexes.sql` 中为提交表建立核心复合覆盖索引：
+>      ```sql
+>      ALTER TABLE `submission` ADD INDEX `idx_user_status_qid` (`user_id`, `status`, `question_id`);
+>      ```
+>    - 题库作答判定转为 **Using index** 纯内存覆盖扫描，彻底消除主表回表磁盘 IO。
+>
+> 3. **多级缓存体系与精准失效**
+>    - **公共题库列表缓存**：查询结果存储于 `question:cache:list:*`，结合 Redis Set (`question:cache:list_keys`) 实现题目变更时的 **O(1) 批量精准失效**，无 `KEYS *` 阻塞隐患，查询响应由 70ms 压至 15ms；
+>    - **天梯榜防雪崩缓存**：`RankService` 引入带 0~30s 随机 Jitter 的页面防雪崩缓存，避免高并发下窗口函数计算打满 MySQL CPU。
+>
+> 4. **传输压缩与连接池调优**
+>    - **全站动态 Gzip 压缩**：Spring Boot 与 Nginx 反代开启压缩，JSON 载荷、Markdown 及测试用例传输体积直降 **70%~75%**；
+>    - **JDBC 预编译缓存**：启用 `cachePrepStmts=true` 与 `rewriteBatchedStatements=true`，结合 HikariCP 连接池生命周期管控，杜绝长连接陈旧断链。
 
 ---
 
@@ -205,19 +209,23 @@ stateDiagram-v2
 
 ## 设计系统与视觉规范
 
-系统遵循 **0-Radius Industrial System（直角工业设计系统）**，摒弃非必要修饰，回归直观、硬朗的工程美学：
+> [!NOTE]
+> 系统遵循 **0-Radius Industrial System（直角工业设计系统）**，摒弃非必要修饰，回归直观、硬朗的工程美学：
 
-- **核心几何规范**：全站所有卡片、按钮、输入框、模态窗与头像均严格执行 `--radius: 0` 纯直角定义，消除圆角与模糊阴影；
-- **色彩层级体系**：
-  - 主色底蕴：`#111111` 工业主墨黑（主文字与框线）/ `#f4f5f7` 工作区浅灰底色 / `#ced4da` 结构分割线；
-  - 语义强调：`#1d4ed8` 科技蓝高反差重点强调；
-  - 角色纯色：管理员纯紫（`#7048e8`）、出题教师纯绿（`#2b8a3e`）、答题学生纯黑（`#1e1e1e`）；
-  - 难度标签：简单实心绿（`#2b8a3e`）、中等实心橙（`#e67700`）、困难实心红（`#c92a2a`）。
-- **数码排版字体**：优先采用 `JetBrains Mono` 等宽排盘，辅以 `Inter` 与操作系统原生界面字族。
+> - **核心几何规范**：全站所有卡片、按钮、输入框、模态窗与头像均严格执行 `--radius: 0` 纯直角定义，消除圆角与模糊阴影；
+> - **色彩层级体系**：
+>   - 主色底蕴：`#111111` 工业主墨黑（主文字与框线）/ `#f4f5f7` 工作区浅灰底色 / `#ced4da` 结构分割线；
+>   - 语义强调：`#1d4ed8` 科技蓝高反差重点强调；
+>   - 角色纯色：管理员纯紫（`#7048e8`）、出题教师纯绿（`#2b8a3e`）、答题学生纯黑（`#1e1e1e`）；
+>   - 难度标签：简单实心绿（`#2b8a3e`）、中等实心橙（`#e67700`）、困难实心红（`#c92a2a`）。
+> - **数码排版字体**：优先采用 `JetBrains Mono` 等宽排盘，辅以 `Inter` 与操作系统原生界面字族。
 
 ---
 
 ## 快速开始与部署指南
+
+> [!IMPORTANT]
+> 推荐使用 `deploy/start.ps1` (Windows) 或 `deploy/start.sh` (Linux/macOS) 进行一键协同启停。脚本会自动进行环境依赖检测、Docker 容器编排、Go 判题编译并联动启动各核心模块。
 
 ### 1. 前置依赖环境
 - **Node.js**：`20.19+` 或 `22.12+`（推荐使用 `pnpm` 或 `npm`）
@@ -265,6 +273,9 @@ docker run -d --name kece-judge-mysql --restart unless-stopped \
   --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 ```
 
+> [!WARNING]
+> 独立评测库必须绑定至专用端口 `3307`，切勿占用业务主库的 `3306` 端口。SQL 对拍评测会在临时库中执行动态 DDL/DML 与 `DROP DATABASE`，物理端口隔离是保证业务主库安全的关键红线。
+
 #### 步骤二：启动后端 Spring Boot 核心服务
 ```powershell
 cd backend
@@ -273,10 +284,12 @@ $env:SPRING_PROFILES_ACTIVE = "dev"   # Linux/macOS: export SPRING_PROFILES_ACTI
 ```
 - 后端服务端口：`http://localhost:8080/api/v1`
 - 交互式接口文档：`http://localhost:8080/api/v1/swagger-ui.html`
-- 预置测试账号（Flyway 自动播种）：
-  - **平台管理员**：`admin` / `admin123`
-  - **出题教师**：`teacher` / `teacher123`
-  - **示例学生**：`student` / `student123`
+
+> [!NOTE]
+> **预置测试账号**（Flyway 迁移自动播种）：
+> - **平台管理员**：`admin@kece.local`（支持老用户名 `admin` 兜底）/ `admin123`
+> - **出题教师**：`teacher@kece.local`（支持老用户名 `teacher` 兜底）/ `teacher123`
+> - **示例学生**：`stu@kece.local`（支持老用户名 `student_test` 兜底） / `student123`
 
 #### 步骤三：启动 Go 判题沙箱 Worker
 ```powershell
@@ -290,7 +303,9 @@ $env:JUDGE_MYSQL_USER = "root"
 $env:JUDGE_MYSQL_PASSWORD = "judge123"
 .\judger.exe
 ```
-> **提示**：沙箱首次判题时会自动通过 Docker API 下载对应编译环境镜像（`gcc:13`, `eclipse-temurin:17-jdk`, `python:3.12-slim`），可提前执行 `docker pull` 预热镜像。
+
+> [!TIP]
+> 沙箱首次判题时会自动通过 Docker API 下载对应编译环境镜像（`gcc:13`, `eclipse-temurin:17-jdk`, `python:3.12-slim`），可提前执行 `docker pull` 预热镜像。
 
 #### 步骤四：启动前端开发服务器
 ```bash
@@ -328,6 +343,9 @@ npm run dev
 
 ## 关联项目规范与文档
 
+> [!NOTE]
+> 深入了解平台底层设计、算法细节与协议标准，请参阅以下工程规范文档：
+
 - [产品需求规格说明书 (PRD)](./docs/需求文档.md) — 平台功能边界、用户角色模型与全场景用例
 - [产品规格与设计原则 (PRODUCT.md)](./docs/PRODUCT.md) — 0-Radius 设计系统、视觉规范与技术指标
 - [全局接口规范与公共约定](./docs/全局接口规范与公共约定.md) — RESTful API 契约、响应结构与状态机枚举
@@ -339,4 +357,4 @@ npm run dev
 
 ## 许可证
 
-本项目为私有工程项目，未经授权许可不得用于商业运营。
+> **版权所有与授权说明**：本项目为私有工程系统，未经授权许可不得擅自用于商业运营、二次分发或公开部署。
