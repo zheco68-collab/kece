@@ -156,26 +156,6 @@ public class SystemStatusService {
                         .details("独立端口 3307 临时库 · 物理强隔离")
                         .build());
 
-        // 5. 构建节点 3：前端 AI 评测通道 (Playwright + LLM 结构化审计)
-        boolean aiAlive = anyAliveWorker;
-        Long aiHeartbeat = anyAliveWorker ? latestWorkerHeartbeat : null;
-
-        String aiStatus = aiAlive ? "IDLE" : "OFFLINE";
-        String aiStatusLabel = aiAlive ? "空闲" : "掉线";
-        nodes.add(
-                JudgerNodeVO.builder()
-                        .id("node-ai-01")
-                        .name("前端 AI 评测机")
-                        .type("FRONTEND_AI")
-                        .typeLabel("Playwright + 多模态 LLM")
-                        .status(aiStatus)
-                        .statusLabel(aiStatusLabel)
-                        .currentTasks(0)
-                        .maxConcurrency(4)
-                        .lastHeartbeatTime(aiHeartbeat)
-                        .details("DOM 确定性断言与多模态代码/UI审计")
-                        .build());
-
         int onlineCount = 0;
         int busyCount = 0;
         int idleCount = 0;

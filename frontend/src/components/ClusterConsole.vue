@@ -11,14 +11,13 @@ const isSweeping = ref(false)
 const probeActive = reactive<Record<string, number>>({
   'node-algo-01': 1,
   'node-sql-01': 0,
-  'node-ai-01': 0,
 })
 
 const cluster = ref<ClusterStatus>({
-  totalNodes: 3,
-  onlineNodes: 3,
+  totalNodes: 2,
+  onlineNodes: 2,
   busyNodes: 0,
-  idleNodes: 3,
+  idleNodes: 2,
   offlineNodes: 0,
   pendingTasks: 0,
   nodes: [
@@ -45,18 +44,6 @@ const cluster = ref<ClusterStatus>({
       maxConcurrency: 8,
       lastHeartbeatTime: Date.now(),
       details: '独立端口 3307 临时库 · 物理强隔离',
-    },
-    {
-      id: 'node-ai-01',
-      name: '前端 AI 评测机',
-      type: 'FRONTEND_AI',
-      typeLabel: 'Playwright + 多模态 LLM',
-      status: 'IDLE',
-      statusLabel: '空闲',
-      currentTasks: 0,
-      maxConcurrency: 4,
-      lastHeartbeatTime: Date.now(),
-      details: 'DOM 确定性断言与多模态代码/UI审计',
     },
   ],
   timestamp: Date.now(),
@@ -110,7 +97,6 @@ function startProbePulse() {
     // 周期性模拟后台心跳健康探测（偶尔 1/8 或 2/8 微脉冲，证明 Worker 协程活跃轮询中）
     probeActive['node-algo-01'] = Math.random() > 0.4 ? (Math.random() > 0.75 ? 2 : 1) : 0
     probeActive['node-sql-01'] = Math.random() > 0.5 ? 1 : 0
-    probeActive['node-ai-01'] = Math.random() > 0.7 ? 1 : 0
   }, 2200)
 }
 
