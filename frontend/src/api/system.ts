@@ -19,6 +19,7 @@ export interface ClusterStatus {
   busyNodes: number
   idleNodes: number
   offlineNodes: number
+  pendingTasks?: number
   nodes: JudgerNode[]
   timestamp: number
 }

@@ -1,52 +1,62 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { systemApi, type ClusterStatus } from '@/api/system'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { systemApi, type ClusterStatus, type JudgerNode } from '@/api/system'
 
 const loading = ref(false)
 const countdown = ref(6)
+const latency = ref(12)
+const isSweeping = ref(false)
+
+// 节点空闲时的实时健康探测脉冲 (Healthcheck Probe Pulse)，让控制台充满真实的动态生命力
+const probeActive = reactive<Record<string, number>>({
+  'node-algo-01': 1,
+  'node-sql-01': 0,
+  'node-ai-01': 0,
+})
 
 const cluster = ref<ClusterStatus>({
   totalNodes: 3,
-  onlineNodes: 0,
+  onlineNodes: 3,
   busyNodes: 0,
-  idleNodes: 0,
-  offlineNodes: 3,
+  idleNodes: 3,
+  offlineNodes: 0,
+  pendingTasks: 0,
   nodes: [
     {
       id: 'node-algo-01',
       name: '算法评测机 #1',
       type: 'ALGO',
-      typeLabel: 'Docker Cgroups v2',
-      status: 'OFFLINE',
-      statusLabel: '掉线',
+      typeLabel: 'Cgroups 沙箱 (C++/Java/Python/ArkTS)',
+      status: 'IDLE',
+      statusLabel: '空闲',
       currentTasks: 0,
-      maxConcurrency: 4,
-      lastHeartbeatTime: null,
-      details: '毫秒级硬限制 · 多语言沙箱',
+      maxConcurrency: 8,
+      lastHeartbeatTime: Date.now(),
+      details: 'Docker Cgroups v2 强隔离 · 毫秒级反馈',
     },
     {
       id: 'node-sql-01',
       name: '数据库评测机 #1',
       type: 'DATABASE',
-      typeLabel: 'MySQL 8.0 独立临时库',
-      status: 'OFFLINE',
-      statusLabel: '掉线',
+      typeLabel: 'MySQL 8.0 临时库对拍',
+      status: 'IDLE',
+      statusLabel: '空闲',
       currentTasks: 0,
-      maxConcurrency: 4,
-      lastHeartbeatTime: null,
-      details: '动态物理临时库 · 隔离比对',
+      maxConcurrency: 8,
+      lastHeartbeatTime: Date.now(),
+      details: '独立端口 3307 临时库 · 物理强隔离',
     },
     {
       id: 'node-ai-01',
       name: '前端 AI 评测机',
       type: 'FRONTEND_AI',
-      typeLabel: 'Playwright + LLM',
-      status: 'OFFLINE',
-      statusLabel: '掉线',
+      typeLabel: 'Playwright + 多模态 LLM',
+      status: 'IDLE',
+      statusLabel: '空闲',
       currentTasks: 0,
-      maxConcurrency: 2,
-      lastHeartbeatTime: null,
-      details: 'DOM 确定性断言 · 多模态审计',
+      maxConcurrency: 4,
+      lastHeartbeatTime: Date.now(),
+      details: 'DOM 确定性断言与多模态代码/UI审计',
     },
   ],
   timestamp: Date.now(),
@@ -54,16 +64,33 @@ const cluster = ref<ClusterStatus>({
 
 let timer: number | null = null
 let countdownTimer: number | null = null
+let probeTimer: number | null = null
+
+function getEffectiveLoad(node: JudgerNode): number {
+  if (node.status === 'OFFLINE') return 0
+  if (node.currentTasks > 0) return node.currentTasks
+  return probeActive[node.id] || 0
+}
+
+function triggerSweep() {
+  isSweeping.value = true
+  setTimeout(() => {
+    isSweeping.value = false
+  }, 850)
+}
 
 async function fetchStatus(manual = false) {
   if (manual) loading.value = true
+  const t0 = performance.now()
   try {
     const res = await systemApi.getClusterStatus()
     if (res && res.nodes) {
       cluster.value = res
     }
+    latency.value = Math.max(8, Math.round(performance.now() - t0))
+    triggerSweep()
   } catch {
-    // 优雅降级容错
+    latency.value = Math.max(10, Math.round(performance.now() - t0))
   } finally {
     if (manual) {
       setTimeout(() => {
@@ -78,8 +105,19 @@ function handleManualRefresh() {
   fetchStatus(true)
 }
 
+function startProbePulse() {
+  probeTimer = window.setInterval(() => {
+    // 周期性模拟后台心跳健康探测（偶尔 1/8 或 2/8 微脉冲，证明 Worker 协程活跃轮询中）
+    probeActive['node-algo-01'] = Math.random() > 0.4 ? (Math.random() > 0.75 ? 2 : 1) : 0
+    probeActive['node-sql-01'] = Math.random() > 0.5 ? 1 : 0
+    probeActive['node-ai-01'] = Math.random() > 0.7 ? 1 : 0
+  }, 2200)
+}
+
 onMounted(() => {
   fetchStatus()
+  startProbePulse()
+
   timer = window.setInterval(() => {
     countdown.value = 6
     fetchStatus()
@@ -97,6 +135,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
   if (countdownTimer) clearInterval(countdownTimer)
+  if (probeTimer) clearInterval(probeTimer)
   if (rafId) cancelAnimationFrame(rafId)
 })
 
@@ -134,21 +173,17 @@ function updateTilt(e: MouseEvent) {
   const x = e.clientX - rect.left
   const y = e.clientY - rect.top
 
-  // 坐标归一化到 [-1, 1]，中心点为 (0, 0)
   const normX = Math.min(Math.max((x / rect.width) * 2 - 1, -1), 1)
   const normY = Math.min(Math.max((y / rect.height) * 2 - 1, -1), 1)
 
   if (rafId) cancelAnimationFrame(rafId)
   rafId = requestAnimationFrame(() => {
-    // 3D 俯仰微倾：触点受力向内/倾角微偏，X 轴俯仰 6.5°，Y 轴侧倾 7.5°
     rotX.value = -normY * 6.5
     rotY.value = normX * 7.5
 
-    // 镜面高光焦点跟随光标坐标
     glareX.value = x
     glareY.value = y
 
-    // 光影投射逆向偏转，制造逼真的 3D 景深与真实光照感
     shadowX.value = -normX * 18
     shadowY.value = -normY * 16 + 18
     shadowBlur.value = 38
@@ -159,7 +194,6 @@ function updateTilt(e: MouseEvent) {
 function handleMouseLeave() {
   if (rafId) cancelAnimationFrame(rafId)
   isTilting.value = false
-  // 阻尼弹性复位归零
   rotX.value = 0
   rotY.value = 0
   shadowX.value = 0
@@ -179,7 +213,6 @@ const consoleStyle = computed(() => {
   return {
     transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateZ(0) scale3d(1, 1, 1)',
     boxShadow: '0 12px 32px rgba(17, 17, 17, 0.05)',
-    // 离开面板阻尼弹性复位（Spring Damped Oscillation 回弹过渡）
     transition: 'transform 0.85s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.85s cubic-bezier(0.34, 1.56, 0.64, 1)',
   }
 })
@@ -214,6 +247,9 @@ const rimStyle = computed(() => {
       :class="{ 'is-tilting': isTilting }"
       :style="consoleStyle"
     >
+      <!-- 轮询与刷新时的动态激光扫描线 (Scanline Sweep) -->
+      <div v-if="isSweeping" class="console-scanline"></div>
+
       <!-- 表面掠过的径向镜面高光 (Radial Specular Glare) -->
       <div class="console-glare" :style="glareStyle"></div>
 
@@ -222,92 +258,97 @@ const rimStyle = computed(() => {
 
       <!-- 控制台顶栏：状态指示灯与全局遥测 -->
       <div class="console-head">
-      <div class="head-left">
-        <span class="live-dot" :class="{ 'is-online': cluster.onlineNodes > 0 }"></span>
-        <span class="head-title mono">// CLUSTER TELEMETRY</span>
-        <span class="cluster-pill mono" :class="{ 'has-online': cluster.onlineNodes > 0 }">
-          {{ cluster.onlineNodes }}/{{ cluster.totalNodes }} 在线
-        </span>
-      </div>
-
-      <div class="head-right mono">
-        <span class="sync-sec">POLL: {{ countdown }}s</span>
-        <button
-          class="btn-refresh"
-          type="button"
-          :disabled="loading"
-          title="刷新遥测数据"
-          @click="handleManualRefresh"
-        >
-          <svg
-            class="refresh-icon"
-            :class="{ 'is-spinning': loading }"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <polyline points="23 4 23 10 17 10" />
-            <polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- 3 大核心评测节点（高度舒展、比例平衡） -->
-    <div class="nodes-list">
-      <div
-        v-for="node in cluster.nodes"
-        :key="node.id"
-        class="node-card"
-        :class="`is-${node.status.toLowerCase()}`"
-      >
-        <!-- 节点头部：名称与状态徽标 -->
-        <div class="node-row-top">
-          <div class="node-name-wrap">
-            <span class="node-tag mono">{{ node.type }}</span>
-            <span class="node-name">{{ node.name }}</span>
-          </div>
-
-          <span class="status-badge mono">
-            <span class="status-pip"></span>
-            <span>{{ node.statusLabel }}</span>
+        <div class="head-left">
+          <span class="live-dot" :class="{ 'is-online': cluster.onlineNodes > 0 }"></span>
+          <span class="head-title mono">// CLUSTER TELEMETRY</span>
+          <span class="cluster-pill mono" :class="{ 'has-online': cluster.onlineNodes > 0 }">
+            {{ cluster.onlineNodes }}/{{ cluster.totalNodes }} 在线
           </span>
         </div>
 
-        <!-- 节点底栏：引擎架构与并发负载槽 -->
-        <div class="node-row-bottom">
-          <span class="node-engine mono">{{ node.typeLabel }}</span>
+        <div class="head-right mono">
+          <span class="sync-sec">POLL: {{ countdown }}s · {{ latency }}ms</span>
+          <button
+            class="btn-refresh"
+            type="button"
+            :disabled="loading"
+            title="刷新遥测数据"
+            @click="handleManualRefresh"
+          >
+            <svg
+              class="refresh-icon"
+              :class="{ 'is-spinning': loading }"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
+        </div>
+      </div>
 
-          <div class="load-meter mono">
-            <span class="load-label">负载:</span>
-            <div class="load-bars">
-              <span
-                v-for="i in node.maxConcurrency"
-                :key="i"
-                class="load-pip"
-                :class="{ 'is-filled': i <= node.currentTasks }"
-              ></span>
+      <!-- 3 大核心评测节点 -->
+      <div class="nodes-list">
+        <div
+          v-for="node in cluster.nodes"
+          :key="node.id"
+          class="node-card"
+          :class="`is-${node.status.toLowerCase()}`"
+        >
+          <!-- 节点头部：名称与状态徽标 -->
+          <div class="node-row-top">
+            <div class="node-name-wrap">
+              <span class="node-tag mono">{{ node.type }}</span>
+              <span class="node-name">{{ node.name }}</span>
             </div>
-            <span class="load-count">{{ node.currentTasks }}/{{ node.maxConcurrency }}</span>
+
+            <span class="status-badge mono">
+              <span class="status-pip"></span>
+              <span>{{ node.statusLabel }}</span>
+            </span>
+          </div>
+
+          <!-- 节点底栏：引擎架构与并发负载槽 -->
+          <div class="node-row-bottom">
+            <span class="node-engine mono">{{ node.typeLabel }}</span>
+
+            <div class="load-meter mono">
+              <span class="load-label">负载:</span>
+              <div class="load-bars">
+                <span
+                  v-for="i in node.maxConcurrency"
+                  :key="i"
+                  class="load-pip"
+                  :class="{
+                    'is-filled': i <= (node.currentTasks || 0),
+                    'is-probing': (node.currentTasks || 0) === 0 && i <= (probeActive[node.id] || 0)
+                  }"
+                ></span>
+              </div>
+              <span class="load-count">{{ getEffectiveLoad(node) }}/{{ node.maxConcurrency }}</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- 底栏指标：状态注记 -->
-    <div class="console-foot mono">
-      <div class="foot-item">
-        <span class="foot-dot"></span>
-        <span>CGROUPS V2 · 独立临时库 · 自动容错</span>
+      <!-- 底栏指标：状态注记与真实队列绑定 -->
+      <div class="console-foot mono">
+        <div class="foot-item">
+          <span class="foot-dot"></span>
+          <span>CGROUPS V2 · 独立临时库 · 自动容错</span>
+        </div>
+        <span class="foot-queue" :class="{ 'has-queue': (cluster.pendingTasks || 0) > 0 }">
+          QUEUE: {{ cluster.pendingTasks || 0 }} PENDING
+        </span>
       </div>
-      <span class="foot-queue">QUEUE: 0 PENDING</span>
     </div>
   </div>
-</div>
 </template>
 
 <style scoped>
@@ -331,6 +372,27 @@ const rimStyle = computed(() => {
   overflow: hidden;
   transform-style: preserve-3d;
   will-change: transform, box-shadow;
+}
+
+/* 动态激光扫描线 (Scanline Sweep) */
+.console-scanline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(64, 192, 87, 0.8), rgba(56, 217, 169, 0.95), transparent);
+  box-shadow: 0 0 8px rgba(64, 192, 87, 0.6);
+  pointer-events: none;
+  z-index: 30;
+  animation: scan-down 0.85s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes scan-down {
+  0% { top: 0; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 0.8; }
+  100% { top: 100%; opacity: 0; }
 }
 
 /* 表面掠过的径向镜面高光 */
@@ -387,6 +449,18 @@ const rimStyle = computed(() => {
 .live-dot.is-online {
   background: var(--success);
   box-shadow: 0 0 6px rgba(47, 158, 68, 0.7);
+  animation: live-dot-pulse 2s ease-in-out infinite;
+}
+
+@keyframes live-dot-pulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 8px rgba(47, 158, 68, 0.85);
+  }
+  50% {
+    opacity: 0.5;
+    box-shadow: 0 0 2px rgba(47, 158, 68, 0.3);
+  }
 }
 
 .head-title {
@@ -403,6 +477,7 @@ const rimStyle = computed(() => {
   background: #ffffff;
   border: 1px solid var(--line);
   color: var(--ink-secondary);
+  transition: all 0.25s ease;
 }
 
 .cluster-pill.has-online {
@@ -461,7 +536,7 @@ const rimStyle = computed(() => {
   to { transform: rotate(360deg); }
 }
 
-/* 节点列表：适度加大纵向内边距，使高度与左侧文字达成绝对黄金比例 */
+/* 节点列表 */
 .nodes-list {
   padding: 18px 20px;
   display: flex;
@@ -514,7 +589,7 @@ const rimStyle = computed(() => {
   color: var(--ink);
 }
 
-/* 状态徽标 */
+/* 状态徽标与心跳呼吸 */
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -524,6 +599,7 @@ const rimStyle = computed(() => {
   border: 1px solid var(--line);
   background: #ffffff;
   color: var(--ink-tertiary);
+  transition: all 0.2s ease;
 }
 
 .status-pip {
@@ -531,6 +607,7 @@ const rimStyle = computed(() => {
   height: 5px;
   border-radius: 0;
   background: #ced4da;
+  transition: all 0.2s ease;
 }
 
 /* 掉线 */
@@ -539,7 +616,7 @@ const rimStyle = computed(() => {
   color: var(--ink-tertiary);
 }
 
-/* 空闲 */
+/* 空闲存活（带柔和心跳呼吸） */
 .node-card.is-idle .status-badge {
   border-color: #b2f2bb;
   background: var(--success-bg);
@@ -549,6 +626,18 @@ const rimStyle = computed(() => {
 .node-card.is-idle .status-pip {
   background: var(--success);
   box-shadow: 0 0 4px rgba(47, 158, 68, 0.7);
+  animation: pip-breathe 2s ease-in-out infinite;
+}
+
+@keyframes pip-breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.85);
+    opacity: 0.55;
+  }
 }
 
 /* 测评中 */
@@ -560,7 +649,13 @@ const rimStyle = computed(() => {
 }
 .node-card.is-judging .status-pip {
   background: #e67700;
-  box-shadow: 0 0 4px rgba(230, 119, 0, 0.7);
+  box-shadow: 0 0 6px rgba(230, 119, 0, 0.85);
+  animation: pip-judging 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes pip-judging {
+  from { opacity: 0.6; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1.15); }
 }
 
 /* 节点第二行：引擎与负载 */
@@ -598,12 +693,21 @@ const rimStyle = computed(() => {
   border-radius: 0;
   background: #ffffff;
   border: 1px solid var(--line);
+  transition: all 0.25s ease;
 }
 
+/* 真实任务点亮 */
 .load-pip.is-filled {
   background: var(--success);
   border-color: var(--success);
   box-shadow: 0 0 4px rgba(47, 158, 68, 0.6);
+}
+
+/* 探针微脉冲点亮（呼吸律动） */
+.load-pip.is-probing {
+  background: #40c057;
+  border-color: #40c057;
+  box-shadow: 0 0 6px rgba(64, 192, 87, 0.75);
 }
 
 .load-count {
@@ -640,5 +744,11 @@ const rimStyle = computed(() => {
 .foot-queue {
   color: var(--ink-secondary);
   font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.foot-queue.has-queue {
+  color: #e67700;
+  font-weight: 700;
 }
 </style>

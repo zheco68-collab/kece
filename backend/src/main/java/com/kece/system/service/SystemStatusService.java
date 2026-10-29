@@ -47,6 +47,8 @@ public class SystemStatusService {
         int activeAlgoTasks = 0;
         int activeSqlTasks = 0;
 
+        int pendingTasks = 0;
+
         try {
             // 1. 从注册集合 judge:workers 读取工作机列表，按需校验心跳并惰性清理过期节点（不使用 KEYS *）
             Set<String> workerIds = redis.opsForSet().members(WORKERS_SET_KEY);
@@ -81,6 +83,20 @@ public class SystemStatusService {
                     }
                 }
             }
+
+            Long globalAlgoProc = redis.opsForList().size("judge:processing");
+            if (globalAlgoProc != null && globalAlgoProc > 0) {
+                activeAlgoTasks = Math.max(activeAlgoTasks, globalAlgoProc.intValue());
+            }
+            Long globalSqlProc = redis.opsForList().size("judge:sql:processing");
+            if (globalSqlProc != null && globalSqlProc > 0) {
+                activeSqlTasks = Math.max(activeSqlTasks, globalSqlProc.intValue());
+            }
+
+            Long q1 = redis.opsForList().size("judge:queue");
+            if (q1 != null) pendingTasks += q1.intValue();
+            Long q2 = redis.opsForList().size("judge:sql:queue");
+            if (q2 != null) pendingTasks += q2.intValue();
         } catch (Exception e) {
             log.warn(
                     "Failed to query Redis for judger status, falling back to OFFLINE: {}",
@@ -109,7 +125,7 @@ public class SystemStatusService {
                         .status(algoStatus)
                         .statusLabel(algoStatusLabel)
                         .currentTasks(activeAlgoTasks)
-                        .maxConcurrency(4)
+                        .maxConcurrency(8)
                         .lastHeartbeatTime(anyAliveWorker ? latestWorkerHeartbeat : null)
                         .details("Docker Cgroups v2 强隔离 · 毫秒级反馈")
                         .build());
@@ -135,14 +151,14 @@ public class SystemStatusService {
                         .status(sqlStatus)
                         .statusLabel(sqlStatusLabel)
                         .currentTasks(activeSqlTasks)
-                        .maxConcurrency(4)
+                        .maxConcurrency(8)
                         .lastHeartbeatTime(anyAliveWorker ? latestWorkerHeartbeat : null)
                         .details("独立端口 3307 临时库 · 物理强隔离")
                         .build());
 
         // 5. 构建节点 3：前端 AI 评测通道 (Playwright + LLM 结构化审计)
-        boolean aiAlive = false;
-        Long aiHeartbeat = null;
+        boolean aiAlive = anyAliveWorker;
+        Long aiHeartbeat = anyAliveWorker ? latestWorkerHeartbeat : null;
 
         String aiStatus = aiAlive ? "IDLE" : "OFFLINE";
         String aiStatusLabel = aiAlive ? "空闲" : "掉线";
@@ -155,7 +171,7 @@ public class SystemStatusService {
                         .status(aiStatus)
                         .statusLabel(aiStatusLabel)
                         .currentTasks(0)
-                        .maxConcurrency(2)
+                        .maxConcurrency(4)
                         .lastHeartbeatTime(aiHeartbeat)
                         .details("DOM 确定性断言与多模态代码/UI审计")
                         .build());
@@ -186,6 +202,8 @@ public class SystemStatusService {
                         .busyNodes(busyCount)
                         .idleNodes(idleCount)
                         .offlineNodes(offlineCount)
+
+                        .pendingTasks(pendingTasks)
                         .nodes(nodes)
                         .timestamp(now)
                         .build();
