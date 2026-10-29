@@ -253,35 +253,35 @@ flowchart TD
     %% 全链路数据流向连接与步进标记
     %% ==========================================
     %% 1. 提交主链路
-    UI_Editor -->|1a. POST 提交算法代码| Nginx
-    UI_SqlConsole -->|1b. POST 提交 SQL 语句| Nginx
-    SubService -->|2a. 持久化 PENDING 记录| DB_Main
-    DbSubService -->|2b. 持久化 PENDING 记录| DB_Main
-    SubService -->|3a. 初始化状态缓存 (PENDING)| Cache_Status
-    DbSubService -->|3b. 初始化状态缓存 (PENDING)| Cache_Status
-    SubService -->|4a. RPUSH 压入任务| Q_Algo
-    DbSubService -->|4b. RPUSH 压入任务| Q_Sql
+    UI_Editor -->|"1a. POST 提交算法代码"| Nginx
+    UI_SqlConsole -->|"1b. POST 提交 SQL 语句"| Nginx
+    SubService -->|"2a. 持久化 PENDING 记录"| DB_Main
+    DbSubService -->|"2b. 持久化 PENDING 记录"| DB_Main
+    SubService -->|"3a. 初始化状态缓存为 PENDING"| Cache_Status
+    DbSubService -->|"3b. 初始化状态缓存为 PENDING"| Cache_Status
+    SubService -->|"4a. RPUSH 压入任务"| Q_Algo
+    DbSubService -->|"4b. RPUSH 压入任务"| Q_Sql
 
     %% 2. 调度与沙箱执行链路
-    Q_Algo -->|5a. BLMOVE 原子认领任务| Dispatcher
-    Q_Sql -->|5b. BLMOVE 原子认领任务| Dispatcher
-    Dispatcher -->|6. 持有执行租约防止丢失| Q_AlgoProc
-    Dispatcher -.->|7. 实时推入编译与单测试点进度| Cache_Status
-    Sandbox_Compare -->|8a. 算法评测完毕推入结果| Res_Algo
-    Sql_Lifecycle -->|8b. SQL 对拍完毕推入结果| Res_Sql
+    Q_Algo -->|"5a. BLMOVE 原子认领任务"| Dispatcher
+    Q_Sql -->|"5b. BLMOVE 原子认领任务"| Dispatcher
+    Dispatcher -->|"6. 持有执行租约防止丢失"| Q_AlgoProc
+    Dispatcher -.->|"7. 实时推入编译与测试点进度"| Cache_Status
+    Sandbox_Compare -->|"8a. 算法评测完毕推入结果"| Res_Algo
+    Sql_Lifecycle -->|"8b. SQL 对拍完毕推入结果"| Res_Sql
 
     %% 3. 异步监听与结果落库
-    Res_Algo -->|9a. BRPOP 毫秒级唤醒| ResultListener
-    Res_Sql -->|9b. BRPOP 毫秒级唤醒| ResultListener
-    ResultListener -->|10. 异步写入终态 ACCEPTED / 分值 / 耗时 / 内存| DB_Main
-    ResultListener -->|11. 触发打卡累加与题集通关自愈| MultiCache
+    Res_Algo -->|"9a. BRPOP 毫秒级唤醒"| ResultListener
+    Res_Sql -->|"9b. BRPOP 毫秒级唤醒"| ResultListener
+    ResultListener -->|"10. 异步写入终态 ACCEPTED / 分值 / 耗时 / 内存"| DB_Main
+    ResultListener -->|"11. 触发打卡累加与题集通关自愈"| MultiCache
 
     %% 4. 前端状态反馈与遥测闭环
-    UI_Diag -.->|12. 极速轮询直读缓存 (15~60ms 极低延迟)| Cache_Status
-    HeartbeatReporter -.->|定期上报节点心跳 (TTL 10s)| Reg_Heartbeat
-    HeartbeatReporter -.->|注册节点实例| Reg_Workers
-    TelemetryService -.->|O(1) 嗅探在线工作机与负载| Reg_Workers
-    UI_Console -.->|GET /api/v1/system/judgers 遥测透传| TelemetryService
+    UI_Diag -.->|"12. 极速轮询直读缓存 15~60ms"| Cache_Status
+    HeartbeatReporter -.->|"定期上报节点心跳 TTL 10s"| Reg_Heartbeat
+    HeartbeatReporter -.->|"注册节点实例"| Reg_Workers
+    TelemetryService -.->|"O(1) 嗅探在线工作机与负载"| Reg_Workers
+    UI_Console -.->|"GET /api/v1/system/judgers 遥测透传"| TelemetryService
 ```
 
 #### 2. 端到端全异步评测执行时序 (End-to-End Sequence Diagram)
@@ -289,42 +289,57 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as 👨‍💻 开发者 / 考生
-    participant UI as 💻 前端 SPA (Monaco / SqlConsole)
-    participant API as 🚀 Spring Boot (SubmissionService)
-    participant Redis as ⚡ Redis 7.0 (Queue & Cache)
-    participant Judger as 🛡️ Go 判题沙箱 (Cgroups v2)
-    participant Listener as ⚡ BRPOP 守护监听线程
-    participant DB as 🗄️ MySQL 8.0 (InnoDB)
+    actor User as 开发者
+    participant Web as 前端工作台 (Vue 3)
+    participant Server as 业务服务 (Spring Boot)
+    participant Redis as 消息与状态 (Redis 7)
+    participant Judger as 判题沙箱 (Go Cluster)
+    participant DB as 业务主库 (MySQL 8)
 
-    User->>UI: 点击提交代码 / SQL
-    UI->>API: POST /api/v1/submissions
-    API->>DB: 1. 写入初始 PENDING 状态记录
-    API->>Redis: 2. 初始化缓存 sub:status:{id} 为 PENDING
-    API->>Redis: 3. RPUSH 压入待判任务队列 judge:queue
-    API-->>UI: 返回 200 OK 与 submissionId
-    
-    par 客户端极速状态轮询 (15~60ms)
-        loop 每 500ms 探针检测
-            UI->>Redis: GET sub:status:{id}
-            Redis-->>UI: 返回实时编译进度与已完成测试点报告
-        end
-    and Go 判题集群并发认领与强隔离对拍
-        Judger->>Redis: 4. BLMOVE 原子认领任务至 judge:processing
-        Judger->>Redis: 5. 更新 sub:status:{id} 为 COMPILING / RUNNING
-        Judger->>Judger: 6. 容器编译 / Cgroups 限额执行 / 结果集精准对拍
-        Judger->>Redis: 7. 写入完整测试点明细至 sub:status:{id}
-        Judger->>Redis: 8. RPUSH 提交ID至结果队列 judge:results
-        Judger->>Redis: 9. LREM 移出 judge:processing 释放处理租约
+    %% 阶段一：提交接入与任务打包
+    rect rgb(248, 249, 250)
+        Note over User,DB: 【阶段一】提交接入与任务打包
+        User->>Web: 点击提交代码 / SQL
+        Web->>Server: POST /api/v1/submissions
+        Server->>DB: 1. 写入初始 PENDING 提交记录
+        Server->>Redis: 2. 初始化 sub:status:{id} 为 PENDING
+        Server->>Redis: 3. RPUSH 压入待判任务队列 judge:queue
+        Server-->>Web: 返回 200 OK & submissionId
+        Web-->>User: Monaco 编辑器锁定，开启加载动效
     end
 
-    Listener->>Redis: 10. BRPOP 毫秒级阻塞监听唤醒 (零定时轮询)
-    Redis-->>Listener: 弹出就绪的 submissionId
-    Listener->>Redis: 11. 读取 sub:status:{id} 终态评测数据
-    Listener->>DB: 12. 批量持久化终态 ACCEPTED / 分值 / 耗时 / 内存
-    Listener->>DB: 13. 累加 365 天 AC 打卡记录 / 自愈点亮题集进度
-    UI->>Redis: 14. 轮询检测到终态 (ACCEPTED / WA)
-    UI-->>User: 15. Monaco 工作台高亮呈现全绿 AC / 展开测试点对拍诊断抽屉
+    %% 阶段二：协程认领与 Cgroups 沙箱评测
+    rect rgb(240, 249, 255)
+        Note over Redis,Judger: 【阶段二】协程认领与 Cgroups 沙箱评测
+        Judger->>Redis: 4. BLMOVE 原子认领任务至 judge:processing
+        Redis-->>Judger: 弹出任务 Payload (代码、限制、测试点)
+        Judger->>Redis: 5. 更新 sub:status:{id} 为 COMPILING / RUNNING
+        Judger->>Judger: 6. 容器隔离编译 + Linux Cgroups v2 硬限制执行
+        Judger->>Judger: 7. 逐点输出对拍与浮点容差比对 (compare.go)
+        Judger->>Redis: 8. 写入完整测试点诊断报告至 sub:status:{id}
+        Judger->>Redis: 9. RPUSH judge:results 结果就绪队列
+        Judger->>Redis: 10. LREM 移出 judge:processing 释放处理租约
+    end
+
+    %% 阶段三：BRPOP 结果收集与落库自愈
+    rect rgb(245, 245, 250)
+        Note over Server,DB: 【阶段三】BRPOP 结果收集与落库自愈
+        Note over Server: JudgeResultBlockingListener 常驻守护线程
+        Server->>Redis: 11. BRPOP judge:results 毫秒级阻塞监听唤醒
+        Redis-->>Server: 弹出就绪 submissionId
+        Server->>Redis: 12. 读取 sub:status:{id} 终态评测数据
+        Server->>DB: 13. UPDATE submission 批量持久化终态指标 (ACCEPTED / WA)
+        Server->>DB: 14. 累加 365天 AC 打卡 & 点亮题集进度
+    end
+
+    %% 阶段四：极速轮询闭环与用例诊断
+    rect rgb(240, 253, 244)
+        Note over User,Web: 【阶段四】极速轮询闭环与用例诊断
+        Web->>Redis: 15. GET sub:status:{id} (极速轮询 15~60ms)
+        Redis-->>Web: 返回终态评测报告与测试点详情
+        Web-->>User: 16. Monaco 工作台弹出全绿 AC 徽标
+        Web-->>User: 17. 诊断抽屉展开 (输入 vs 输出 Diff 对拍报告)
+    end
 ```
 
 #### 3. 评测沙箱核心状态机生命周期 (State Machine Lifecycle)
