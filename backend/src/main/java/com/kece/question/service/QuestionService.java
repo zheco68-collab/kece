@@ -27,22 +27,47 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Duration;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+
 
 /** 算法题库业务逻辑。 */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class QuestionService {
+
+    private static final String CACHE_LIST_PREFIX = "question:cache:list:";
+    private static final String CACHE_LIST_KEYS_SET = "question:cache:list_keys";
+    private static final String CACHE_TAGS_KEY = "question:cache:tags";
+    private static final String CACHE_DETAIL_PREFIX = "question:cache:detail:";
+    private static final Duration CACHE_TTL = Duration.ofMinutes(30);
 
     private final QuestionMapper questionMapper;
     private final TestCaseMapper testCaseMapper;
     private final SubmissionMapper submissionMapper;
     private final UserMapper userMapper;
     private final TestCaseStorageService testCaseStorageService;
+    private final StringRedisTemplate redis;
+    private final ObjectMapper objectMapper;
 
     public PageResult<QuestionVO> list(
             String keyword, String difficulty, String tag, String userStatus, int page, int size, boolean all) {
         PageParam p = PageParam.of(page, size);
         Integer status = (all && isPrivileged()) ? null : 1;
+
+        boolean isPublicQuery = (userStatus == null || userStatus.isBlank()) && (!all || !isPrivileged());
+        String cacheKey = null;
+        if (isPublicQuery) {
+            cacheKey = buildListCacheKey(p.page(), p.size(), difficulty, tag, keyword);
+            PageResult<QuestionVO> cached = getCachedList(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+        }
 
         List<Long> includeIds = null;
         List<Long> excludeIds = null;
@@ -80,8 +105,12 @@ public class QuestionService {
                         p.size());
         long total =
                 questionMapper.count(keyword, difficulty, tag, status, null, includeIds, excludeIds);
-        return new PageResult<>(
+        PageResult<QuestionVO> result = new PageResult<>(
                 questions.stream().map(this::toListVO).toList(), total, p.page(), p.size());
+        if (isPublicQuery && cacheKey != null) {
+            putCachedList(cacheKey, result);
+        }
+        return result;
     }
 
     public PageResult<QuestionVO> list(
@@ -120,11 +149,32 @@ public class QuestionService {
     }
 
     public QuestionVO detail(Long id) {
+        String detailKey = CACHE_DETAIL_PREFIX + id;
+        try {
+            String cached = redis.opsForValue().get(detailKey);
+            if (cached != null && !cached.isBlank()) {
+                QuestionVO vo = objectMapper.readValue(cached, QuestionVO.class);
+                if (vo != null && (vo.getStatus() == null || vo.getStatus() == 1)) {
+                    return vo;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("读取题目详情缓存失败，降级查库 id={}: {}", id, e.getMessage());
+        }
+
         Question question = getQuestionOrThrow(id);
         if (question.getStatus() != 1 && !canManage(question)) {
             throw new BusinessException(ResultCode.NOT_FOUND, "题目不存在");
         }
-        return toVO(question);
+        QuestionVO vo = toVO(question);
+        if (question.getStatus() != null && question.getStatus() == 1) {
+            try {
+                redis.opsForValue().set(detailKey, objectMapper.writeValueAsString(vo), CACHE_TTL);
+            } catch (Exception e) {
+                log.warn("写入题目详情缓存失败 id={}: {}", id, e.getMessage());
+            }
+        }
+        return vo;
     }
 
     @Transactional
@@ -133,6 +183,7 @@ public class QuestionService {
         applyRequest(question, request);
         question.setCreatedBy(AuthContextHolder.currentUserId());
         questionMapper.insert(question);
+        evictQuestionCache(question.getId());
         return toVO(question);
     }
 
@@ -142,6 +193,7 @@ public class QuestionService {
         checkOwnerOrAdmin(question);
         applyRequest(question, request);
         questionMapper.update(question);
+        evictQuestionCache(id);
         return toVO(question);
     }
 
@@ -161,6 +213,7 @@ public class QuestionService {
         testCaseMapper.deleteByQuestionId(id);
         questionMapper.deleteById(id);
         testCaseStorageService.deleteQuestionDir(id);
+        evictQuestionCache(id);
     }
 
     public com.kece.question.dto.TestCaseSummaryVO getTestCaseSummary(Long questionId) {
@@ -222,6 +275,7 @@ public class QuestionService {
         if (clearInline) {
             testCaseMapper.clearInlineContent(testCase.getId());
         }
+        evictDetailCache(questionId);
         return toTestCaseVO(testCase);
     }
 
@@ -255,6 +309,7 @@ public class QuestionService {
         if (clearInline) {
             testCaseMapper.clearInlineContent(testCase.getId());
         }
+        evictDetailCache(testCase.getQuestionId());
         return toTestCaseVO(testCase);
     }
 
@@ -278,6 +333,7 @@ public class QuestionService {
         if (!isSample) {
             testCaseMapper.clearInlineContent(testCase.getId());
         }
+        evictDetailCache(questionId);
     }
 
     @Transactional
@@ -305,6 +361,7 @@ public class QuestionService {
                 }
             }
         }
+        evictDetailCache(questionId);
     }
 
     @Transactional
@@ -331,6 +388,7 @@ public class QuestionService {
             }
         }
         testCaseMapper.deleteById(testCaseId);
+        evictDetailCache(testCase.getQuestionId());
     }
 
     @Transactional
@@ -544,16 +602,92 @@ public class QuestionService {
     }
 
     public List<String> listAllTags() {
+        try {
+            String cached = redis.opsForValue().get(CACHE_TAGS_KEY);
+            if (cached != null && !cached.isBlank()) {
+                return objectMapper.readValue(cached, new TypeReference<List<String>>() {});
+            }
+        } catch (Exception e) {
+            log.warn("读取标签缓存失败，降级查库: {}", e.getMessage());
+        }
+
         List<String> rawList = questionMapper.findAllRawTags();
         if (rawList == null || rawList.isEmpty()) {
             return List.of();
         }
-        return rawList.stream()
+        List<String> tags = rawList.stream()
                 .flatMap(t -> java.util.Arrays.stream(t.split(",")))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .distinct()
                 .sorted()
                 .toList();
+
+        try {
+            redis.opsForValue().set(CACHE_TAGS_KEY, objectMapper.writeValueAsString(tags), CACHE_TTL);
+        } catch (Exception e) {
+            log.warn("写入标签缓存失败: {}", e.getMessage());
+        }
+        return tags;
+    }
+
+    private String buildListCacheKey(int page, int size, String difficulty, String tag, String keyword) {
+        return CACHE_LIST_PREFIX
+                + page + ":"
+                + size + ":"
+                + (difficulty == null ? "" : difficulty.trim()) + ":"
+                + (tag == null ? "" : tag.trim()) + ":"
+                + (keyword == null ? "" : keyword.trim());
+    }
+
+    private PageResult<QuestionVO> getCachedList(String key) {
+        try {
+            String json = redis.opsForValue().get(key);
+            if (json != null && !json.isBlank()) {
+                return objectMapper.readValue(json, new TypeReference<PageResult<QuestionVO>>() {});
+            }
+        } catch (Exception e) {
+            log.warn("读取题目列表缓存失败 key={}: {}", key, e.getMessage());
+        }
+        return null;
+    }
+
+    private void putCachedList(String key, PageResult<QuestionVO> data) {
+        try {
+            String json = objectMapper.writeValueAsString(data);
+            redis.opsForValue().set(key, json, CACHE_TTL);
+            redis.opsForSet().add(CACHE_LIST_KEYS_SET, key);
+        } catch (Exception e) {
+            log.warn("写入题目列表缓存失败 key={}: {}", key, e.getMessage());
+        }
+    }
+
+    private void evictDetailCache(Long questionId) {
+        if (questionId == null) {
+            return;
+        }
+        try {
+            redis.delete(CACHE_DETAIL_PREFIX + questionId);
+        } catch (Exception e) {
+            log.warn("清理题目详情缓存失败 questionId={}: {}", questionId, e.getMessage());
+        }
+    }
+
+    /** 清除所有公共题目列表分页缓存、标签缓存及指定题目详情缓存。 */
+    private void evictQuestionCache(Long questionId) {
+        try {
+            Set<String> listKeys = redis.opsForSet().members(CACHE_LIST_KEYS_SET);
+            if (listKeys != null && !listKeys.isEmpty()) {
+                redis.delete(listKeys);
+            }
+            redis.delete(CACHE_LIST_KEYS_SET);
+            redis.delete(CACHE_TAGS_KEY);
+            if (questionId != null) {
+                redis.delete(CACHE_DETAIL_PREFIX + questionId);
+            }
+            log.info("已刷新算法题目缓存，questionId={}", questionId);
+        } catch (Exception e) {
+            log.warn("刷新算法题目缓存异常（已降级忽略）questionId={}: {}", questionId, e.getMessage());
+        }
     }
 }

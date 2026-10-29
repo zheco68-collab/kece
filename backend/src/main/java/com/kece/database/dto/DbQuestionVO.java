@@ -2,12 +2,16 @@ package com.kece.database.dto;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /** 数据库题目视图对象。标准答案与 DML 校验查询仅对出题人/管理员可见。 */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class DbQuestionVO {
 
     private Long id;

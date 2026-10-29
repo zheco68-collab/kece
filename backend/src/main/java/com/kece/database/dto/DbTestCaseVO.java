@@ -1,11 +1,15 @@
 package com.kece.database.dto;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /** 数据库测试点视图对象：只暴露一套初始数据。 */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class DbTestCaseVO {
 
     private Long id;
