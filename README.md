@@ -93,57 +93,7 @@ KECE 以直角工业美学与全真工程体验为核心，构建覆盖计算机
 
 ### 1. 五层协同拓扑架构
 
-```mermaid
-flowchart TD
-    subgraph Client ["客户端交互层 (Vue 3.5 + Vite 8)"]
-        Monaco["Monaco Editor 代码工作台"]
-        SqlConsole["SQL 数据对拍工作台"]
-        Console["ClusterConsole 遥测控制台"]
-    end
-
-    subgraph Backend ["业务调度与后端服务 (Spring Boot 3.2.5)"]
-        Nginx["Nginx 高性能反向代理 (:443)"]
-        Auth["JWT AuthGuard 鉴权切面"]
-        SubService["提交调度服务 (SubmissionService)"]
-        Listener["BRPOP 结果收集守护线程池"]
-        MultiCache["多级缓存与防击穿管理器"]
-    end
-
-    subgraph Bus ["异步消息与状态总线 (Redis 7.0 Hub)"]
-        TaskQueue["待判任务队列 (judge:queue)"]
-        ProcQueue["处理中租约列表 (judge:processing)"]
-        ResQueue["结果就绪队列 (judge:results)"]
-        StatusCache["提交实时状态缓存 (sub:status:id)"]
-    end
-
-    subgraph Sandbox ["强隔离沙箱集群 (Go 1.22+)"]
-        Dispatcher["Worker 协程调度器"]
-        CgroupsSandbox["Linux Cgroups v2 容器沙箱"]
-        TempMySQL[("MySQL 8.0 独立评测实例 :3307")]
-    end
-
-    subgraph Storage ["持久化数据存储层 (MySQL 8.0)"]
-        DB_Main[("MySQL 8.0 业务主库 :3306")]
-    end
-
-    Client -->|HTTPS / WSS| Nginx --> Auth --> SubService
-    SubService -->|RPUSH| TaskQueue
-    SubService -->|INSERT PENDING| DB_Main
-    SubService -->|SET 初始态| StatusCache
-
-    TaskQueue -->|BLMOVE 原子认领| Dispatcher
-    Dispatcher -->|持有租约| ProcQueue
-    Dispatcher -->|受限编译执行| CgroupsSandbox
-    Dispatcher -->|临时库建表与对拍| TempMySQL
-    Dispatcher -->|RPUSH 完成通知| ResQueue
-    Dispatcher -->|SET 完整报告| StatusCache
-
-    ResQueue -->|BRPOP 毫秒级唤醒| Listener
-    Listener -->|UPDATE 终态数据| DB_Main
-    Listener -->|自愈点亮| MultiCache
-
-    Client -.->|极速轮询 15ms| StatusCache
-```
+![五层分布式协同架构拓扑全景图](./docs/images/architecture_topology.png)
 
 - **客户端交互层**：Monaco Editor 提供工业级多语言编辑，`DbSchemaViewer` 支持交互式表结构内省，实时诊断抽屉呈现测试点级输入/输出 Diff 对拍。
 - **业务调度与接入层**：Nginx 长连接池复用 + Gzip 动态响应压缩；Spring Boot 执行代码规范化清洗与提交打包；`JudgeResultBlockingListener` 独占常驻守护线程池实时监听。
@@ -153,40 +103,9 @@ flowchart TD
 
 ---
 
-### 2. 端到端全异步执行时序
+### 2. 端到端全异步评测执行流
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Dev as 开发者 / 考生
-    participant Web as 前端工作台 (Vue 3)
-    participant App as 业务核心 (Spring Boot)
-    participant Redis as 消息与缓存 (Redis 7)
-    participant Judger as 判题沙箱 (Go Cluster)
-    participant DB as 业务主库 (MySQL 8)
-
-    Dev->>Web: 点击提交代码 / SQL 语句
-    Web->>App: POST /api/v1/submissions
-    App->>DB: 1. INSERT 初始记录 (status = PENDING)
-    App->>Redis: 2. SET sub:status:{id} = PENDING
-    App->>Redis: 3. RPUSH judge:queue (压入任务)
-    App-->>Web: 4. 返回 200 OK 与 submissionId
-    
-    Judger->>Redis: 5. BLMOVE 原子认领至 judge:processing
-    Judger->>Redis: 6. 更新 sub:status 为 COMPILING / RUNNING
-    Judger->>Judger: 7. Cgroups 容器隔离编译、限额运行与逐点对拍
-    Judger->>Redis: 8. 写入完整测试点明细至 sub:status:{id}
-    Judger->>Redis: 9. RPUSH judge:results (就绪通知)
-    Judger->>Redis: 10. LREM 移出 judge:processing (释放租约)
-
-    Redis-->>App: 11. BRPOP 毫秒级唤醒守护线程 (<1ms)
-    App->>Redis: 12. GET sub:status:{id} 获取终态数据
-    App->>DB: 13. UPDATE submission 持久化终态与耗时指标
-    App->>DB: 14. 累加 365天 AC 打卡与题集章节自愈点亮
-
-    Web->>Redis: 15. GET sub:status:{id} (极速轮询 15~60ms)
-    Web-->>Dev: 16. Monaco 工作台弹出 AC 徽标与用例 Diff 抽屉
-```
+![端到端全异步评测执行时序流转图](./docs/images/async_evaluation_sequence.png)
 
 ---
 
