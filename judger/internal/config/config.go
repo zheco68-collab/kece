@@ -79,7 +79,7 @@ func Load() Config {
 		CompileMemoryMb:   getenvInt("COMPILE_MEMORY_MB", 1024),
 		WorkspaceDir:      getenv("WORKSPACE_DIR", defaultWs),
 		WorkerID:          getenv("WORKER_ID", hostname()),
-		WorkerConcurrency: getenvInt("WORKER_CONCURRENCY", 4),
+		WorkerConcurrency: getenvInt("WORKER_CONCURRENCY", 8),
 		TestcaseDir:       getenv("TESTCASE_DIR", "testcases"),
 		Images: Images{
 			CPP:    getenv("IMAGE_CPP", "gcc:13"),

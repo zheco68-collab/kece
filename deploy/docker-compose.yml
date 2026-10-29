@@ -81,6 +81,7 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      WORKER_CONCURRENCY: 8
       # 工作目录必须与下方卷挂载路径一致，且与宿主机同路径：
       # 判题机通过宿主机 docker.sock 拉起沙箱，docker run -v 的源路径按宿主机解析。
       WORKSPACE_DIR: /workspace

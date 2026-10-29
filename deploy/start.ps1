@@ -61,6 +61,7 @@ if (Get-Process -Name judger -ErrorAction SilentlyContinue) {
     } finally { Pop-Location }
 
     $env:REDIS_ADDR           = if ($env:REDIS_ADDR)           { $env:REDIS_ADDR }           else { "127.0.0.1:6379" }
+    $env:WORKER_CONCURRENCY   = if ($env:WORKER_CONCURRENCY)   { $env:WORKER_CONCURRENCY }   else { "8" }
     $env:WORKSPACE_DIR        = if ($env:WORKSPACE_DIR)        { $env:WORKSPACE_DIR }        else { (Join-Path $env:USERPROFILE "judge-workspace") }
     $env:JUDGE_MYSQL_HOST     = if ($env:JUDGE_MYSQL_HOST)     { $env:JUDGE_MYSQL_HOST }     else { "127.0.0.1" }
     $env:JUDGE_MYSQL_PORT     = if ($env:JUDGE_MYSQL_PORT)     { $env:JUDGE_MYSQL_PORT }     else { "3307" }

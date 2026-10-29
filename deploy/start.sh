@@ -29,6 +29,7 @@ else
     (cd "$ROOT_DIR/judger" && go build -o judger ./cmd/judger)
     (cd "$ROOT_DIR/judger" && \
         REDIS_ADDR="${REDIS_ADDR:-127.0.0.1:6379}" \
+        WORKER_CONCURRENCY="${WORKER_CONCURRENCY:-8}" \
         JUDGE_MYSQL_HOST="${JUDGE_MYSQL_HOST:-127.0.0.1}" \
         JUDGE_MYSQL_PORT="${JUDGE_MYSQL_PORT:-3307}" \
         JUDGE_MYSQL_USER="${JUDGE_MYSQL_USER:-root}" \
