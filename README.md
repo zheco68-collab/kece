@@ -147,112 +147,237 @@ flowchart LR
 | **沙箱判题引擎** | Go + Docker Cgroups v2 | `Go 1.22+` | 多协程并发认领、容器资源硬限制、信号捕获与优雅退出 |
 | **SQL 隔离环境** | 独立 MySQL 8.0 实例 | 端口 `:3307` | 单次评测动态创建 `judge_{subId}_{point}` 临时库，对拍后即焚 |
 
-### 异步评测流转系统拓扑图
+### 异步评测流转系统架构与拓扑详解
+
+KECE 采用**全异步解耦、强物理隔离、确定性对拍**的分布式高可用架构。从答题者在 Monaco Editor 中点击提交代码或 SQL，到最终在控制台查阅评测报告，系统通过**五层架构拓扑**、**15 步端到端异步时序**与**严谨状态机流转**保证高吞吐与毫秒级反馈：
+
+#### 1. 分布式系统五层协同拓扑 (System Topology Map)
 
 ```mermaid
 flowchart TD
-    subgraph Frontend ["客户端前端 (Vue 3 SPA)"]
-        UI_Submit["代码/SQL 答题工作台"]
-        UI_Polling["评测状态与用例诊断抽屉"]
-        UI_Console["ClusterConsole 遥测控制台"]
+    %% ==========================================
+    %% 1. 客户端交互与工作台层
+    %% ==========================================
+    subgraph Tier_Client ["【1. 客户端交互与工作台层】Web Application Tier (Vue 3.5 + TypeScript 5.9)"]
+        direction LR
+        UI_Editor["💻 Monaco Editor 代码工作台<br/>• 多语言在线编辑 (C++ / Java / Python / ArkTS)<br/>• 快捷键提交与本地草稿记忆"]
+        UI_SqlConsole["🗄️ SQL 数据对拍工作台<br/>• 交互式表结构树 (DbSchemaViewer)<br/>• DDL 建表预览与结果集高亮"]
+        UI_Diag["📊 实时用例诊断与抽屉<br/>• 按测试点呈现耗时、内存与退出码<br/>• 期望输出 vs 实际输出智能 Diff 对拍"]
+        UI_Console["📡 ClusterConsole 集群遥测台<br/>• 3D 微倾光泽感悬浮看板<br/>• 在线节点心跳探针与队列负载实时透传"]
     end
 
-    subgraph Backend ["服务端业务核心 (Spring Boot 3)"]
-        AuthInterceptor["JWT 鉴权拦截器"]
-        SubmissionService["提交调度服务 (SubmissionService)"]
-        ResultListener["BRPOP 异步收集守护线程 (JudgeResultBlockingListener)"]
-        TelemetryService["系统遥测服务 (SystemStatusService)"]
+    %% ==========================================
+    %% 2. 接入网关与业务服务核心层
+    %% ==========================================
+    subgraph Tier_Backend ["【2. 业务调度与后端服务层】Backend Services (Spring Boot 3.2.5 on Java 17)"]
+        direction TB
+        subgraph Gateway ["接入网关与安全控制区"]
+            Nginx["Nginx 高性能反向代理 (:443 / :80)<br/>• HTTP/1.1 Keepalive 长连接复用池<br/>• Gzip 动态响应压缩 (传输体积缩减 75%)<br/>• 静态资产 30 天强缓存与 ETag 协商"]
+            AuthGuard["JWT 鉴权拦截器 & 权限切面 (AuthGuard)<br/>• 角色 RBAC 矩阵 (ADMIN / TEACHER / STUDENT)<br/>• 考场防切屏锁定校验与防作弊快照锚定"]
+        end
+
+        subgraph CoreServices ["业务领域服务核心编排"]
+            SubService["代码提交调度服务 (SubmissionService)<br/>• 语言与题目支持状态校验<br/>• 代码规范化与脱敏清洗 (normalizeCode)<br/>• 任务打包与测试用例轻量装配"]
+            DbSubService["SQL 提交调度服务 (DbSubmissionService)<br/>• 数据库方言检查与 DML 分流<br/>• 初始 PENDING 状态持久化"]
+            ResultListener["⚡ 评测结果实时阻塞监听器 (JudgeResultBlockingListener)<br/>• 专用守护线程池常驻监听 (Daemon Threads)<br/>• BRPOP 毫秒级阻塞弹出唤醒 (零定时轮询)<br/>• 终态持久化 & 触发打卡与题集点亮自愈"]
+            TelemetryService["集群遥测嗅探服务 (SystemStatusService)<br/>• 节点心跳探测与过期实例惰性清理<br/>• 动态槽位并发度与集群压力评估"]
+            MultiCache["多级缓存与防击穿防雪崩管理器<br/>• 题库列表 O(1) 批量失效 (Set 键集合追踪)<br/>• 排行榜 120s TTL + 0~30s 随机 Jitter 缓存"]
+        end
+
+        Nginx --> AuthGuard
+        AuthGuard --> SubService
+        AuthGuard --> DbSubService
     end
 
-    subgraph Middleware ["缓存与消息中间件 (Redis 7.0)"]
-        TaskQueue["待判任务队列<br/>judge:queue / judge:sql:queue"]
-        ResultQueue["评测结果队列<br/>judge:results / judge:sql:results"]
-        StatusCache["提交实时状态缓存<br/>sub:status:ID (TTL 1h)"]
-        WorkerRegistry["评测机心跳注册表<br/>judge:workers (Set)"]
+    %% ==========================================
+    %% 3. 分布式缓存与异步消息中间件
+    %% ==========================================
+    subgraph Tier_Middleware ["【3. 异步消息与分布式状态总线】Redis 7.0 High-Availability Hub"]
+        direction TB
+        subgraph TaskQueues ["任务调度与可靠传输队列区"]
+            Q_Algo["待判算法任务队列<br/>[List] judge:queue"]
+            Q_AlgoProc["算法处理中租约列表<br/>[List] judge:processing<br/>(BLMOVE 原子转移，防 Worker 宕机丢任务)"]
+            Q_Sql["待判 SQL 任务队列<br/>[List] judge:sql:queue"]
+            Q_SqlProc["SQL 处理中租约列表<br/>[List] judge:sql:processing"]
+        end
+
+        subgraph ResultChans ["终态回传与实时状态分发区"]
+            Res_Algo["算法评测结果就绪队列<br/>[List] judge:results (存放完成的 subId)"]
+            Res_Sql["SQL 评测结果就绪队列<br/>[List] judge:sql:results"]
+            Cache_Status["提交实时状态与测试点诊断报告<br/>[String/JSON] sub:status:{id} (TTL 1h)"]
+            Cache_Owner["提交归属校验防越权键<br/>[String] sub:owner:{id} (TTL 1h)"]
+        end
+
+        subgraph RegistryArea ["集群高可用拓扑与心跳注册表"]
+            Reg_Workers["活跃评测机节点集合<br/>[Set] judge:workers"]
+            Reg_Heartbeat["工作机心跳生命周期键<br/>[String] judge:heartbeat:{workerId} (TTL 10s)"]
+        end
     end
 
-    subgraph Database ["业务数据持久层 (MySQL 8.0)"]
-        DB_Main[("MySQL 8.0 业务主库 :3306<br/>(含 V20 联合覆盖索引)")]
+    %% ==========================================
+    %% 4. 沙箱评测引擎集群
+    %% ==========================================
+    subgraph Tier_Engine ["【4. 强隔离沙箱评测引擎集群】Go Judger Cluster (Go 1.22+ on Linux Cgroups v2)"]
+        direction TB
+        subgraph JudgerWorker ["Go 评测守护进程核心 (judger daemon)"]
+            Dispatcher["协程池调度器 (Worker Goroutines)<br/>• BLMove 原子认领与执行租约持有<br/>• SIGINT / SIGTERM 信号优雅退出与任务退回"]
+            HeartbeatReporter["心跳保活协程 (Heartbeat Reporter)<br/>• 每 3 秒上报一次状态与当前并发数"]
+        end
+
+        subgraph AlgoSandbox ["算法沙箱容器隔离区 (Docker + Linux Kernel Cgroups v2)"]
+            Sandbox_Init["临时编译隔离目录<br/>/tmp/judge_{subId} (内存盘临时挂载)"]
+            Sandbox_Limits["Linux Cgroups v2 资源硬限制:<br/>• cpu.max=100000 100000 (1.0 Core 硬核限额)<br/>• memory.max=Limit_MB (超限即刻 OOM 熔断)<br/>• pids.max=64 (彻底封堵 Fork 炸弹隐患)<br/>• --network none (绝对网络物理断开)<br/>• read-only rootfs (只读根镜像，禁止篡改系统)"]
+            Sandbox_Compare["逐点对拍比对器 (compare.go)<br/>• 行尾空白截断 & 空行自适应过滤<br/>• 浮点精度相对/绝对容差比对 (1e-6)<br/>• 纳秒级高精度计时 & 物理内存峰值采样"]
+        end
+
+        subgraph SqlSandbox ["SQL 数据库对拍沙箱区 (独立专用评测实例)"]
+            MySQL_JudgeInstance[("MySQL 8.0 独立评测实例 :3307<br/>(网络隔离运行，严禁访问业务主库)")]
+            Sql_Lifecycle["临时 Schema 完整生命周期编排 (sqljudge.go):<br/>1. 动态建库: CREATE DATABASE judge_{subId}_{caseId};<br/>2. 初始化出题人种子数据 (seedSql)<br/>3. 执行答题者受限查询 (userSql)<br/>4. 执行标准参考语句与 DML 校验 (verifySql)<br/>5. 结果集列名宽容度与有序/无序智能比对<br/>6. 即焚销毁: DROP DATABASE (环境零污染)"]
+        end
+
+        Dispatcher --> Sandbox_Init
+        Sandbox_Init --> Sandbox_Limits
+        Sandbox_Limits --> Sandbox_Compare
+        Dispatcher --> MySQL_JudgeInstance
+        MySQL_JudgeInstance --> Sql_Lifecycle
     end
 
-    subgraph SandboxCluster ["评测沙箱集群 (Go Judger)"]
-        JudgeWorker["Go 调度器 (协程池并发认领)"]
-        DockerSandbox["Docker Cgroups v2 容器沙箱<br/>(C++ / Java / Python / ArkTS)"]
-        TempMySQL[("MySQL 8.0 独立判题实例 :3307<br/>(动态临时 Schema 即焚)")]
+    %% ==========================================
+    %% 5. 数据持久化存储底座
+    %% ==========================================
+    subgraph Tier_Storage ["【5. 持久化数据存储层】Enterprise Storage Tier (MySQL 8.0 InnoDB)"]
+        DB_Main[("MySQL 8.0 业务主库 :3306 (Flyway V20 版本化管控)<br/>-----------------------------------------<br/>• user (用户档案 / 角色权限 / 365天 AC 统计)<br/>• question / db_question (题库定义 / 时空限制 / 算法标签)<br/>• test_case (测试用例轻量元数据 / 大文件外置磁盘存储)<br/>• submission / db_submission (提交快照 / 最终评测状态机)<br/>-----------------------------------------<br/>🚀 关键覆盖索引: idx_user_status_qid (user_id, status, question_id)<br/>实现题库作答状态判定 Using index 纯内存覆盖扫描，0 次回表磁盘 IO")]
     end
 
-    %% 1. 提交与压队
-    UI_Submit -->|1. POST 提交代码或 SQL| AuthInterceptor
-    AuthInterceptor --> SubmissionService
-    SubmissionService -->|2. 写入 PENDING 记录| DB_Main
-    SubmissionService -->|3. 初始化状态缓存| StatusCache
-    SubmissionService -->|4. RPUSH 压入任务| TaskQueue
+    %% ==========================================
+    %% 全链路数据流向连接与步进标记
+    %% ==========================================
+    %% 1. 提交主链路
+    UI_Editor -->|1a. POST 提交算法代码| Nginx
+    UI_SqlConsole -->|1b. POST 提交 SQL 语句| Nginx
+    SubService -->|2a. 持久化 PENDING 记录| DB_Main
+    DbSubService -->|2b. 持久化 PENDING 记录| DB_Main
+    SubService -->|3a. 初始化状态缓存 (PENDING)| Cache_Status
+    DbSubService -->|3b. 初始化状态缓存 (PENDING)| Cache_Status
+    SubService -->|4a. RPUSH 压入任务| Q_Algo
+    DbSubService -->|4b. RPUSH 压入任务| Q_Sql
 
-    %% 2. 判题沙箱认领与执行
-    TaskQueue -->|5. BLMOVE 原子认领| JudgeWorker
-    JudgeWorker -->|6a. 受限编译运行| DockerSandbox
-    JudgeWorker -->|6b. 临时库建表与 DML 对拍| TempMySQL
-    JudgeWorker -->|7. 实时推入评测结果与用例报告| StatusCache
-    JudgeWorker -->|8. RPUSH 提交ID| ResultQueue
+    %% 2. 调度与沙箱执行链路
+    Q_Algo -->|5a. BLMOVE 原子认领任务| Dispatcher
+    Q_Sql -->|5b. BLMOVE 原子认领任务| Dispatcher
+    Dispatcher -->|6. 持有执行租约防止丢失| Q_AlgoProc
+    Dispatcher -.->|7. 实时推入编译与单测试点进度| Cache_Status
+    Sandbox_Compare -->|8a. 算法评测完毕推入结果| Res_Algo
+    Sql_Lifecycle -->|8b. SQL 对拍完毕推入结果| Res_Sql
 
     %% 3. 异步监听与结果落库
-    ResultQueue -->|9. BRPOP 毫秒级唤醒| ResultListener
-    ResultListener -->|10. 异步写入终态 ACCEPTED 与得分| DB_Main
+    Res_Algo -->|9a. BRPOP 毫秒级唤醒| ResultListener
+    Res_Sql -->|9b. BRPOP 毫秒级唤醒| ResultListener
+    ResultListener -->|10. 异步写入终态 ACCEPTED / 分值 / 耗时 / 内存| DB_Main
+    ResultListener -->|11. 触发打卡累加与题集通关自愈| MultiCache
 
-    %% 4. 前端状态反馈与遥测探针
-    UI_Polling -.->|极速读取实时评测状态| StatusCache
-    JudgeWorker -.->|定时刷新心跳| WorkerRegistry
-    UI_Console -.->|GET /api/v1/system/judgers| TelemetryService
-    TelemetryService -.->|读取活跃工作节点| WorkerRegistry
+    %% 4. 前端状态反馈与遥测闭环
+    UI_Diag -.->|12. 极速轮询直读缓存 (15~60ms 极低延迟)| Cache_Status
+    HeartbeatReporter -.->|定期上报节点心跳 (TTL 10s)| Reg_Heartbeat
+    HeartbeatReporter -.->|注册节点实例| Reg_Workers
+    TelemetryService -.->|O(1) 嗅探在线工作机与负载| Reg_Workers
+    UI_Console -.->|GET /api/v1/system/judgers 遥测透传| TelemetryService
+```
+
+#### 2. 端到端全异步评测执行时序 (End-to-End Sequence Diagram)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 👨‍💻 开发者 / 考生
+    participant UI as 💻 前端 SPA (Monaco / SqlConsole)
+    participant API as 🚀 Spring Boot (SubmissionService)
+    participant Redis as ⚡ Redis 7.0 (Queue & Cache)
+    participant Judger as 🛡️ Go 判题沙箱 (Cgroups v2)
+    participant Listener as ⚡ BRPOP 守护监听线程
+    participant DB as 🗄️ MySQL 8.0 (InnoDB)
+
+    User->>UI: 点击提交代码 / SQL
+    UI->>API: POST /api/v1/submissions
+    API->>DB: 1. 写入初始 PENDING 状态记录
+    API->>Redis: 2. 初始化缓存 sub:status:{id} 为 PENDING
+    API->>Redis: 3. RPUSH 压入待判任务队列 judge:queue
+    API-->>UI: 返回 200 OK 与 submissionId
+    
+    par 客户端极速状态轮询 (15~60ms)
+        loop 每 500ms 探针检测
+            UI->>Redis: GET sub:status:{id}
+            Redis-->>UI: 返回实时编译进度与已完成测试点报告
+        end
+    and Go 判题集群并发认领与强隔离对拍
+        Judger->>Redis: 4. BLMOVE 原子认领任务至 judge:processing
+        Judger->>Redis: 5. 更新 sub:status:{id} 为 COMPILING / RUNNING
+        Judger->>Judger: 6. 容器编译 / Cgroups 限额执行 / 结果集精准对拍
+        Judger->>Redis: 7. 写入完整测试点明细至 sub:status:{id}
+        Judger->>Redis: 8. RPUSH 提交ID至结果队列 judge:results
+        Judger->>Redis: 9. LREM 移出 judge:processing 释放处理租约
+    end
+
+    Listener->>Redis: 10. BRPOP 毫秒级阻塞监听唤醒 (零定时轮询)
+    Redis-->>Listener: 弹出就绪的 submissionId
+    Listener->>Redis: 11. 读取 sub:status:{id} 终态评测数据
+    Listener->>DB: 12. 批量持久化终态 ACCEPTED / 分值 / 耗时 / 内存
+    Listener->>DB: 13. 累加 365 天 AC 打卡记录 / 自愈点亮题集进度
+    UI->>Redis: 14. 轮询检测到终态 (ACCEPTED / WA)
+    UI-->>User: 15. Monaco 工作台高亮呈现全绿 AC / 展开测试点对拍诊断抽屉
+```
+
+#### 3. 评测沙箱核心状态机生命周期 (State Machine Lifecycle)
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING: 接口接收 & 初始落库
+    PENDING --> COMPILING: Judger 协程认领任务并开始编译
+    COMPILING --> COMPILE_ERROR: 编译失败 (CE 终端错误诊断)
+    COMPILING --> RUNNING: 编译成功，装配测试用例执行
+
+    state RUNNING {
+        [*] --> ExecutingCase: 注入测试点输入
+        ExecutingCase --> CheckingDiff: 输出成功捕获
+        CheckingDiff --> NextCase: 结果对拍 100% 一致 (继续下一用例)
+        CheckingDiff --> WRONG_ANSWER: 文本或数据行存在差异 (WA)
+        ExecutingCase --> TIME_LIMIT_EXCEEDED: CPU 时间超限 (TLE)
+        ExecutingCase --> MEMORY_LIMIT_EXCEEDED: Cgroups 物理内存熔断 (MLE)
+        ExecutingCase --> RUNTIME_ERROR: 非零退出码 / 段错误 (RE)
+    }
+
+    RUNNING --> ACCEPTED: 所有测试用例全量通过
+    COMPILE_ERROR --> [*]
+    WRONG_ANSWER --> [*]
+    TIME_LIMIT_EXCEEDED --> [*]
+    MEMORY_LIMIT_EXCEEDED --> [*]
+    RUNTIME_ERROR --> [*]
+    ACCEPTED --> [*]
 ```
 
 ---
 
 ## 项目目录结构
 
-```text
-KECE/
-├── frontend/                        # 前端 Vue 3 + TypeScript + Vite 单页应用
-│   ├── src/
-│   │   ├── api/                     # REST API 模块化封装（算法题、SQL题、客观题、课练、考试、遥测）
-│   │   ├── components/              # 工业风组件（ClusterConsole、HeatmapCalendar、DbSchemaViewer、AppNavbar 等）
-│   │   ├── router/                  # 路由表定义与 RBAC 权限守卫
-│   │   ├── stores/                  # Pinia 状态管理（用户认证、提交缓存）
-│   │   ├── utils/                   # Axios 拦截器、Token 刷新与格式化工具
-│   │   ├── views/                   # 页面视图（首页、算法/SQL/客观题库、随堂课练、机考系统、个人主页、后台）
-│   │   └── style.css                # 0-Radius 直角设计系统全局变量与基础样式
-│   └── package.json                 # 前端依赖配置
-├── backend/                         # 后端 Spring Boot 3 服务
-│   ├── src/main/java/com/kece/
-│   │   ├── admin/                   # 管理员后台管理（用户角色权限、全量提交检视）
-│   │   ├── auth/                    # 鉴权中心（注册登录、JWT 签发与刷新）
-│   │   ├── common/                  # 统一响应包装、全局异常处理、权限切面
-│   │   ├── database/                # 数据库 SQL OJ 题库、测试点管理与多级缓存
-│   │   ├── exam/                    # 考试场次、快照组卷、ACM/OI 双模式判分与天梯结算
-│   │   ├── objective/               # 标准客观题题库与自动评分器
-│   │   ├── practice/                # 随堂课练实训编排、口令准入与实时督学
-│   │   ├── problemset/              # 题集进阶系统（章节树、断点续刷与点亮自愈）
-│   │   ├── question/                # 算法编程题库（标签系统、测试用例存储与多级缓存）
-│   │   ├── rank/                    # 全域天梯榜（Redis 页面防雪崩缓存与单点排名）
-│   │   ├── submission/              # 提交调度、判题任务构建与 BRPOP 异步结果收集器
-│   │   ├── system/                  # 集群遥测探针与首页动态代码模板服务
-│   │   └── user/                    # 开发者个人主页、52 周 AC 热力图与头像管理
-│   └── src/main/resources/
-│       ├── db/migration/            # Flyway 版本化迁移脚本（V1 ~ V20）
-│       ├── mapper/                  # MyBatis XML 映射文件
-│       └── application.yml          # 多环境配置（含 Gzip 压缩、JDBC 预编译与连接池调优）
-├── judger/                          # Go 语言高并发沙箱判题引擎
-│   ├── cmd/judger/                  # 守护进程主入口（信号捕获与优雅退出）
-│   └── internal/
-│       ├── compare/                 # 算法文本输出比对器与 SQL 结果集容差对拍器
-│       ├── config/                  # 判题环境变量与参数配置
-│       ├── judge/                   # 算法题与 SQL 题判题管线
-│       ├── model/                   # 任务 Payload 与判题结果模型
-│       ├── queue/                   # Redis 队列操作与节点心跳上报
-│       └── sandbox/                 # Docker Cgroups v2 容器沙箱与独立 MySQL 临时库调度
-├── deploy/                          # 跨平台一键启停脚本 (start.ps1 / start.sh / stop.ps1 / stop.sh)
-└── docs/                            # 需求文档、接口契约、开发计划与界面资产
-```
+### 模块全景与工程划分
+
+| 顶级目录 | 核心分层 / 子模块 | 语言与技术栈 | 职责边界与关键业务编排 |
+| :--- | :--- | :--- | :--- |
+| **`frontend/`** | `src/views/` | Vue 3.5 + TS 5.9 | 答题工作台、实时诊断抽屉、全真机考、课练督学、开发者主页与管理后台 |
+| | `src/components/` | Vite 8 + CSS Vars | 0-Radius 直角工业风组件（`ClusterConsole`, `DbSchemaViewer`, `HeatmapCalendar`） |
+| | `src/api/` & `stores/` | Axios + Pinia 3 | 模块化 REST API 通信、JWT 自动静默续签与全局答题草稿缓存 |
+| **`backend/`** | `submission/` | Spring Boot 3.2.5 | 提交任务构建调度与常驻守护线程 `JudgeResultBlockingListener`（BRPOP 结果收集） |
+| | `database/` | MyBatis 3 + MySQL | SQL OJ 题库管理、测试点元数据内省与独立库对拍生命周期管理 |
+| | `question/` & `rank/` | Redis 7 + HikariCP | 算法题库标签检索、测试用例管理、天梯榜防雪崩缓存（120s TTL + Jitter） |
+| | `exam/` & `practice/` | Java 17 (LTS) | 考场快照组卷、防作弊切屏监测、ACM 罚时 / OI 快照加权评分、随堂课练准入 |
+| | `db/migration/` | Flyway V20 | 生产级数据库版本化迁移脚本（含 `idx_user_status_qid` 复合覆盖索引） |
+| **`judger/`** | `cmd/judger/` | Go 1.22+ | 评测守护进程常驻主入口、OS 信号捕获（`SIGINT/SIGTERM` 优雅关机） |
+| | `internal/sandbox/` | Docker + Cgroups v2 | 容器硬件限额（`cpu.max`, `memory.max`, `pids.max`）、无网络（`--network none`）与只读镜像 |
+| | `internal/sandbox/` | MySQL 8.0 (:3307) | 独立专用评测实例，动态创建 `judge_{subId}_{caseId}` 临时库，执行比对后即焚 |
+| | `internal/compare/` | 算法/SQL 对拍器 | 空白过滤对拍、1e-6 浮点容差比对与纳秒级时间/内存峰值精准测量 |
+| | `internal/queue/` | go-redis v9 | `BLMOVE` 原子认领防止宕机丢任务、3秒周期节点心跳上报 |
+| **`deploy/`** | 协同脚本 | PowerShell / Bash | 跨平台一键环境自检、容器拉起、Go 判题编译与服务协同启停（`start` / `stop`） |
+| **`docs/`** | 规范文档 | Markdown | 产品需求规格 (PRD)、设计系统规范、全局接口契约与后端性能优化落地手册 |
 
 ---
 
