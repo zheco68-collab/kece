@@ -36,7 +36,6 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -323,7 +322,6 @@ public class SubmissionService {
     }
 
     /** 定时回写：将判题机写入 Redis 的终态结果落库 MySQL（幂等）。 */
-    @Scheduled(fixedDelay = 2000)
     public void collectResults() {
         try {
             while (true) {
@@ -342,7 +340,7 @@ public class SubmissionService {
         }
     }
 
-    private void persistResult(Long submissionId) {
+    public void persistResult(Long submissionId) {
         String cached = redis.opsForValue().get(statusKey(submissionId));
         if (cached == null) {
             return;
