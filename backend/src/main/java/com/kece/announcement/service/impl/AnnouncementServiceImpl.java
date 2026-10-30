@@ -38,8 +38,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public class AnnouncementServiceImpl implements AnnouncementService {
 
     public static final String BOARD_CACHE_KEY_PREFIX = "notice:board:";
-    public static final long BASE_TTL_SECONDS = 600L;
-    public static final long MAX_JITTER_SECONDS = 60L;
+    public static final long BASE_TTL_SECONDS = 30L;
+    public static final long MAX_JITTER_SECONDS = 10L;
 
     private final AnnouncementMapper announcementMapper;
     private final StringRedisTemplate redis;
@@ -89,6 +89,9 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         announcementMapper.incrementViewCount(id);
         int currentViews = announcement.getViewCount() != null ? announcement.getViewCount() + 1 : 1;
         announcement.setViewCount(currentViews);
+
+        // 自增浏览量后清空前台看板列表缓存，确保看板列表实时刷新最新阅读量
+        evictBoardCacheAfterCommit();
 
         return toDetailVO(announcement);
     }
