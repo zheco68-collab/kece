@@ -7,16 +7,35 @@ const route = useRoute();
 const router = useRouter();
 const userStore = useUserStore();
 
-const navLinks = [
+interface NavSubItem {
+  path: string;
+  label: string;
+  code: string;
+}
+
+interface NavItem {
+  path: string;
+  label: string;
+  matchPaths?: string[];
+  children?: NavSubItem[];
+}
+
+const navLinks: NavItem[] = [
   { path: '/', label: '首页' },
-  { path: '/questions', label: '编程' },
-  { path: '/database', label: '数据库' },
-  { path: '/frontend', label: '前端' },
-  { path: '/objective', label: '客观题' },
-  { path: '/problem-sets', label: '题集' },
-  { path: '/rankings', label: '排名' },
+  {
+    path: '/questions',
+    label: '题库',
+    matchPaths: ['/questions', '/database', '/objective', '/problem-sets', '/submissions', '/database-submissions'],
+    children: [
+      { path: '/questions', label: '算法编程', code: 'ALGO' },
+      { path: '/database', label: '数据库题', code: 'SQL' },
+      { path: '/objective', label: '客观题库', code: 'QUIZ' },
+      { path: '/problem-sets', label: '专项题集', code: 'SET' },
+    ],
+  },
   { path: '/practice', label: '课练' },
   { path: '/exams', label: '考试' },
+  { path: '/rankings', label: '排名' },
   { path: '/announcements', label: '公告栏' },
 ];
 
@@ -28,8 +47,16 @@ const sliderStyle = ref({
   width: '0px',
 });
 
-function onMouseEnterItem(e: MouseEvent) {
-  const target = e.currentTarget as HTMLElement;
+const openDropdown = ref<string | null>(null);
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function onMouseEnterItem(e: MouseEvent, item: NavItem) {
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
+  const el = e.currentTarget as HTMLElement;
+  const target = (el.classList.contains('nav-item-wrap') ? el : el.closest('.nav-item-wrap')) || el;
   if (!target || !navRef.value) return;
   const navRect = navRef.value.getBoundingClientRect();
   const targetRect = target.getBoundingClientRect();
@@ -48,11 +75,40 @@ function onMouseEnterItem(e: MouseEvent) {
   } else {
     sliderAnimating.value = true;
   }
+
+  if (item.children) {
+    openDropdown.value = item.label;
+  } else {
+    openDropdown.value = null;
+  }
+}
+
+function onMouseLeaveItem(item: NavItem) {
+  if (item.children) {
+    closeTimer = setTimeout(() => {
+      if (openDropdown.value === item.label) {
+        openDropdown.value = null;
+      }
+    }, 120);
+  }
 }
 
 function onNavMouseLeave() {
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
+  openDropdown.value = null;
   sliderVisible.value = false;
   sliderAnimating.value = false;
+}
+
+function closeDropdown() {
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
+  openDropdown.value = null;
 }
 
 const roleInfo = computed(() => {
@@ -61,7 +117,18 @@ const roleInfo = computed(() => {
   return { label: '学生', class: 'role-student' };
 });
 
-// 按路径段匹配，避免 /database 与其详情页 /database/:id 同时高亮。
+function isItemActive(item: NavItem): boolean {
+  if (item.matchPaths) {
+    return item.matchPaths.some((p) => route.path === p || route.path.startsWith(p + '/'));
+  }
+  if (item.path === '/') return route.path === '/';
+  return route.path === item.path || route.path.startsWith(item.path + '/');
+}
+
+function isSubActive(path: string): boolean {
+  return route.path === path || route.path.startsWith(path + '/');
+}
+
 function isActive(path: string): boolean {
   if (path === '/') return route.path === '/';
   return route.path === path || route.path.startsWith(path + '/');
@@ -85,16 +152,55 @@ function logout() {
           :class="{ 'is-visible': sliderVisible, 'is-animating': sliderAnimating }"
           :style="sliderStyle"
         ></div>
-        <RouterLink
+        <div
           v-for="item in navLinks"
           :key="item.path"
-          :to="item.path"
-          class="nav-item"
-          :class="{ active: isActive(item.path) }"
-          @mouseenter="onMouseEnterItem"
+          class="nav-item-wrap"
+          @mouseenter="onMouseEnterItem($event, item)"
+          @mouseleave="onMouseLeaveItem(item)"
         >
-          {{ item.label }}
-        </RouterLink>
+          <RouterLink
+            :to="item.path"
+            class="nav-item"
+            :class="{ active: isItemActive(item), 'has-children': !!item.children }"
+            @click="closeDropdown"
+          >
+            <span>{{ item.label }}</span>
+            <svg
+              v-if="item.children"
+              class="dropdown-chevron"
+              :class="{ 'is-open': openDropdown === item.label }"
+              viewBox="0 0 10 6"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path d="M1 1l4 4 4-4" stroke-width="1.6" stroke-linecap="square" />
+            </svg>
+          </RouterLink>
+
+          <!-- 工业风下拉子菜单 (直角、等宽代码标签、紧凑专业) -->
+          <transition name="dropdown-fade">
+            <div
+              v-if="item.children && openDropdown === item.label"
+              class="nav-dropdown"
+            >
+              <RouterLink
+                v-for="sub in item.children"
+                :key="sub.path"
+                :to="sub.path"
+                class="dropdown-item"
+                :class="{ active: isSubActive(sub.path) }"
+                @click="closeDropdown"
+              >
+                <span class="sub-code mono">{{ sub.code }}</span>
+                <span class="sub-label">{{ sub.label }}</span>
+                <svg class="sub-arrow" viewBox="0 0 12 12" fill="none" stroke="currentColor">
+                  <path d="M4 2l4 4-4 4" stroke-width="1.6" stroke-linecap="square" />
+                </svg>
+              </RouterLink>
+            </div>
+          </transition>
+        </div>
       </nav>
       <div class="header-right">
         <template v-if="userStore.isLoggedIn">
@@ -209,6 +315,7 @@ function logout() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   padding: 0 14px;
   height: 34px;
   color: var(--ink-secondary);
@@ -227,6 +334,99 @@ function logout() {
 .nav-item.active {
   color: var(--ink);
   font-weight: 700;
+}
+.nav-item-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+}
+.dropdown-chevron {
+  width: 8px;
+  height: 5px;
+  margin-left: 1px;
+  opacity: 0.55;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease;
+}
+.nav-item:hover .dropdown-chevron,
+.dropdown-chevron.is-open {
+  opacity: 1;
+}
+.dropdown-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+/* 工业风紧凑直角下拉菜单 */
+.nav-dropdown {
+  position: absolute;
+  top: 54px;
+  left: 0;
+  min-width: 176px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--ink);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
+  padding: 4px 0;
+  z-index: 120;
+}
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  color: var(--ink-secondary);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.dropdown-item:hover {
+  background: #f8f9fa;
+  color: var(--ink);
+}
+.dropdown-item.active {
+  background: #f1f3f5;
+  color: var(--ink);
+  font-weight: 700;
+  border-left: 2px solid var(--ink);
+  padding-left: 12px;
+}
+.sub-code {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  background: #e2e8f0;
+  color: #334155;
+  line-height: 1.2;
+  letter-spacing: 0.4px;
+}
+.dropdown-item.active .sub-code {
+  background: var(--ink);
+  color: #ffffff;
+}
+.sub-label {
+  flex: 1;
+  white-space: nowrap;
+}
+.sub-arrow {
+  width: 9px;
+  height: 9px;
+  opacity: 0;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.dropdown-item:hover .sub-arrow {
+  opacity: 0.65;
+  transform: translateX(2px);
+}
+
+.dropdown-fade-enter-active,
+.dropdown-fade-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dropdown-fade-enter-from,
+.dropdown-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 .header-right {
   margin-left: auto;

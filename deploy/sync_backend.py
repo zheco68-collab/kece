@@ -105,3 +105,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     deploy(args.jar, args.host, args.port, args.user, args.password)
+
