@@ -121,31 +121,16 @@ function logout() {
             </span>
           </RouterLink>
           <button class="btn btn-ghost btn-sm" @click="logout">退出</button>
-          <div
+          <RouterLink
             v-if="userStore.hasRole('ADMIN') || userStore.hasRole('TEACHER')"
-            class="admin-dropdown-wrap"
+            to="/admin"
+            class="btn btn-primary btn-sm admin-entry-btn"
           >
-            <RouterLink
-              to="/admin"
-              class="btn btn-primary btn-sm admin-entry-btn"
-            >
-              <span>后台管理</span>
-              <svg class="nav-arrow-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M2 6h8M6 2l4 4-4 4" />
-              </svg>
-            </RouterLink>
-            <div class="admin-dropdown-menu">
-              <RouterLink to="/admin/questions" class="admin-menu-item">编程题管理</RouterLink>
-              <RouterLink to="/admin/db-questions" class="admin-menu-item">数据库题管理</RouterLink>
-              <RouterLink to="/admin/objective-questions" class="admin-menu-item">客观题管理</RouterLink>
-              <RouterLink to="/admin/problem-sets" class="admin-menu-item">题集管理</RouterLink>
-              <RouterLink to="/admin/exams" class="admin-menu-item">考试与组卷</RouterLink>
-              <RouterLink to="/admin/practices" class="admin-menu-item">随堂课练</RouterLink>
-              <RouterLink to="/admin/submissions" class="admin-menu-item">提交监控</RouterLink>
-              <RouterLink to="/admin/announcements" class="admin-menu-item">公告管理</RouterLink>
-              <RouterLink v-if="userStore.hasRole('ADMIN')" to="/admin/users" class="admin-menu-item">用户管理</RouterLink>
-            </div>
-          </div>
+            <span>后台管理</span>
+            <svg class="nav-arrow-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M2 6h8M6 2l4 4-4 4" />
+            </svg>
+          </RouterLink>
         </template>
         <RouterLink v-else to="/login" class="btn btn-primary btn-sm">登录</RouterLink>
       </div>
@@ -346,42 +331,6 @@ function logout() {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-}
-.admin-dropdown-wrap {
-  position: relative;
-  display: inline-flex;
-}
-.admin-dropdown-menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
-  min-width: 140px;
-  background: #ffffff;
-  border: 1px solid var(--line-strong);
-  border-radius: 0;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
-  display: none;
-  flex-direction: column;
-  z-index: 120;
-  padding: 4px 0;
-}
-.admin-dropdown-wrap:hover .admin-dropdown-menu,
-.admin-dropdown-wrap:focus-within .admin-dropdown-menu {
-  display: flex;
-}
-.admin-menu-item {
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink-secondary);
-  text-decoration: none;
-  white-space: nowrap;
-  transition: all 0.15s ease;
-}
-.admin-menu-item:hover {
-  background: var(--surface);
-  color: #1677ff;
 }
 .external-icon,
 .nav-arrow-icon {
