@@ -459,8 +459,8 @@ onMounted(() => {
                     class="icon-btn"
                     type="button"
                     :disabled="sIdx === 0"
-                    @click.stop="moveSectionUp(sIdx)"
                     title="上移章节"
+                    @click.stop="moveSectionUp(sIdx)"
                   >
                     ↑
                   </button>
@@ -468,16 +468,16 @@ onMounted(() => {
                     class="icon-btn"
                     type="button"
                     :disabled="sIdx === sections.length - 1"
-                    @click.stop="moveSectionDown(sIdx)"
                     title="下移章节"
+                    @click.stop="moveSectionDown(sIdx)"
                   >
                     ↓
                   </button>
                   <button
                     class="icon-btn danger"
                     type="button"
-                    @click.stop="removeSection(sIdx)"
                     title="删除章节"
+                    @click.stop="removeSection(sIdx)"
                   >
                     ×
                   </button>

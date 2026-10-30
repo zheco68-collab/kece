@@ -693,7 +693,7 @@ onMounted(async () => {
     </section>
 
     <!-- 交互式技术体验区：实时沙箱评测终端（支持惰性加载打字动效与真实沙箱评测联动） -->
-    <section class="demo-section container" ref="terminalSectionRef">
+    <section ref="terminalSectionRef" class="demo-section container">
       <div class="demo-header">
         <div class="demo-eyebrow mono">// SANDBOX RUNNER · LIVE VERDICT</div>
         <h2 class="demo-title">真实评测闭环体验</h2>
@@ -752,7 +752,7 @@ onMounted(async () => {
           <span class="lang-tag">{{ demos[activeTab].langBadge }}</span>
         </div>
 
-        <div class="terminal-body" ref="terminalBodyRef">
+        <div ref="terminalBodyRef" class="terminal-body">
           <div class="terminal-code-wrapper">
             <div class="line-numbers mono" aria-hidden="true">
               <span v-for="n in totalLines" :key="n">{{ n }}</span>

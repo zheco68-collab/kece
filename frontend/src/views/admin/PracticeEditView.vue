@@ -400,8 +400,8 @@ onMounted(loadSource)
           v-if="selected.length > 1"
           class="btn btn-outline-sort btn-sm"
           type="button"
-          @click="autoSortByStandards"
           title="按单选、判断、多选、填空、SQL、编程规范顺序重新排布"
+          @click="autoSortByStandards"
         >
           ⚡ 按标准题型顺序自动排布
         </button>

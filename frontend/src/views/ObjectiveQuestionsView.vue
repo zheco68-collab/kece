@@ -223,7 +223,7 @@ onMounted(async () => {
     </div>
 
     <!-- 单列客观题目卡片列表（具有与算法编程一致的掉落动画） -->
-    <div v-else class="question-list" :key="`${page}-${type}-${statusFilter}`">
+    <div v-else :key="`${page}-${type}-${statusFilter}`" class="question-list">
       <RouterLink
         v-for="(q, index) in list"
         :key="q.id"

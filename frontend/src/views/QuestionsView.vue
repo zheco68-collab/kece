@@ -288,7 +288,7 @@ onMounted(() => {
     </div>
 
     <!-- 富信息单列题目卡片列表 -->
-    <div v-else class="question-list" :key="`${page}-${difficulty}-${statusFilter}`">
+    <div v-else :key="`${page}-${difficulty}-${statusFilter}`" class="question-list">
       <RouterLink
         v-for="(q, index) in displayedList"
         :key="q.id"
@@ -800,17 +800,6 @@ onMounted(() => {
   color: var(--ink);
 }
 
-.tag-filter-bar-old {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: -10px;
-  margin-bottom: 20px;
-  padding: 10px 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-}
 .tag-filter-label {
   font-size: 11px;
   font-weight: 700;

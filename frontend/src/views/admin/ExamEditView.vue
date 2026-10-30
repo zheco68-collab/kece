@@ -465,8 +465,8 @@ onMounted(async () => {
             v-if="selected.length > 1"
             class="btn btn-outline-sort btn-sm"
             type="button"
-            @click="autoSortByExamStandards"
             title="按单选、判断、多选、填空、SQL、编程规范顺序重新排布"
+            @click="autoSortByExamStandards"
           >
             ⚡ 按标准试卷顺序自动排布
           </button>
@@ -494,8 +494,8 @@ onMounted(async () => {
               class="btn btn-ghost btn-sm"
               type="button"
               :disabled="i === 0"
-              @click="moveQuestion(i, -1)"
               title="上移"
+              @click="moveQuestion(i, -1)"
             >
               ↑
             </button>
@@ -503,16 +503,16 @@ onMounted(async () => {
               class="btn btn-ghost btn-sm"
               type="button"
               :disabled="i === selected.length - 1"
-              @click="moveQuestion(i, 1)"
               title="下移"
+              @click="moveQuestion(i, 1)"
             >
               ↓
             </button>
             <button
               class="btn btn-ghost btn-sm btn-danger"
               type="button"
-              @click="removeQuestion(i)"
               title="移除"
+              @click="removeQuestion(i)"
             >
               移除
             </button>

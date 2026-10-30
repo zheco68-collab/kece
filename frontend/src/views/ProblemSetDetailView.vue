@@ -310,8 +310,8 @@ onMounted(loadDetail)
 
           <div
             v-if="!collapsedSections.has(sec.id)"
-            class="section-items"
             :key="`${sec.id}-${statusFilter}`"
+            class="section-items"
           >
             <div
               v-if="filteredSectionItems(sec.items).length === 0"

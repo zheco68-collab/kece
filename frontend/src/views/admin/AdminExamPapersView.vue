@@ -189,8 +189,8 @@ onMounted(load);
           <button
             class="btn btn-success btn-export"
             :disabled="exportingBatch || !overview.totalStudents"
-            @click="handleBatchExportAll"
             title="一键打包导出全场所有考生的试卷 Word (.doc) 压缩包"
+            @click="handleBatchExportAll"
           >
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -298,8 +298,8 @@ onMounted(load);
               type="checkbox"
               class="student-checkbox"
               :checked="selectedUserIds.includes(row.userId)"
-              @change="toggleSelect(row.userId)"
               :title="'勾选考生 ' + (row.realName || row.username)"
+              @change="toggleSelect(row.userId)"
             />
           </template>
 

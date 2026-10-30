@@ -221,7 +221,7 @@ onMounted(load)
     </div>
 
     <!-- 富信息单列题集卡片列表（风格、结构与算法编程完全统一） -->
-    <div v-else class="question-list" :key="`${page}-${category}-${difficulty}-${favoritedOnly}`">
+    <div v-else :key="`${page}-${category}-${difficulty}-${favoritedOnly}`" class="question-list">
       <RouterLink
         v-for="(ps, index) in list"
         :key="ps.id"

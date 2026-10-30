@@ -185,16 +185,16 @@ onMounted(load);
           class="btn btn-ghost btn-sm"
           type="button"
           :disabled="exportingBatchExamId === row.id"
-          @click="handleExportBatchDoc(row.id, row.title)"
           title="批量打包导出本场所有考生的试卷 Word (.doc) 压缩包"
+          @click="handleExportBatchDoc(row.id, row.title)"
         >
           {{ exportingBatchExamId === row.id ? '打包中…' : '批量导出答卷' }}
         </button>
         <button
           class="btn btn-ghost btn-sm"
           type="button"
-          @click="exportBlankDoc(row.id)"
           title="导出标准 A 卷 Word 文档"
+          @click="exportBlankDoc(row.id)"
         >
           导出 A 卷
         </button>

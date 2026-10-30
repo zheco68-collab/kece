@@ -267,7 +267,8 @@ onMounted(load);
               </div>
 
               <!-- 客观题选项 -->
-              <div v-if="q.options && q.options.length && (q.objectiveType === 'SINGLE' || q.objectiveType === 'MULTIPLE')"
+              <div
+v-if="q.options && q.options.length && (q.objectiveType === 'SINGLE' || q.objectiveType === 'MULTIPLE')"
                    class="q-options" :class="getOptionsClass(q.options)">
                 <div v-for="(opt, optIdx) in q.options" :key="optIdx" class="option-item">
                   <span class="opt-letter">{{ String.fromCharCode(65 + optIdx) }}.</span>

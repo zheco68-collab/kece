@@ -59,9 +59,11 @@ logs/
 .logs/
 *.log
 
+# Scratch / temporary scripts
+scratch/
+*.scratch.*
+
 # Coverage
-coverage/
-*.lcov
 
 # MinIO / local object storage / Uploads / Testcases
 data/

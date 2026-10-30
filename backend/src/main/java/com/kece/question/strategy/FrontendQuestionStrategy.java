@@ -2,8 +2,6 @@ package com.kece.question.strategy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kece.common.exception.BusinessException;
-import com.kece.common.response.ResultCode;
 import com.kece.exam.dto.ExamSessionQuestionVO;
 import com.kece.practice.dto.PracticePracticalQuestionVO;
 import java.util.List;

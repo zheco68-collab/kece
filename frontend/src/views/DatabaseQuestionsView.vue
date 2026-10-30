@@ -200,7 +200,7 @@ onMounted(() => {
     </div>
 
     <!-- 富信息单列题目卡片列表 -->
-    <div v-else class="question-list" :key="`${page}-${type}-${statusFilter}`">
+    <div v-else :key="`${page}-${type}-${statusFilter}`" class="question-list">
       <RouterLink
         v-for="(q, index) in displayedList"
         :key="q.id"

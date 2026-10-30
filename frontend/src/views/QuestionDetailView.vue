@@ -166,8 +166,8 @@ onMounted(async () => {
           <div v-if="question.tags && question.tags.length > 0" class="meta-item meta-item-tags">
             <span
               class="meta-label meta-label-clickable"
-              @click="showTags = !showTags"
               title="点击切换本题标签显示状态"
+              @click="showTags = !showTags"
             >
               本题标签
               <span class="toggle-indicator mono">{{ showTags ? '[-] 收起' : '[+] 展开' }}</span>
@@ -176,8 +176,8 @@ onMounted(async () => {
               <button
                 type="button"
                 class="btn-toggle-tags mono"
-                @click="showTags = true"
                 title="点击展开本题算法分类标签"
+                @click="showTags = true"
               >
                 <svg class="tag-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
@@ -191,8 +191,8 @@ onMounted(async () => {
               <button
                 type="button"
                 class="btn-tags-collapse mono"
-                @click="showTags = false"
                 title="收起算法标签以防剧透"
+                @click="showTags = false"
               >
                 收起
               </button>
