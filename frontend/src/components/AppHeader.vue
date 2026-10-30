@@ -25,14 +25,14 @@ const navLinks: NavItem[] = [
   {
     path: '/questions',
     label: '题库',
-    matchPaths: ['/questions', '/database', '/objective', '/problem-sets', '/submissions', '/database-submissions'],
+    matchPaths: ['/questions', '/database', '/objective', '/submissions', '/database-submissions'],
     children: [
       { path: '/questions', label: '算法编程', code: 'ALGO' },
       { path: '/database', label: '数据库题', code: 'SQL' },
       { path: '/objective', label: '客观题库', code: 'QUIZ' },
-      { path: '/problem-sets', label: '专项题集', code: 'SET' },
     ],
   },
+  { path: '/problem-sets', label: '题集' },
   { path: '/practice', label: '课练' },
   { path: '/exams', label: '考试' },
   { path: '/rankings', label: '排名' },
