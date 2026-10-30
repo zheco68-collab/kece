@@ -241,14 +241,6 @@ onMounted(load)
           <button
             class="action-btn"
             type="button"
-            title="前台查看效果"
-            @click="router.push(`/announcements/${row.id}`)"
-          >
-            前台查看
-          </button>
-          <button
-            class="action-btn"
-            type="button"
             title="编辑公告"
             @click="router.push(`/admin/announcements/${row.id}/edit`)"
           >
