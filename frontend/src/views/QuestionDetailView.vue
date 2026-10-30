@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { questionApi } from '@/api/question'
 import { submissionApi } from '@/api/submission'
@@ -24,6 +24,11 @@ const error = ref('')
 const isSolved = ref(false)
 const authorName = ref('')
 const authorAvatarUrl = ref<string | null>(null)
+const showTags = ref(false)
+
+watch(id, () => {
+  showTags.value = false
+})
 
 
 
@@ -159,9 +164,38 @@ onMounted(async () => {
             <span class="meta-val">Docker 沙箱隔离执行</span>
           </div>
           <div v-if="question.tags && question.tags.length > 0" class="meta-item meta-item-tags">
-            <span class="meta-label">算法分类标签</span>
-            <div class="meta-tags-list">
+            <span
+              class="meta-label meta-label-clickable"
+              @click="showTags = !showTags"
+              title="点击切换本题标签显示状态"
+            >
+              本题标签
+              <span class="toggle-indicator mono">{{ showTags ? '[-] 收起' : '[+] 展开' }}</span>
+            </span>
+            <div v-if="!showTags" class="meta-tags-placeholder">
+              <button
+                type="button"
+                class="btn-toggle-tags mono"
+                @click="showTags = true"
+                title="点击展开本题算法分类标签"
+              >
+                <svg class="tag-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                  <circle cx="7" cy="7" r="1.5" />
+                </svg>
+                <span>本题标签 · 点击查看</span>
+              </button>
+            </div>
+            <div v-else class="meta-tags-list">
               <span v-for="t in question.tags" :key="t" class="detail-tag-chip mono">#{{ t }}</span>
+              <button
+                type="button"
+                class="btn-tags-collapse mono"
+                @click="showTags = false"
+                title="收起算法标签以防剧透"
+              >
+                收起
+              </button>
             </div>
           </div>
           <div v-if="question.createdBy" class="meta-item meta-item-author">
@@ -443,11 +477,56 @@ onMounted(async () => {
   height: 16px;
 }
 
+.meta-label-clickable {
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.15s ease;
+}
+.meta-label-clickable:hover {
+  color: var(--ink-primary);
+}
+.toggle-indicator {
+  font-size: 10px;
+  color: var(--ink-tertiary);
+  font-weight: normal;
+}
+.meta-tags-placeholder {
+  display: inline-flex;
+  align-items: center;
+}
+.btn-toggle-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--bg-surface, #f8f9fa);
+  border: 1px solid var(--line, #ced4da);
+  color: var(--ink-secondary, #495057);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+.btn-toggle-tags:hover {
+  background: #e9ecef;
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+.tag-toggle-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
 .meta-tags-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+  min-height: 24px;
 }
 .detail-tag-chip {
   font-size: 11.5px;
@@ -456,6 +535,22 @@ onMounted(async () => {
   border: 1px solid #1e40af;
   color: #ffffff;
   font-weight: 600;
+}
+.btn-tags-collapse {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid var(--line, #ced4da);
+  color: var(--ink-tertiary, #868e96);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+.btn-tags-collapse:hover {
+  background: #e9ecef;
+  border-color: #adb5bd;
+  color: #111111;
 }
 
 .header-meta-row {
