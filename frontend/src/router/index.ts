@@ -244,6 +244,18 @@ const router = createRouter({
           component: () => import('@/views/ProfileView.vue'),
           meta: { title: '个人主页', requiresAuth: true },
         },
+        {
+          path: 'announcements',
+          name: 'announcements',
+          component: () => import('@/views/AnnouncementsBoardView.vue'),
+          meta: { title: '平台公告栏' },
+        },
+        {
+          path: 'announcements/:id',
+          name: 'announcement-detail',
+          component: () => import('@/views/AnnouncementDetailView.vue'),
+          meta: { title: '公告详情' },
+        },
       ],
     },
     // 独立后台管理端路由（使用独立侧边栏 AdminLayout）
@@ -377,6 +389,24 @@ const router = createRouter({
           name: 'admin-submissions',
           component: () => import('@/views/admin/AdminSubmissionsView.vue'),
           meta: { roles: ['ADMIN', 'TEACHER'], title: '提交监控' },
+        },
+        {
+          path: 'announcements',
+          name: 'admin-announcements',
+          component: () => import('@/views/admin/AdminAnnouncementsView.vue'),
+          meta: { roles: ['ADMIN', 'TEACHER'], title: '公告管理' },
+        },
+        {
+          path: 'announcements/create',
+          name: 'admin-announcement-create',
+          component: () => import('@/views/admin/AnnouncementEditView.vue'),
+          meta: { roles: ['ADMIN', 'TEACHER'], title: '发布新公告' },
+        },
+        {
+          path: 'announcements/:id/edit',
+          name: 'admin-announcement-edit',
+          component: () => import('@/views/admin/AnnouncementEditView.vue'),
+          meta: { roles: ['ADMIN', 'TEACHER'], title: '编辑公告' },
         },
       ],
     },

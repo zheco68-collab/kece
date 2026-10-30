@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kece.announcement.mapper.AnnouncementMapper">
+
+    <resultMap id="AnnouncementMap" type="com.kece.announcement.entity.Announcement">
+        <id property="id" column="id"/>
+        <result property="title" column="title"/>
+        <result property="summary" column="summary"/>
+        <result property="content" column="content"/>
+        <result property="authorName" column="author_name"/>
+        <result property="isPinned" column="is_pinned"/>
+        <result property="priority" column="priority"/>
+        <result property="status" column="status"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="BaseColumns">
+        id, title, summary, content, author_name, is_pinned, priority,
+        status, view_count, created_by, created_at, updated_at
+    </sql>
+
+    <!-- 前台看板列表：仅 PUBLISHED，走覆盖索引 idx_board_sort -->
+    <select id="findBoardPage" resultType="com.kece.announcement.dto.AnnouncementBoardItemVO">
+        SELECT
+            id,
+            title,
+            summary,
+            author_name AS authorName,
+            is_pinned AS isPinned,
+            priority,
+            view_count AS viewCount,
+            created_at AS createdAt
+        FROM announcement
+        WHERE status = 'PUBLISHED'
+        ORDER BY is_pinned DESC, priority DESC, id DESC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <!-- 前台看板总数 -->
+    <select id="countBoard" resultType="long">
+        SELECT COUNT(1)
+        FROM announcement
+        WHERE status = 'PUBLISHED'
+    </select>
+
+    <!-- 主键查询详情 -->
+    <select id="findById" resultMap="AnnouncementMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM announcement
+        WHERE id = #{id}
+    </select>
+
+    <!-- 原子自增浏览次数 -->
+    <update id="incrementViewCount">
+        UPDATE announcement
+        SET view_count = view_count + 1
+        WHERE id = #{id}
+    </update>
+
+    <!-- 管理端列表：无分类、无搜索，支持按 status 过滤 -->
+    <select id="findAdminPage" resultMap="AnnouncementMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM announcement
+        <where>
+            <if test="status != null and status != ''">
+                status = #{status}
+            </if>
+        </where>
+        ORDER BY is_pinned DESC, priority DESC, id DESC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <!-- 管理端统计总数 -->
+    <select id="countAdmin" resultType="long">
+        SELECT COUNT(1)
+        FROM announcement
+        <where>
+            <if test="status != null and status != ''">
+                status = #{status}
+            </if>
+        </where>
+    </select>
+
+    <!-- 新建公告 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO announcement (
+            title, summary, content, author_name, is_pinned, priority, status, view_count, created_by
+        ) VALUES (
+            #{title}, #{summary}, #{content}, #{authorName}, #{isPinned}, #{priority}, #{status}, #{viewCount}, #{createdBy}
+        )
+    </insert>
+
+    <!-- 更新公告 -->
+    <update id="update">
+        UPDATE announcement
+        SET title = #{title},
+            summary = #{summary},
+            content = #{content},
+            author_name = #{authorName},
+            is_pinned = #{isPinned},
+            priority = #{priority},
+            status = #{status}
+        WHERE id = #{id}
+    </update>
+
+    <!-- 更新置顶状态 -->
+    <update id="updatePinned">
+        UPDATE announcement
+        SET is_pinned = #{isPinned}
+        WHERE id = #{id}
+    </update>
+
+    <!-- 更新上下架状态 -->
+    <update id="updateStatus">
+        UPDATE announcement
+        SET status = #{status}
+        WHERE id = #{id}
+    </update>
+
+    <!-- 删除公告 -->
+    <delete id="deleteById">
+        DELETE FROM announcement
+        WHERE id = #{id}
+    </delete>
+
+</mapper>
