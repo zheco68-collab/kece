@@ -192,4 +192,23 @@ describe('AppSidebar.vue', () => {
     const dbSubItem = wrapper.findAll('.sub-nav-item').find((el) => el.attributes('href') === '/database')
     expect(dbSubItem?.classes()).toContain('active')
   })
+
+  it('toggles questions accordion open and closed on click without route push', async () => {
+    mockPush.mockClear()
+    currentRoutePath = '/'
+    const wrapper = mount(AppSidebar)
+
+    const questionTrigger = wrapper.find('.nav-accordion-trigger')
+    expect(wrapper.find('.accordion-content').exists()).toBe(true)
+
+    // First click: collapse accordion
+    await questionTrigger.trigger('click')
+    expect(wrapper.find('.accordion-content').exists()).toBe(false)
+    expect(mockPush).not.toHaveBeenCalled()
+
+    // Second click: expand accordion
+    await questionTrigger.trigger('click')
+    expect(wrapper.find('.accordion-content').exists()).toBe(true)
+    expect(mockPush).not.toHaveBeenCalled()
+  })
 })

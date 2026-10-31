@@ -115,18 +115,20 @@ function isSubQuestionActive(path: string): boolean {
   return route.path === path || route.path.startsWith(path + '/')
 }
 
-function toggleQuestionsAccordion(event: Event) {
-  event.stopPropagation()
-  isQuestionsAccordionOpen.value = !isQuestionsAccordionOpen.value
-}
-
-function onQuestionsClick() {
+function onQuestionsHeaderClick() {
   if (isCollapsed.value) {
-    // 折叠模式下直接进入题库主页
-    router.push('/questions')
-  } else {
-    // 展开模式下：确保展开手风琴
+    // 68px 折叠模式下点击题库：展开侧边栏并打开手风琴
+    isCollapsed.value = false
+    try {
+      localStorage.setItem(STORAGE_KEY, 'false')
+    } catch {
+      // 忽略存储异常
+    }
+    emit('collapse-change', false)
     isQuestionsAccordionOpen.value = true
+  } else {
+    // 展开模式下：点击题库整行纯粹作为手风琴折叠/展开开关，绝对不触发路由跳转
+    isQuestionsAccordionOpen.value = !isQuestionsAccordionOpen.value
   }
 }
 
@@ -242,12 +244,16 @@ defineExpose({
         @mouseenter="onFlyoutMouseEnter"
         @mouseleave="onFlyoutMouseLeave"
       >
-        <RouterLink
-          to="/questions"
+        <div
           class="nav-item nav-accordion-trigger"
           :class="{ active: isQuestionsActive(), 'is-open': isQuestionsAccordionOpen && !isCollapsed }"
           :title="isCollapsed ? '题库' : undefined"
-          @click="onQuestionsClick"
+          role="button"
+          tabindex="0"
+          :aria-expanded="isQuestionsAccordionOpen"
+          @click="onQuestionsHeaderClick"
+          @keydown.enter="onQuestionsHeaderClick"
+          @keydown.space.prevent="onQuestionsHeaderClick"
         >
           <div class="nav-icon-wrap">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -256,12 +262,11 @@ defineExpose({
             </svg>
           </div>
           <span v-if="!isCollapsed" class="nav-label">题库</span>
-          <button
+          <div
             v-if="!isCollapsed"
-            class="accordion-toggle-btn"
+            class="accordion-toggle-indicator"
             :title="isQuestionsAccordionOpen ? '收起子菜单' : '展开子菜单'"
-            aria-label="切换题库子菜单"
-            @click.prevent="toggleQuestionsAccordion"
+            aria-hidden="true"
           >
             <svg
               class="accordion-arrow"
@@ -273,8 +278,8 @@ defineExpose({
             >
               <path d="M1 1l4 4 4-4" />
             </svg>
-          </button>
-        </RouterLink>
+          </div>
+        </div>
 
         <!-- 展开模式：垂直手风琴折叠子菜单 -->
         <div
@@ -767,24 +772,22 @@ defineExpose({
 
 .nav-accordion-trigger {
   cursor: pointer;
+  user-select: none;
 }
 
-.accordion-toggle-btn {
+.accordion-toggle-indicator {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 20px;
   height: 20px;
   padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: 0;
   color: #8a8a8a;
-  cursor: pointer;
+  pointer-events: none;
   transition: color 0.15s ease;
 }
 
-.accordion-toggle-btn:hover {
+.nav-accordion-trigger:hover .accordion-toggle-indicator {
   color: #111111;
 }
 
