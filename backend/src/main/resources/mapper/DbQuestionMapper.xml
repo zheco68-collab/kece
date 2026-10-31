@@ -46,7 +46,7 @@
     <select id="findPage" resultMap="BaseResultMap">
         SELECT * FROM `db_question`
         <include refid="filters"/>
-        ORDER BY id DESC
+        ORDER BY id ASC
         LIMIT #{offset}, #{size}
     </select>
 
