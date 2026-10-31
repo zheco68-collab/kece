@@ -115,31 +115,7 @@
 
 ### 3. 评测沙箱核心状态机
 
-```mermaid
-stateDiagram-v2
-    [*] --> PENDING: 接口接收 & 初始落库
-    PENDING --> COMPILING: Judger 协程认领并开始编译
-    COMPILING --> COMPILE_ERROR: 编译失败 (CE 错误诊断输出)
-    COMPILING --> RUNNING: 编译成功，装配测试用例执行
-
-    state RUNNING {
-        [*] --> ExecutingCase: 注入测试点输入
-        ExecutingCase --> CheckingDiff: 输出成功捕获
-        CheckingDiff --> NextCase: 对拍完全一致 (继续下一用例)
-        CheckingDiff --> WRONG_ANSWER: 输出差异或数据不符 (WA)
-        ExecutingCase --> TIME_LIMIT_EXCEEDED: CPU 时间超限 (TLE)
-        ExecutingCase --> MEMORY_LIMIT_EXCEEDED: Cgroups OOM 熔断 (MLE)
-        ExecutingCase --> RUNTIME_ERROR: 非零退出码 / 段错误 (RE)
-    }
-
-    RUNNING --> ACCEPTED: 全测试点 100% 对拍通过
-    COMPILE_ERROR --> [*]
-    WRONG_ANSWER --> [*]
-    TIME_LIMIT_EXCEEDED --> [*]
-    MEMORY_LIMIT_EXCEEDED --> [*]
-    RUNTIME_ERROR --> [*]
-    ACCEPTED --> [*]
-```
+![](./docs/images/Gemini_Generated_Image_z7qvoxz7qvoxz7qv.jpg)
 
 ---
 
