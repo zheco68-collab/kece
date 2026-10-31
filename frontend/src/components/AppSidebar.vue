@@ -180,8 +180,11 @@ defineExpose({
     <!-- 顶部品牌区 -->
     <div class="sidebar-header">
       <RouterLink to="/" class="brand-link" title="返回 KECE 课测首页">
-        <img :src="'/kece-logo.png'" alt="KECE" class="brand-logo" />
-        <span v-if="!isCollapsed" class="brand-title mono">KECE 课测</span>
+        <img
+          :src="isCollapsed ? '/kece-mark.png' : '/kece-logo.png'"
+          alt="KECE 课测"
+          class="brand-logo"
+        />
       </RouterLink>
       <button
         class="collapse-toggle-btn"
@@ -606,8 +609,8 @@ defineExpose({
    1. 顶部品牌区 (Brand Header)
    ========================================================================== */
 .sidebar-header {
-  height: 58px;
-  min-height: 58px;
+  height: 50px;
+  min-height: 50px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -626,27 +629,25 @@ defineExpose({
 .brand-link {
   display: flex;
   align-items: center;
-  gap: 10px;
   text-decoration: none;
-  color: #111111;
   overflow: hidden;
   border-radius: 0;
 }
 
 .brand-logo {
-  width: 28px;
-  height: 28px;
+  height: 24px;
+  width: auto;
+  max-width: 142px;
   object-fit: contain;
   display: block;
   flex-shrink: 0;
 }
 
-.brand-title {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
-  color: #111111;
-  white-space: nowrap;
+.is-collapsed .brand-logo {
+  width: 26px;
+  height: 26px;
+  max-width: 26px;
+  object-fit: contain;
 }
 
 .collapse-toggle-btn {
