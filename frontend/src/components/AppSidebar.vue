@@ -1225,22 +1225,25 @@ defineExpose({
   letter-spacing: 0.3px;
 }
 
+.role-tag.role-admin,
 .role-admin {
-  background: #111111;
+  background: #7048e8;
+  color: #ffffff;
+  border: 1px solid #5f3dc4;
+}
+
+.role-tag.role-teacher,
+.role-teacher {
+  background: #2b8a3e;
+  color: #ffffff;
+  border: 1px solid #237032;
+}
+
+.role-tag.role-student,
+.role-student {
+  background: #1e1e1e;
   color: #ffffff;
   border: 1px solid #111111;
-}
-
-.role-teacher {
-  background: #f1f3f5;
-  color: #111111;
-  border: 1px solid #111111;
-}
-
-.role-student {
-  background: #f8f9fa;
-  color: #555555;
-  border: 1px solid var(--line, #ced4da);
 }
 
 .logout-btn {

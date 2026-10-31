@@ -181,6 +181,7 @@ describe('AppSidebar.vue', () => {
     const wrapper = mount(AppSidebar)
     expect(wrapper.find('.user-name').text()).toBe('alice')
     expect(wrapper.find('.role-tag').text()).toBe('管理员')
+    expect(wrapper.find('.role-tag').classes()).toContain('role-admin')
 
     // Logout button triggers clearAuth and router.push('/login')
     const logoutBtn = wrapper.find('.logout-btn')
