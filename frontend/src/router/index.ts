@@ -263,6 +263,7 @@ const router = createRouter({
       path: '/admin',
       component: () => import('@/layouts/AdminLayout.vue'),
       redirect: '/admin/questions',
+      meta: { roles: ['ADMIN', 'TEACHER'] },
       children: [
         {
           path: 'questions',
@@ -420,25 +421,61 @@ const router = createRouter({
   ],
 });
 
-// 已登录用户访问登录/注册页时跳回首页；未登录用户访问 requiresAuth 跳登录；带 roles 的页面做角色校验
+// 全局前置路由守卫：登录重定向、递归角色鉴权与 Fail-Secure 404 防嗅探
 router.beforeEach((to) => {
   const userStore = useUserStore();
+
+  // 1. 已登录用户访问登录/注册页时跳回首页
   if ((to.name === 'login' || to.name === 'register') && userStore.isLoggedIn) {
     return { name: 'home' };
   }
-  if (to.meta.requiresAuth && !userStore.isLoggedIn) {
-    return { name: 'login', query: { redirect: to.fullPath } };
-  }
-  const roles = to.meta.roles;
-  if (roles && roles.length > 0) {
+
+  // 2. 【Fail-Secure 防嗅探机制】：
+  // 未登录或角色不符合要求（如普通学生角色或游客）尝试访问 /admin 或 /admin/** 时，
+  // 一律静默重定向至 404 页面 ({ name: 'not-found' })，绝对不返回 403 Forbidden，
+  // 杜绝攻击者/学生通过响应差异嗅探管理后台路径的存在。
+  const isAdminPath =
+    to.path === '/admin' ||
+    to.path.startsWith('/admin/') ||
+    to.matched.some((record) => record.path === '/admin' || record.path.startsWith('/admin/'));
+
+  if (isAdminPath) {
     if (!userStore.isLoggedIn) {
-      return { name: 'login', query: { redirect: to.fullPath } };
+      return { name: 'not-found' };
     }
-    // 角色不符时按不存在处理，不暴露页面是否存在
-    if (!roles.some((role) => userStore.hasRole(role))) {
+    const hasAdminAccess = userStore.hasRole('ADMIN') || userStore.hasRole('TEACHER');
+    if (!hasAdminAccess) {
       return { name: 'not-found' };
     }
   }
+
+  // 3. 递归安全核验：使用 to.matched.some(record => record.meta?.roles) 进行全链路角色权限检查，防止子路由被绕过
+  const hasRoleRequirement = to.matched.some(
+    (record) => record.meta?.roles && record.meta.roles.length > 0
+  );
+  if (hasRoleRequirement) {
+    if (!userStore.isLoggedIn) {
+      return { name: 'not-found' };
+    }
+
+    // 逐级核验匹配链条上的每个角色要求
+    for (const record of to.matched) {
+      const requiredRoles = record.meta?.roles;
+      if (requiredRoles && requiredRoles.length > 0) {
+        const hasPermission = requiredRoles.some((role) => userStore.hasRole(role));
+        if (!hasPermission) {
+          return { name: 'not-found' };
+        }
+      }
+    }
+  }
+
+  // 4. 普通受保护页面（如个人主页、考试答题等）：未登录时重定向至登录页
+  const requiresAuth = to.matched.some((record) => record.meta?.requiresAuth);
+  if (requiresAuth && !userStore.isLoggedIn) {
+    return { name: 'login', query: { redirect: to.fullPath } };
+  }
+
   return true;
 });
 
