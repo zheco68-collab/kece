@@ -23,12 +23,31 @@ const total = ref(0)
 const loading = ref(true)
 const error = ref('')
 
-const categoryTabs = [
-  { value: '', label: '全部分类' },
-  { value: 'ALGO', label: '算法编程' },
-  { value: 'DB', label: '数据库 SQL' },
-  { value: 'OBJECTIVE', label: '标准客观' },
-]
+// 页面主标题与副标题动态计算：随侧边栏当前分类联动
+const pageTitleInfo = computed(() => {
+  if (category.value === 'ALGO') {
+    return {
+      title: '算法编程题集',
+      sub: '精选算法专题题单 · 结构化编排与断点续刷',
+    }
+  }
+  if (category.value === 'DB') {
+    return {
+      title: '数据库 SQL 题集',
+      sub: '关系数据库专项实战题单 · SQL 综合能力提升',
+    }
+  }
+  if (category.value === 'OBJECTIVE') {
+    return {
+      title: '标准客观题集',
+      sub: '计算机理论与工程技术选择题单 · 体系化考点通关',
+    }
+  }
+  return {
+    title: '专题题集',
+    sub: '体系化专项题单 · 结构化编排与断点续刷',
+  }
+})
 
 const difficultyLevels = ['', 'EASY', 'MEDIUM', 'HARD']
 
@@ -78,16 +97,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-}
-
-function onSelectCategory(cat: string) {
-  category.value = cat
-  router.replace({
-    query: {
-      ...route.query,
-      category: cat || undefined,
-    },
-  })
 }
 
 async function onToggleFavorite(ps: ProblemSetSummary, e: Event) {
@@ -144,9 +153,9 @@ onMounted(load)
     <!-- 顶部标题与攻克进度概览（与算法编程页完全对齐） -->
     <div class="page-head">
       <div class="page-head-left">
-        <h1 class="page-title">专题题集</h1>
+        <h1 class="page-title">{{ pageTitleInfo.title }}</h1>
         <p class="muted head-sub">
-          体系化专项题单 · 结构化编排与断点续刷
+          {{ pageTitleInfo.sub }}
         </p>
       </div>
 
@@ -179,20 +188,6 @@ onMounted(load)
           />
         </div>
 
-        <div class="category-tabs">
-          <button
-            v-for="t in categoryTabs"
-            :key="t.value"
-            class="tab-btn"
-            :class="{ active: category === t.value }"
-            @click="onSelectCategory(t.value)"
-          >
-            {{ t.label }}
-          </button>
-        </div>
-      </div>
-
-      <div class="toolbar-right">
         <div class="difficulty-tabs">
           <button
             v-for="lv in difficultyLevels"
@@ -207,6 +202,9 @@ onMounted(load)
             {{ difficultyLabels[lv] }}
           </button>
         </div>
+      </div>
+
+      <div class="toolbar-right">
 
         <div v-if="userStore.isLoggedIn" class="status-tabs">
           <button

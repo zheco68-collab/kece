@@ -12,7 +12,13 @@ const currentSection = computed(() => {
   const path = route.path
   if (path === '/' || route.name === 'home') return 'HOME'
   if (path.startsWith('/rankings') || path === '/leaderboard' || path === '/rank') return 'RANKINGS'
-  if (path.startsWith('/problem-sets')) return 'PROBLEM SETS'
+  if (path.startsWith('/problem-sets')) {
+    const cat = route.query.category
+    if (cat === 'ALGO') return 'PROBLEM SETS // ALGO'
+    if (cat === 'DB') return 'PROBLEM SETS // SQL'
+    if (cat === 'OBJECTIVE') return 'PROBLEM SETS // QUIZ'
+    return 'PROBLEM SETS'
+  }
   if (path.startsWith('/practice')) return 'PRACTICE'
   if (path.startsWith('/exams')) return 'EXAMS'
   if (path.startsWith('/questions')) return 'QUESTIONS'
