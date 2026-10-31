@@ -260,7 +260,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 排行榜数据表格（严格直角规范，与 DataTable / QuestionsView 样式对齐） -->
-    <div v-else class="data-table-wrap card">
+    <div v-else :key="`${page}-${currentCategory}-${keyword}`" class="data-table-wrap card">
       <table class="data-table">
         <thead>
           <tr>
@@ -275,10 +275,11 @@ onBeforeUnmount(() => {
         </thead>
         <tbody>
           <tr
-            v-for="row in list"
+            v-for="(row, index) in list"
             :key="row.userId"
             class="rank-row"
             :class="{ 'is-self': row.userId === userStore.userInfo?.id }"
+            :style="{ '--drop-index': index }"
             @click="goToProfile(row.userId)"
           >
             <!-- 名次徽标（前三名使用单色灰阶徽章，不使用花哨表情） -->
@@ -667,6 +668,34 @@ onBeforeUnmount(() => {
 .rank-row {
   cursor: pointer;
   transition: background 0.12s ease;
+  animation: rankRowDropIn 0.42s cubic-bezier(0.25, 1.15, 0.5, 1) backwards;
+  animation-delay: calc(var(--drop-index, 0) * 30ms);
+  will-change: transform, opacity;
+}
+
+@keyframes rankRowDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-28px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(2.5px);
+  }
+  85% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rank-row {
+    animation: none !important;
+  }
 }
 
 .rank-row:hover td {

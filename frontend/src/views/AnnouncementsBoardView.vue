@@ -102,12 +102,13 @@ onMounted(loadData)
       暂无平台公告
     </div>
 
-    <!-- 公告列表卡片集：纯直角、厚度舒适、三层结构 -->
-    <div v-else class="announcement-list">
+    <!-- 公告列表卡片集：纯直角、厚度舒适、三层结构，挂载 :key 与 --drop-index 级联物理掉落 -->
+    <div v-else :key="page" class="announcement-list">
       <article
-        v-for="item in announcements"
+        v-for="(item, index) in announcements"
         :key="item.id"
         class="announcement-card card"
+        :style="{ '--drop-index': index }"
         @click="navigateToDetail(item.id)"
       >
         <!-- 顶层：置顶微标 + 标题 + 查看详情操作按钮 -->
@@ -220,7 +221,7 @@ onMounted(loadData)
   gap: 16px;
 }
 
-/* 单张公告卡片：舒适厚度（~100px），直角工业基底 */
+/* 单张公告卡片：舒适厚度（~100px），直角工业基底，接入级联物理掉落动效 */
 .announcement-card {
   padding: 20px 24px 16px;
   background: var(--surface);
@@ -228,15 +229,46 @@ onMounted(loadData)
   border-radius: 0;
   box-shadow: none;
   cursor: pointer;
+  position: relative;
   transition:
     border-color 0.15s ease,
-    background-color 0.15s ease;
-  position: relative;
+    background-color 0.15s ease,
+    transform 0.15s ease;
+  animation: cardDropIn 0.44s cubic-bezier(0.25, 1.15, 0.5, 1) backwards;
+  animation-delay: calc(var(--drop-index, 0) * 45ms);
+  will-change: transform, opacity;
 }
 
 .announcement-card:hover {
   border-color: var(--line-strong);
   background: #ffffff;
+  transform: translateY(-2px) !important;
+}
+
+/* 掉落动画核心关键帧（与题集完全一致） */
+@keyframes cardDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-38px) scale(0.985);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(3px) scale(1.002);
+  }
+  82% {
+    opacity: 1;
+    transform: translateY(-1.5px) scale(0.999);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .announcement-card {
+    animation: none !important;
+  }
 }
 
 .announcement-card:hover .announcement-title {
