@@ -6,11 +6,15 @@ import { useUserStore } from '@/stores/user'
 
 const mockPush = vi.fn()
 let currentRoutePath = '/'
+let currentRouteQuery: Record<string, any> = {}
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({
     get path() {
       return currentRoutePath
+    },
+    get query() {
+      return currentRouteQuery
     },
   }),
   useRouter: () => ({
@@ -19,7 +23,20 @@ vi.mock('vue-router', () => ({
   RouterLink: {
     name: 'RouterLink',
     props: ['to'],
-    template: '<a :href="typeof to === \'string\' ? to : to.path" :class="$attrs.class"><slot /></a>',
+    computed: {
+      resolvedHref(this: any): string {
+        const to = this.to
+        if (typeof to === 'string') return to
+        if (!to) return ''
+        const path = to.path || ''
+        if (to.query && Object.keys(to.query).length > 0) {
+          const qs = new URLSearchParams(to.query).toString()
+          return `${path}?${qs}`
+        }
+        return path
+      },
+    },
+    template: '<a :href="resolvedHref" :class="$attrs.class"><slot /></a>',
   },
 }))
 
@@ -29,6 +46,7 @@ describe('AppSidebar.vue', () => {
     localStorage.clear()
     mockPush.mockReset()
     currentRoutePath = '/'
+    currentRouteQuery = {}
   })
 
   it('renders 8 main navigation items', () => {
@@ -198,17 +216,120 @@ describe('AppSidebar.vue', () => {
     currentRoutePath = '/'
     const wrapper = mount(AppSidebar)
 
-    const questionTrigger = wrapper.find('.nav-accordion-trigger')
-    expect(wrapper.find('.accordion-content').exists()).toBe(true)
+    const questionsGroup = wrapper.findAll('.nav-accordion-group').find((g) => g.text().includes('题库'))
+    expect(questionsGroup).toBeDefined()
+    const questionTrigger = questionsGroup!.find('.nav-accordion-trigger')
+    expect(questionsGroup!.find('.accordion-content').exists()).toBe(true)
 
     // First click: collapse accordion
     await questionTrigger.trigger('click')
-    expect(wrapper.find('.accordion-content').exists()).toBe(false)
+    expect(questionsGroup!.find('.accordion-content').exists()).toBe(false)
     expect(mockPush).not.toHaveBeenCalled()
 
     // Second click: expand accordion
     await questionTrigger.trigger('click')
-    expect(wrapper.find('.accordion-content').exists()).toBe(true)
+    expect(questionsGroup!.find('.accordion-content').exists()).toBe(true)
     expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('renders 3 problem sets sub-items with corresponding query parameters in expanded mode', () => {
+    const wrapper = mount(AppSidebar)
+    const psGroup = wrapper.findAll('.nav-accordion-group').find((g) => g.text().includes('题集'))
+    expect(psGroup).toBeDefined()
+
+    const text = psGroup!.text()
+    expect(text).toContain('ALGO')
+    expect(text).toContain('算法题集')
+    expect(text).toContain('SQL')
+    expect(text).toContain('数据库题集')
+    expect(text).toContain('QUIZ')
+    expect(text).toContain('客观题集')
+
+    const subLinks = psGroup!.findAll('.sub-nav-item')
+    expect(subLinks).toHaveLength(3)
+
+    expect(subLinks[0].attributes('href')).toBe('/problem-sets?category=ALGO')
+    expect(subLinks[0].attributes('href')).toContain('?category=ALGO')
+    expect(subLinks[0].text()).toContain('ALGO')
+    expect(subLinks[0].text()).toContain('算法题集')
+
+    expect(subLinks[1].attributes('href')).toBe('/problem-sets?category=DB')
+    expect(subLinks[1].attributes('href')).toContain('?category=DB')
+    expect(subLinks[1].text()).toContain('SQL')
+    expect(subLinks[1].text()).toContain('数据库题集')
+
+    expect(subLinks[2].attributes('href')).toBe('/problem-sets?category=OBJECTIVE')
+    expect(subLinks[2].attributes('href')).toContain('?category=OBJECTIVE')
+    expect(subLinks[2].text()).toContain('QUIZ')
+    expect(subLinks[2].text()).toContain('客观题集')
+  })
+
+  it('toggles problem sets accordion open and closed on click without route push', async () => {
+    mockPush.mockClear()
+    currentRoutePath = '/'
+    const wrapper = mount(AppSidebar)
+
+    const psGroup = wrapper.findAll('.nav-accordion-group').find((g) => g.text().includes('题集'))
+    expect(psGroup).toBeDefined()
+
+    const psTrigger = psGroup!.find('.nav-accordion-trigger')
+    expect(psGroup!.find('.accordion-content').exists()).toBe(true)
+
+    // First click: collapse problem sets accordion
+    await psTrigger.trigger('click')
+    expect(psGroup!.find('.accordion-content').exists()).toBe(false)
+    expect(mockPush).not.toHaveBeenCalled()
+
+    // Second click: expand problem sets accordion
+    await psTrigger.trigger('click')
+    expect(psGroup!.find('.accordion-content').exists()).toBe(true)
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('handles flyout popover for 题集 in 68px collapsed mode with // PROBLEM SETS header and 3 categories', async () => {
+    localStorage.setItem('kece_sidebar_collapsed', 'true')
+    const wrapper = mount(AppSidebar)
+
+    expect(wrapper.classes()).toContain('is-collapsed')
+
+    const psGroup = wrapper.findAll('.nav-accordion-group')[1]
+    await psGroup.trigger('mouseenter')
+
+    const popover = psGroup.find('.flyout-popover')
+    expect(popover.exists()).toBe(true)
+    expect(popover.text()).toContain('// PROBLEM SETS')
+    expect(popover.text()).toContain('ALGO')
+    expect(popover.text()).toContain('算法题集')
+    expect(popover.text()).toContain('SQL')
+    expect(popover.text()).toContain('数据库题集')
+    expect(popover.text()).toContain('QUIZ')
+    expect(popover.text()).toContain('客观题集')
+
+    const flyoutLinks = popover.findAll('.flyout-item')
+    expect(flyoutLinks).toHaveLength(3)
+    expect(flyoutLinks[0].attributes('href')).toBe('/problem-sets?category=ALGO')
+    expect(flyoutLinks[1].attributes('href')).toBe('/problem-sets?category=DB')
+    expect(flyoutLinks[2].attributes('href')).toBe('/problem-sets?category=OBJECTIVE')
+  })
+
+  it('correctly activates SQL 数据库题集 when route has category=DB', () => {
+    currentRoutePath = '/problem-sets'
+    currentRouteQuery = { category: 'DB' }
+    const wrapper = mount(AppSidebar)
+
+    const psGroup = wrapper.findAll('.nav-accordion-group').find((g) => g.text().includes('题集'))
+    expect(psGroup).toBeDefined()
+
+    const psTrigger = psGroup!.find('.nav-accordion-trigger')
+    expect(psTrigger.classes()).toContain('active')
+
+    const subLinks = psGroup!.findAll('.sub-nav-item')
+    const algoItem = subLinks.find((el) => el.attributes('href')?.includes('category=ALGO'))
+    const dbItem = subLinks.find((el) => el.attributes('href')?.includes('category=DB'))
+    const quizItem = subLinks.find((el) => el.attributes('href')?.includes('category=OBJECTIVE'))
+
+    expect(algoItem?.classes()).not.toContain('active')
+    expect(dbItem?.classes()).toContain('active')
+    expect(quizItem?.classes()).not.toContain('active')
   })
 })

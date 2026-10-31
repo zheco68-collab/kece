@@ -31,6 +31,13 @@ const isQuestionsAccordionOpen = ref(true)
 const isFlyoutVisible = ref(false)
 let flyoutTimer: ReturnType<typeof setTimeout> | null = null
 
+// 题集手风琴折叠状态（展开模式下可用）
+const isProblemSetsAccordionOpen = ref(true)
+
+// 悬浮气泡防抖与状态（折叠模式下题集子菜单）
+const isPsFlyoutVisible = ref(false)
+let psFlyoutTimer: ReturnType<typeof setTimeout> | null = null
+
 onMounted(() => {
   emit('collapse-change', isCollapsed.value)
 })
@@ -62,12 +69,15 @@ function isQuestionsActive(): boolean {
   )
 }
 
-// 路由监听：若路由属于题库任一模块，自动展开手风琴
+// 路由监听：若路由属于题库或题集任一模块，自动展开手风琴
 watch(
   () => route.path,
   () => {
     if (isQuestionsActive() && !isCollapsed.value) {
       isQuestionsAccordionOpen.value = true
+    }
+    if (isProblemSetsActive() && !isCollapsed.value) {
+      isProblemSetsAccordionOpen.value = true
     }
   },
   { immediate: true }
@@ -115,6 +125,10 @@ function isSubQuestionActive(path: string): boolean {
   return route.path === path || route.path.startsWith(path + '/')
 }
 
+function isPsSubActive(cat: string): boolean {
+  return isProblemSetsActive() && (route.query.category || '') === cat
+}
+
 function onQuestionsHeaderClick() {
   if (isCollapsed.value) {
     // 68px 折叠模式下点击题库：展开侧边栏并打开手风琴
@@ -132,6 +146,23 @@ function onQuestionsHeaderClick() {
   }
 }
 
+function onProblemSetsHeaderClick() {
+  if (isCollapsed.value) {
+    // 68px 折叠模式下点击题集：展开侧边栏并打开手风琴
+    isCollapsed.value = false
+    try {
+      localStorage.setItem(STORAGE_KEY, 'false')
+    } catch {
+      // 忽略存储异常
+    }
+    emit('collapse-change', false)
+    isProblemSetsAccordionOpen.value = true
+  } else {
+    // 展开模式下：点击题集父项整行纯粹作为手风琴折叠/展开开关，绝对不触发路由跳转
+    isProblemSetsAccordionOpen.value = !isProblemSetsAccordionOpen.value
+  }
+}
+
 // 折叠态 68px 悬浮气泡进入与移出控制
 function onFlyoutMouseEnter() {
   if (!isCollapsed.value) return
@@ -146,6 +177,22 @@ function onFlyoutMouseLeave() {
   if (!isCollapsed.value) return
   flyoutTimer = setTimeout(() => {
     isFlyoutVisible.value = false
+  }, 120)
+}
+
+function onPsFlyoutMouseEnter() {
+  if (!isCollapsed.value) return
+  if (psFlyoutTimer) {
+    clearTimeout(psFlyoutTimer)
+    psFlyoutTimer = null
+  }
+  isPsFlyoutVisible.value = true
+}
+
+function onPsFlyoutMouseLeave() {
+  if (!isCollapsed.value) return
+  psFlyoutTimer = setTimeout(() => {
+    isPsFlyoutVisible.value = false
   }, 120)
 }
 
@@ -348,21 +395,116 @@ defineExpose({
         </div>
       </div>
 
-      <!-- 3. 题集 -->
-      <RouterLink
-        to="/problem-sets"
-        class="nav-item"
-        :class="{ active: isProblemSetsActive() }"
-        :title="isCollapsed ? '题集' : undefined"
+      <!-- 3. 题集 (垂直手风琴子菜单 / 68px 悬浮气泡) -->
+      <div
+        class="nav-accordion-group"
+        :class="{ 'has-flyout': isCollapsed }"
+        @mouseenter="onPsFlyoutMouseEnter"
+        @mouseleave="onPsFlyoutMouseLeave"
       >
-        <div class="nav-icon-wrap">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-          </svg>
+        <div
+          class="nav-item nav-accordion-trigger"
+          :class="{ active: isProblemSetsActive(), 'is-open': isProblemSetsAccordionOpen && !isCollapsed }"
+          :title="isCollapsed ? '题集' : undefined"
+          role="button"
+          tabindex="0"
+          :aria-expanded="isProblemSetsAccordionOpen"
+          @click="onProblemSetsHeaderClick"
+          @keydown.enter="onProblemSetsHeaderClick"
+          @keydown.space.prevent="onProblemSetsHeaderClick"
+        >
+          <div class="nav-icon-wrap">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+            </svg>
+          </div>
+          <span v-if="!isCollapsed" class="nav-label">题集</span>
+          <div
+            v-if="!isCollapsed"
+            class="accordion-toggle-indicator"
+            :title="isProblemSetsAccordionOpen ? '收起子菜单' : '展开子菜单'"
+            aria-hidden="true"
+          >
+            <svg
+              class="accordion-arrow"
+              :class="{ 'is-rotated': isProblemSetsAccordionOpen }"
+              viewBox="0 0 10 6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+            >
+              <path d="M1 1l4 4 4-4" />
+            </svg>
+          </div>
         </div>
-        <span v-if="!isCollapsed" class="nav-label">题集</span>
-      </RouterLink>
+
+        <!-- 展开模式：垂直手风琴折叠子菜单 -->
+        <div
+          v-if="!isCollapsed && isProblemSetsAccordionOpen"
+          class="accordion-content"
+        >
+          <RouterLink
+            :to="{ path: '/problem-sets', query: { category: 'ALGO' } }"
+            class="sub-nav-item"
+            :class="{ active: isPsSubActive('ALGO') }"
+          >
+            <span class="sub-code mono">ALGO</span>
+            <span class="sub-label">算法题集</span>
+          </RouterLink>
+          <RouterLink
+            :to="{ path: '/problem-sets', query: { category: 'DB' } }"
+            class="sub-nav-item"
+            :class="{ active: isPsSubActive('DB') }"
+          >
+            <span class="sub-code mono">SQL</span>
+            <span class="sub-label">数据库题集</span>
+          </RouterLink>
+          <RouterLink
+            :to="{ path: '/problem-sets', query: { category: 'OBJECTIVE' } }"
+            class="sub-nav-item"
+            :class="{ active: isPsSubActive('OBJECTIVE') }"
+          >
+            <span class="sub-code mono">QUIZ</span>
+            <span class="sub-label">客观题集</span>
+          </RouterLink>
+        </div>
+
+        <!-- 折叠模式：68px 悬浮直角气泡菜单 (Flyout Popover) -->
+        <div
+          v-if="isCollapsed && isPsFlyoutVisible"
+          class="flyout-popover"
+        >
+          <div class="flyout-header mono">// PROBLEM SETS</div>
+          <RouterLink
+            :to="{ path: '/problem-sets', query: { category: 'ALGO' } }"
+            class="flyout-item"
+            :class="{ active: isPsSubActive('ALGO') }"
+            @click="isPsFlyoutVisible = false"
+          >
+            <span class="sub-code mono">ALGO</span>
+            <span class="flyout-label">算法题集</span>
+          </RouterLink>
+          <RouterLink
+            :to="{ path: '/problem-sets', query: { category: 'DB' } }"
+            class="flyout-item"
+            :class="{ active: isPsSubActive('DB') }"
+            @click="isPsFlyoutVisible = false"
+          >
+            <span class="sub-code mono">SQL</span>
+            <span class="flyout-label">数据库题集</span>
+          </RouterLink>
+          <RouterLink
+            :to="{ path: '/problem-sets', query: { category: 'OBJECTIVE' } }"
+            class="flyout-item"
+            :class="{ active: isPsSubActive('OBJECTIVE') }"
+            @click="isPsFlyoutVisible = false"
+          >
+            <span class="sub-code mono">QUIZ</span>
+            <span class="flyout-label">客观题集</span>
+          </RouterLink>
+        </div>
+      </div>
 
       <!-- 4. 课练 -->
       <RouterLink

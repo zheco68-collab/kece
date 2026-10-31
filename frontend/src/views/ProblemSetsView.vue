@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { problemSetApi, type ProblemSetSummary } from '@/api/problemSet'
 import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 import Pagination from '@/components/Pagination.vue'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const toast = useToast()
 
 const keyword = ref('')
-const category = ref('')
+const category = ref((route.query.category as string) || '')
 const difficulty = ref('')
 const favoritedOnly = ref(false)
 const page = ref(1)
@@ -79,6 +80,16 @@ async function load() {
   }
 }
 
+function onSelectCategory(cat: string) {
+  category.value = cat
+  router.replace({
+    query: {
+      ...route.query,
+      category: cat || undefined,
+    },
+  })
+}
+
 async function onToggleFavorite(ps: ProblemSetSummary, e: Event) {
   e.preventDefault()
   e.stopPropagation()
@@ -108,6 +119,13 @@ watch(keyword, () => {
     load()
   }, 260)
 })
+
+watch(
+  () => route.query.category,
+  (newCat) => {
+    category.value = (newCat as string) || ''
+  }
+)
 
 watch([category, difficulty, favoritedOnly], () => {
   page.value = 1
@@ -167,7 +185,7 @@ onMounted(load)
             :key="t.value"
             class="tab-btn"
             :class="{ active: category === t.value }"
-            @click="category = t.value"
+            @click="onSelectCategory(t.value)"
           >
             {{ t.label }}
           </button>

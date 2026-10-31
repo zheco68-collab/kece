@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KECE 题集侧边栏拆分与手风琴联动高保真 Demo</title>
+  <style>
+    :root {
+      --bg: #fbfbfb;
+      --surface: #ffffff;
+      --surface-subtle: #f1f3f5;
+      --surface-hover: #f8f9fa;
+      --ink: #111111;
+      --ink-secondary: #475569;
+      --ink-tertiary: #8a8a8a;
+      --line: #e2e8f0;
+      --line-strong: #0f172a;
+      --accent: #1677ff;
+      --sidebar-width: 236px;
+      --sidebar-collapsed-width: 68px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --font-mono: "JetBrains Mono", Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      border-radius: 0 !important;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+      font-size: 14px;
+      overflow-x: hidden;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 顶部调控控制台 */
+    .deck-bar {
+      background: #0f172a;
+      color: #94a3b8;
+      padding: 10px 24px;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      z-index: 1000;
+      position: sticky;
+      top: 0;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .deck-title {
+      color: #ffffff;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .deck-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .ctrl-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    .ctrl-btn {
+      background: #1e293b;
+      color: #cbd5e1;
+      border: 1px solid #334155;
+      padding: 5px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.15s ease;
+    }
+
+    .ctrl-btn:hover {
+      background: #334155;
+      color: #ffffff;
+    }
+
+    .ctrl-btn.active {
+      background: #ffffff;
+      color: #0f172a;
+      font-weight: 700;
+      border-color: #ffffff;
+    }
+
+    /* 主布局 */
+    .app-layout {
+      display: flex;
+      min-height: calc(100vh - 49px);
+    }
+
+    /* ==========================================================================
+       左侧边栏 (AppSidebar)
+       ========================================================================== */
+    .app-sidebar {
+      width: var(--sidebar-width);
+      min-height: calc(100vh - 49px);
+      background: #ffffff;
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 49px;
+      height: calc(100vh - 49px);
+      transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 100;
+      user-select: none;
+      flex-shrink: 0;
+    }
+
+    .app-sidebar.is-collapsed {
+      width: var(--sidebar-collapsed-width);
+    }
+
+    .sidebar-header {
+      height: 50px;
+      min-height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px 0 16px;
+      border-bottom: 1px solid var(--line);
+      box-sizing: border-box;
+    }
+
+    .is-collapsed .sidebar-header {
+      padding: 0 8px;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .brand-link {
+      display: flex;
+      align-items: center;
+      text-decoration: none;
+      overflow: hidden;
+    }
+
+    .brand-logo-text {
+      font-family: var(--font-mono);
+      font-size: 16px;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      color: #111111;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .brand-logo-badge {
+      background: #111111;
+      color: #ffffff;
+      font-size: 11px;
+      padding: 2px 5px;
+      font-weight: 800;
+    }
+
+    .is-collapsed .brand-logo-text span {
+      display: none;
+    }
+
+    .collapse-toggle-btn {
+      width: 28px;
+      height: 28px;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #555555;
+    }
+
+    .collapse-toggle-btn:hover {
+      background: var(--surface-subtle);
+      color: #111111;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 10px 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .nav-item {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+      color: #555555;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      border-left: 3px solid transparent;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      position: relative;
+    }
+
+    .is-collapsed .nav-item {
+      padding: 0;
+      justify-content: center;
+      gap: 0;
+    }
+
+    .nav-item:hover {
+      background: var(--surface-hover);
+      color: #111111;
+    }
+
+    .nav-item.active {
+      border-left: 3px solid #111111;
+      background: var(--surface-subtle);
+      font-weight: 700;
+      color: #111111;
+    }
+
+    .nav-icon-wrap {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .nav-icon {
+      width: 18px;
+      height: 18px;
+    }
+
+    .nav-label {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .accordion-indicator {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #8a8a8a;
+      transition: color 0.15s ease;
+      pointer-events: none;
+    }
+
+    .nav-item:hover .accordion-indicator {
+      color: #111111;
+    }
+
+    .accordion-arrow {
+      width: 10px;
+      height: 6px;
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .accordion-arrow.is-rotated {
+      transform: rotate(180deg);
+    }
+
+    /* 手风琴子菜单 */
+    .accordion-group {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .accordion-content {
+      display: flex;
+      flex-direction: column;
+      background: #fafafa;
+      border-left: 3px solid transparent;
+      padding: 4px 0;
+    }
+
+    .sub-nav-item {
+      height: 36px;
+      display: flex;
+      align-items: center;
+      padding: 0 16px 0 46px;
+      gap: 8px;
+      color: #666666;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .sub-nav-item:hover {
+      background: #f1f3f5;
+      color: #111111;
+    }
+
+    .sub-nav-item.active {
+      color: #111111;
+      font-weight: 700;
+      background: #eef1f4;
+    }
+
+    .sub-code {
+      font-size: 11px;
+      color: #8a8a8a;
+      padding: 1px 4px;
+      background: #e9ecef;
+      letter-spacing: 0.3px;
+      font-weight: 600;
+    }
+
+    .sub-nav-item.active .sub-code {
+      background: #111111;
+      color: #ffffff;
+    }
+
+    /* 68px 折叠态悬浮 Popover 飞出菜单 */
+    .flyout-popover {
+      position: absolute;
+      left: 70px;
+      top: 0;
+      width: 176px;
+      background: #ffffff;
+      border: 1px solid #111111;
+      box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.12);
+      z-index: 200;
+      padding: 6px 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .flyout-header {
+      font-size: 10.5px;
+      color: #8a8a8a;
+      padding: 6px 14px 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .flyout-item {
+      height: 36px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      gap: 8px;
+      font-size: 13px;
+      color: #333333;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .flyout-item:hover {
+      background: #f1f3f5;
+      color: #111111;
+    }
+
+    .flyout-item.active {
+      background: #111111;
+      color: #ffffff;
+    }
+
+    .flyout-item.active .sub-code {
+      background: #ffffff;
+      color: #111111;
+    }
+
+    /* 方案 C 控制台与底部用户卡片 */
+    .admin-section {
+      margin-top: auto;
+      padding-top: 10px;
+    }
+
+    .admin-divider {
+      padding: 8px 16px 4px;
+    }
+
+    .admin-label {
+      font-size: 10.5px;
+      color: #8a8a8a;
+      letter-spacing: 0.5px;
+    }
+
+    .admin-nav-item {
+      color: #111111;
+      font-weight: 600;
+    }
+
+    .sidebar-footer {
+      border-top: 1px solid var(--line);
+      padding: 12px 14px;
+      background: #fafafa;
+    }
+
+    .user-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .is-collapsed .user-card {
+      justify-content: center;
+    }
+
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      background: #111111;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      transition: outline 0.15s ease;
+    }
+
+    .user-avatar:hover {
+      outline: 2px solid #111111;
+      outline-offset: 2px;
+    }
+
+    .user-meta {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .user-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: #111111;
+      cursor: pointer;
+    }
+
+    .user-name:hover {
+      text-decoration: underline;
+    }
+
+    .role-tag {
+      font-size: 10.5px;
+      color: #7048e8;
+      font-weight: 600;
+    }
+
+    .logout-btn {
+      background: #ffffff;
+      border: 1px solid var(--line);
+      font-size: 11px;
+      padding: 4px 8px;
+      cursor: pointer;
+      color: #666666;
+    }
+
+    .logout-btn:hover {
+      border-color: #111111;
+      color: #111111;
+    }
+
+    /* ==========================================================================
+       右侧主工作区 (Main Area)
+       ========================================================================== */
+    .layout-main-area {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .layout-topbar {
+      height: 50px;
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--line);
+      padding: 0 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 49px;
+      z-index: 40;
+    }
+
+    .breadcrumb-trail {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .bc-brand {
+      color: #8a8a8a;
+      font-weight: 700;
+    }
+
+    .bc-module {
+      color: #555555;
+    }
+
+    .bc-sep {
+      color: #8a8a8a;
+    }
+
+    .bc-current {
+      color: #111111;
+      font-weight: 700;
+    }
+
+    .telemetry-pill {
+      font-size: 12px;
+      background: #edfcf2;
+      border: 1px solid #bbf7d0;
+      color: #15803d;
+      padding: 4px 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+    }
+
+    .dot-online {
+      width: 6px;
+      height: 6px;
+      background: #22c55e;
+      display: inline-block;
+    }
+
+    .main-content {
+      padding: 32px 36px;
+      max-width: 1240px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* 题集页面大厅风格 */
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-bottom: 24px;
+    }
+
+    .page-title {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 4px;
+    }
+
+    .head-sub {
+      color: var(--ink-tertiary);
+      font-size: 13px;
+    }
+
+    .progress-badge-card {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      padding: 10px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 140px;
+    }
+
+    .p-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+
+    .p-bar {
+      height: 4px;
+      background: #e2e8f0;
+      overflow: hidden;
+    }
+
+    .p-fill {
+      height: 100%;
+      background: #111111;
+    }
+
+    /* 过滤工具栏 */
+    .filter-bar {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .category-tabs {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      background: #f1f3f5;
+      padding: 2px;
+    }
+
+    .cat-tab {
+      padding: 6px 14px;
+      font-size: 13px;
+      color: #555555;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.15s ease;
+    }
+
+    .cat-tab:hover {
+      color: #111111;
+    }
+
+    .cat-tab.active {
+      background: #111111;
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    .search-input {
+      border: 1px solid var(--line);
+      padding: 6px 12px;
+      font-size: 13px;
+      outline: none;
+      width: 220px;
+    }
+
+    .search-input:focus {
+      border-color: #111111;
+    }
+
+    /* 题集卡片瀑布流与掉落动效 */
+    .problem-sets-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .ps-card {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+      cursor: pointer;
+      /* 阶梯掉落动效 */
+      animation: cardDropIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+      animation-delay: calc(var(--drop-index, 0) * 45ms);
+    }
+
+    @keyframes cardDropIn {
+      0% {
+        opacity: 0;
+        transform: translateY(-16px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .ps-card:hover {
+      border-color: #111111;
+      transform: translateY(-2px);
+    }
+
+    .ps-main {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .ps-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .cat-badge {
+      font-size: 11px;
+      padding: 2px 6px;
+      font-weight: 700;
+    }
+
+    .cat-badge.ALGO {
+      background: #111111;
+      color: #ffffff;
+    }
+
+    .cat-badge.DB {
+      background: #0284c7;
+      color: #ffffff;
+    }
+
+    .cat-badge.OBJECTIVE {
+      background: #7c3aed;
+      color: #ffffff;
+    }
+
+    .ps-name {
+      font-size: 15px;
+      font-weight: 700;
+      color: #111111;
+    }
+
+    .ps-desc {
+      font-size: 13px;
+      color: #666666;
+    }
+
+    .ps-tags {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .tag-item {
+      font-size: 11px;
+      background: #f1f3f5;
+      color: #555555;
+      padding: 2px 6px;
+    }
+
+    .ps-meta {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .ps-stat {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      font-size: 12px;
+      color: #8a8a8a;
+    }
+
+    .ps-stat strong {
+      font-size: 14px;
+      color: #111111;
+    }
+
+    .action-btn {
+      padding: 8px 16px;
+      background: #111111;
+      color: #ffffff;
+      border: 1px solid #111111;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .action-btn:hover {
+      background: #2a2a2a;
+    }
+
+    .empty-state {
+      padding: 48px;
+      text-align: center;
+      border: 1px dashed var(--line);
+      background: #ffffff;
+      color: #8a8a8a;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部调控控制台 -->
+  <div class="deck-bar">
+    <div class="deck-title mono">
+      <span>KECE // PROTO-LAB</span>
+      <span style="color:#64748b">/</span>
+      <span>题集手风琴分类拆分原型对比</span>
+    </div>
+    <div class="deck-controls">
+      <div class="ctrl-group">
+        <span>子项形态选择:</span>
+        <button class="ctrl-btn active" id="btnMode3" onclick="setMode('3')">形态 A: 3项精简 (与题库1:1对称)</button>
+        <button class="ctrl-btn" id="btnMode4" onclick="setMode('4')">形态 B: 4项全览 (含ALL全选)</button>
+      </div>
+      <div class="ctrl-group">
+        <span>侧边栏状态:</span>
+        <button class="ctrl-btn" id="btnToggleCollapse" onclick="toggleSidebarCollapse()">展开 236px</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-layout">
+    <!-- 左侧垂直侧边栏 -->
+    <aside class="app-sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <a class="brand-link" href="#">
+          <div class="brand-logo-text">
+            <span class="brand-logo-badge">K</span>
+            <span>KECE 课测</span>
+          </div>
+        </a>
+        <button class="collapse-toggle-btn" onclick="toggleSidebarCollapse()" title="折叠/展开">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="11 17 6 12 11 7" />
+            <polyline points="18 17 13 12 18 7" />
+          </svg>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <!-- 1. 首页 -->
+        <div class="nav-item" onclick="selectNav('home')">
+          <div class="nav-icon-wrap">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z" />
+              <polyline points="9 21 9 12 15 12 15 21" />
+            </svg>
+          </div>
+          <span class="nav-label">首页</span>
+        </div>
+
+        <!-- 2. 题库 ▾ (纯手风琴) -->
+        <div class="accordion-group" id="groupQuestions">
+          <div class="nav-item" id="navItemQuestions" onclick="toggleQuestionsAccordion()">
+            <div class="nav-icon-wrap">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
+            </div>
+            <span class="nav-label">题库</span>
+            <div class="accordion-indicator">
+              <svg class="accordion-arrow" id="arrowQuestions" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M1 1l4 4 4-4" />
+              </svg>
+            </div>
+          </div>
+          <!-- 题库展开子菜单 -->
+          <div class="accordion-content" id="contentQuestions" style="display:none;">
+            <div class="sub-nav-item" onclick="selectQuestionSub('ALGO')">
+              <span class="sub-code mono">ALGO</span>
+              <span>算法编程</span>
+            </div>
+            <div class="sub-nav-item" onclick="selectQuestionSub('SQL')">
+              <span class="sub-code mono">SQL</span>
+              <span>数据库题</span>
+            </div>
+            <div class="sub-nav-item" onclick="selectQuestionSub('QUIZ')">
+              <span class="sub-code mono">QUIZ</span>
+              <span>客观题库</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. 题集 ▾ (全新手风琴拆分核心演示区) -->
+        <div class="accordion-group" id="groupProblemSets" onmouseenter="onPsHover(true)" onmouseleave="onPsHover(false)">
+          <div class="nav-item active" id="navItemProblemSets" onclick="toggleProblemSetsAccordion()">
+            <div class="nav-icon-wrap">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+            </div>
+            <span class="nav-label">题集</span>
+            <div class="accordion-indicator">
+              <svg class="accordion-arrow is-rotated" id="arrowProblemSets" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M1 1l4 4 4-4" />
+              </svg>
+            </div>
+          </div>
+
+          <!-- 题集展开子菜单 (支持动态切换 3项 或 4项 模式) -->
+          <div class="accordion-content" id="contentProblemSets">
+            <!-- 4项模式下的 ALL -->
+            <div class="sub-nav-item active" id="subPsAll" style="display:none;" onclick="selectCategory('')">
+              <span class="sub-code mono">ALL</span>
+              <span>全部精选题单</span>
+            </div>
+            <!-- 核心 3 大分类 -->
+            <div class="sub-nav-item" id="subPsAlgo" onclick="selectCategory('ALGO')">
+              <span class="sub-code mono">ALGO</span>
+              <span>算法题集</span>
+            </div>
+            <div class="sub-nav-item" id="subPsDb" onclick="selectCategory('DB')">
+              <span class="sub-code mono">SQL</span>
+              <span>数据库题集</span>
+            </div>
+            <div class="sub-nav-item" id="subPsObj" onclick="selectCategory('OBJECTIVE')">
+              <span class="sub-code mono">QUIZ</span>
+              <span>客观题集</span>
+            </div>
+          </div>
+
+          <!-- 68px 折叠态 Flyout Popover -->
+          <div class="flyout-popover" id="psFlyout" style="display:none;">
+            <div class="flyout-header mono">// PROBLEM SETS</div>
+            <div class="flyout-item" id="flyPsAll" style="display:none;" onclick="selectCategory('')">
+              <span class="sub-code mono">ALL</span>
+              <span>全部题集</span>
+            </div>
+            <div class="flyout-item" onclick="selectCategory('ALGO')">
+              <span class="sub-code mono">ALGO</span>
+              <span>算法题集</span>
+            </div>
+            <div class="flyout-item" onclick="selectCategory('DB')">
+              <span class="sub-code mono">SQL</span>
+              <span>数据库题集</span>
+            </div>
+            <div class="flyout-item" onclick="selectCategory('OBJECTIVE')">
+              <span class="sub-code mono">QUIZ</span>
+              <span>客观题集</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. 课练 -->
+        <div class="nav-item">
+          <div class="nav-icon-wrap">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M2 3h20" />
+              <path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3" />
+              <path d="m7 21 5-5 5 5" />
+            </svg>
+          </div>
+          <span class="nav-label">课练</span>
+        </div>
+
+        <!-- 5. 考试 -->
+        <div class="nav-item">
+          <div class="nav-icon-wrap">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="12" cy="12" r="9" />
+              <polyline points="12 6 12 12 15 15" />
+            </svg>
+          </div>
+          <span class="nav-label">考试</span>
+        </div>
+
+        <!-- 6. 排名 -->
+        <div class="nav-item">
+          <div class="nav-icon-wrap">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <line x1="18" y1="20" x2="18" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="14" />
+            </svg>
+          </div>
+          <span class="nav-label">排名</span>
+        </div>
+
+        <!-- 7. 公告栏 -->
+        <div class="nav-item">
+          <div class="nav-icon-wrap">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+          </div>
+          <span class="nav-label">公告栏</span>
+        </div>
+
+        <!-- 8. 个人主页 -->
+        <div class="nav-item">
+          <div class="nav-icon-wrap">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+          </div>
+          <span class="nav-label">个人主页</span>
+        </div>
+
+        <!-- 方案 C 控制台 -->
+        <div class="admin-section">
+          <div class="admin-divider">
+            <span class="admin-label mono">// ADMINISTRATION</span>
+          </div>
+          <div class="nav-item admin-nav-item">
+            <div class="nav-icon-wrap">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <rect x="2" y="3" width="20" height="14" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+            </div>
+            <span class="nav-label">管理控制台</span>
+          </div>
+        </div>
+      </nav>
+
+      <!-- 底部用户卡片 -->
+      <div class="sidebar-footer">
+        <div class="user-card">
+          <div class="user-avatar mono">Z</div>
+          <div class="user-meta">
+            <div class="user-name">zheco68</div>
+            <div class="role-tag mono">管理员</div>
+          </div>
+          <button class="logout-btn mono">退出</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 右侧工作区 -->
+    <main class="layout-main-area">
+      <!-- 50px 顶栏 -->
+      <header class="layout-topbar">
+        <div class="breadcrumb-trail mono">
+          <span class="bc-brand">KECE //</span>
+          <span class="bc-module">PORTAL</span>
+          <span class="bc-sep">/</span>
+          <span class="bc-current" id="topbarCategoryLabel">PROBLEM SETS</span>
+        </div>
+        <div class="telemetry-pill mono">
+          <span class="dot-online"></span>
+          <span>CLUSTER: 2/2 ONLINE</span>
+        </div>
+      </header>
+
+      <!-- 题集大厅内容主体 -->
+      <div class="main-content">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">专题题集</h1>
+            <p class="head-sub">体系化专项题单 · 结构化编排与断点续刷</p>
+          </div>
+          <div class="progress-badge-card">
+            <div class="p-head">
+              <span class="muted">已通关题集</span>
+              <strong class="mono" id="progressStats">2 / 6</strong>
+            </div>
+            <div class="p-bar">
+              <div class="p-fill" id="progressFill" style="width: 33%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 页面内分类过滤栏 -->
+        <div class="filter-bar">
+          <div class="category-tabs">
+            <button class="cat-tab active" id="tabAll" onclick="selectCategory('')">全部分类</button>
+            <button class="cat-tab" id="tabAlgo" onclick="selectCategory('ALGO')">算法编程</button>
+            <button class="cat-tab" id="tabDb" onclick="selectCategory('DB')">数据库 SQL</button>
+            <button class="cat-tab" id="tabObj" onclick="selectCategory('OBJECTIVE')">标准客观</button>
+          </div>
+          <input type="text" class="search-input" placeholder="按题集名称、关键词搜索..." oninput="onSearch(this.value)">
+        </div>
+
+        <!-- 题集卡片流 (带阶梯掉落动效) -->
+        <div class="problem-sets-grid" id="problemSetsContainer">
+          <!-- 动态渲染数据 -->
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // 模拟题集真实数据
+    const allProblemSets = [
+      {
+        id: 101,
+        title: "LeetCode 经典热题 100 必刷精选",
+        desc: "全面覆盖双指针、动态规划、二叉树与哈希表等大厂核心高频算法题型，夯实数据结构功底。",
+        category: "ALGO",
+        categoryName: "算法编程",
+        difficulty: "MEDIUM",
+        difficultyName: "中等",
+        itemCount: 100,
+        solvedCount: 42,
+        participantCount: 1280,
+        tags: ["动态规划", "二叉树", "高频热题"]
+      },
+      {
+        id: 102,
+        title: "图论与最短路径高阶专项攻坚",
+        desc: "涵盖 Dijkstra、Floyd、拓扑排序与并查集连通性判定，深度剖析复杂图建模技巧。",
+        category: "ALGO",
+        categoryName: "算法编程",
+        difficulty: "HARD",
+        difficultyName: "困难",
+        itemCount: 35,
+        solvedCount: 12,
+        participantCount: 540,
+        tags: ["最短路", "拓扑排序", "强连通"]
+      },
+      {
+        id: 201,
+        title: "MySQL 核心查询与聚合分析实战 (50题)",
+        desc: "包含多表 JOIN 关联、GROUP BY 分组过滤、窗口函数 OVER(PARTITION BY) 及时间序列分析。",
+        category: "DB",
+        categoryName: "数据库 SQL",
+        difficulty: "MEDIUM",
+        difficultyName: "中等",
+        itemCount: 50,
+        solvedCount: 50, // 已通关
+        participantCount: 960,
+        tags: ["JOIN", "窗口函数", "聚合统计"]
+      },
+      {
+        id: 202,
+        title: "高性能 SQL 调优与索引失效案例剖析",
+        desc: "深度评测在千万级大表下深分页优化、覆盖索引消除回表、以及复杂事务锁冲突的规避策略。",
+        category: "DB",
+        categoryName: "数据库 SQL",
+        difficulty: "HARD",
+        difficultyName: "困难",
+        itemCount: 20,
+        solvedCount: 8,
+        participantCount: 430,
+        tags: ["执行计划", "B+树索引", "锁分析"]
+      },
+      {
+        id: 301,
+        title: "计算机网络与 HTTP/HTTPS 协议体系考核",
+        desc: "涵盖 TCP 三次握手四次挥手、TIME_WAIT 状态成因、TLS 1.3 握手流程及常见状态码剖析。",
+        category: "OBJECTIVE",
+        categoryName: "标准客观",
+        difficulty: "EASY",
+        difficultyName: "简单",
+        itemCount: 40,
+        solvedCount: 40, // 已通关
+        participantCount: 1650,
+        tags: ["TCP/IP", "HTTP3", "TLS加密"]
+      },
+      {
+        id: 302,
+        title: "现代操作系统核心理论与并发模型合卷",
+        desc: "深入评测进程线程协程演进、虚拟内存页表置换算法、死锁预防定理与 CAS 无锁原子操作。",
+        category: "OBJECTIVE",
+        categoryName: "标准客观",
+        difficulty: "MEDIUM",
+        difficultyName: "中等",
+        itemCount: 60,
+        solvedCount: 28,
+        participantCount: 890,
+        tags: ["虚拟内存", "并发模型", "CAS无锁"]
+      }
+    ];
+
+    // 全局响应式状态
+    let currentCategory = ""; // '' | 'ALGO' | 'DB' | 'OBJECTIVE'
+    let currentSearch = "";
+    let isPsAccordionOpen = true;
+    let isQAccordionOpen = false;
+    let isCollapsed = false;
+    let currentMode = "3"; // '3' | '4'
+
+    function renderCards() {
+      const container = document.getElementById("problemSetsContainer");
+      
+      const filtered = allProblemSets.filter(ps => {
+        const matchCat = !currentCategory || ps.category === currentCategory;
+        const matchSearch = !currentSearch || ps.title.includes(currentSearch) || ps.desc.includes(currentSearch);
+        return matchCat && matchSearch;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="empty-state">未找到匹配的题集，请尝试清除关键词或切换筛选条件。</div>`;
+        return;
+      }
+
+      container.innerHTML = filtered.map((ps, idx) => `
+        <div class="ps-card" style="--drop-index: ${idx}">
+          <div class="ps-main">
+            <div class="ps-title-row">
+              <span class="cat-badge mono ${ps.category}">${ps.category}</span>
+              <span class="ps-name">${ps.title}</span>
+            </div>
+            <div class="ps-desc">${ps.desc}</div>
+            <div class="ps-tags">
+              ${ps.tags.map(t => `<span class="tag-item">#${t}</span>`).join('')}
+              <span class="tag-item mono">${ps.difficultyName}</span>
+            </div>
+          </div>
+          <div class="ps-meta">
+            <div class="ps-stat">
+              <span>攻克进度</span>
+              <strong class="mono">${ps.solvedCount} / ${ps.itemCount} 题</strong>
+            </div>
+            <div class="ps-stat">
+              <span>参与人数</span>
+              <strong class="mono">${ps.participantCount} 人</strong>
+            </div>
+            <button class="action-btn">开始刷题 &rarr;</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 分类切换核心逻辑（双向联动）
+    function selectCategory(cat) {
+      currentCategory = cat;
+      
+      // 1. 同步页面内 Tab 状态
+      document.querySelectorAll('.cat-tab').forEach(tab => tab.classList.remove('active'));
+      if (!cat) document.getElementById('tabAll').classList.add('active');
+      else if (cat === 'ALGO') document.getElementById('tabAlgo').classList.add('active');
+      else if (cat === 'DB') document.getElementById('tabDb').classList.add('active');
+      else if (cat === 'OBJECTIVE') document.getElementById('tabObj').classList.add('active');
+
+      // 2. 同步侧边栏子项状态
+      document.querySelectorAll('#contentProblemSets .sub-nav-item').forEach(el => el.classList.remove('active'));
+      if (currentMode === '4' && !cat) document.getElementById('subPsAll').classList.add('active');
+      else if (cat === 'ALGO') document.getElementById('subPsAlgo').classList.add('active');
+      else if (cat === 'DB') document.getElementById('subPsDb').classList.add('active');
+      else if (cat === 'OBJECTIVE') document.getElementById('subPsObj').classList.add('active');
+
+      // 3. 更新顶栏等宽路径
+      const labelMap = {
+        '': 'PROBLEM SETS // ALL',
+        'ALGO': 'PROBLEM SETS // ALGO',
+        'DB': 'PROBLEM SETS // SQL',
+        'OBJECTIVE': 'PROBLEM SETS // QUIZ'
+      };
+      document.getElementById('topbarCategoryLabel').textContent = labelMap[cat] || 'PROBLEM SETS';
+
+      // 4. 折叠 Popover 自动关闭
+      document.getElementById('psFlyout').style.display = 'none';
+
+      // 5. 重新渲染带瀑布流动画的卡片列表
+      renderCards();
+    }
+
+    function toggleProblemSetsAccordion() {
+      if (isCollapsed) {
+        toggleSidebarCollapse();
+        isPsAccordionOpen = true;
+      } else {
+        isPsAccordionOpen = !isPsAccordionOpen;
+      }
+      
+      const content = document.getElementById("contentProblemSets");
+      const arrow = document.getElementById("arrowProblemSets");
+      
+      if (isPsAccordionOpen && !isCollapsed) {
+        content.style.display = "flex";
+        arrow.classList.add("is-rotated");
+      } else {
+        content.style.display = "none";
+        arrow.classList.remove("is-rotated");
+      }
+    }
+
+    function toggleQuestionsAccordion() {
+      if (isCollapsed) {
+        toggleSidebarCollapse();
+        isQAccordionOpen = true;
+      } else {
+        isQAccordionOpen = !isQAccordionOpen;
+      }
+      
+      const content = document.getElementById("contentQuestions");
+      const arrow = document.getElementById("arrowQuestions");
+      
+      if (isQAccordionOpen && !isCollapsed) {
+        content.style.display = "flex";
+        arrow.classList.add("is-rotated");
+      } else {
+        content.style.display = "none";
+        arrow.classList.remove("is-rotated");
+      }
+    }
+
+    function toggleSidebarCollapse() {
+      isCollapsed = !isCollapsed;
+      const sidebar = document.getElementById("sidebar");
+      const btn = document.getElementById("btnToggleCollapse");
+
+      if (isCollapsed) {
+        sidebar.classList.add("is-collapsed");
+        btn.textContent = "折叠 68px";
+        btn.classList.add("active");
+        document.getElementById("contentProblemSets").style.display = "none";
+        document.getElementById("contentQuestions").style.display = "none";
+      } else {
+        sidebar.classList.remove("is-collapsed");
+        btn.textContent = "展开 236px";
+        btn.classList.remove("active");
+        if (isPsAccordionOpen) document.getElementById("contentProblemSets").style.display = "flex";
+        if (isQAccordionOpen) document.getElementById("contentQuestions").style.display = "flex";
+      }
+    }
+
+    function onPsHover(isEnter) {
+      if (!isCollapsed) return;
+      const flyout = document.getElementById("psFlyout");
+      flyout.style.display = isEnter ? "flex" : "none";
+    }
+
+    function setMode(mode) {
+      currentMode = mode;
+      document.getElementById("btnMode3").classList.toggle("active", mode === "3");
+      document.getElementById("btnMode4").classList.toggle("active", mode === "4");
+
+      const allSub = document.getElementById("subPsAll");
+      const flyAll = document.getElementById("flyPsAll");
+
+      if (mode === "4") {
+        allSub.style.display = "flex";
+        flyAll.style.display = "flex";
+      } else {
+        allSub.style.display = "none";
+        flyAll.style.display = "none";
+      }
+
+      selectCategory(currentCategory);
+    }
+
+    function onSearch(val) {
+      currentSearch = val.trim();
+      renderCards();
+    }
+
+    // 初始化渲染
+    renderCards();
+  </script>
+</body>
+</html>
+
