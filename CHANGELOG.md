@@ -4,6 +4,54 @@
 
 ---
 
+## [v0.4.0] - 2026-10-31
+
+### 全局前台左侧垂直侧边栏导航架构全面落地 (Left Vertical Sidebar Navigation)
+* **前台母版全面重构为左右双栏工业风布局**：
+  * 废除原有顶部横向悬浮导航栏（`AppHeader.vue`），重构前台母版（`DefaultLayout.vue`）为「左侧固定粘性侧边栏 + 右侧自适应工作区」架构。
+  * **全新工业级侧边栏组件**（`AppSidebar.vue`）：全面遵循直角工业风设计（`border-radius: 0`），提供 236px 展开与 68px 折叠两档自适应尺寸，折叠状态通过 `localStorage` 自动持久化记忆。
+  * **8 大前台主导航矩阵统一归集**：
+    1. `首页` (`/`)：集群遥测概览与技术矩阵大厅；
+    2. `题库 ▾` (`/questions`)：垂直手风琴折叠子菜单，展开包含算法编程 (ALGO)、数据库题 (SQL)、客观题库 (QUIZ)；在 68px 折叠态下鼠标悬停触发右侧直角悬浮气泡菜单（Flyout Popover）；
+    3. `题集` (`/problem-sets`)：独立顶级精选题集流式大厅；
+    4. `课练` (`/practice`)：随堂课练与协同训练；
+    5. `考试` (`/exams`)：防作弊全真在线限时考核系统；
+    6. `排名` (`/rankings`)：全域天梯算法、SQL 与客观题多榜天梯榜单；
+    7. `公告栏` (`/announcements`)：官方更新通知与系统公告看板；
+    8. `个人主页` (`/profile`)：个人综合数据打卡热力图与提交记录聚合。
+  * **高反差工业风激活高亮**：激活项采用 `3px` 纯黑左侧重指示条与柔和灰阶高反差视觉呈现；支持深度子路由自动匹配高亮。
+  * **品牌区域视觉对齐**：侧边栏顶部品牌区无冗余文字干扰，直接纯净呈现官方 Logo（展开态展示 `kece-logo.png`，折叠态展示 `kece-mark.png`），顶部高 50px 与右侧辅助顶栏底部分割线实现像素级水平基线对齐。
+
+---
+
+### 个人主页快捷直达与操作流转优化 (Profile Fast Access & User Card)
+* **双通道直达个人主页**：
+  * 主导航栏第 8 项独立新增「个人主页」入口；
+  * 侧边栏底部常驻已登录用户卡片，用户头像（悬浮带纯黑直角线框微动效）与用户名（悬浮带下划线动效）点击均可秒级直达个人主页。
+* **独立登出与访客态管控**：
+  * 底部用户卡片配备独立直角 `[退出]` 按钮，登出后自动调用 `userStore.clearAuth()` 并跳转登录页；
+  * 游客身份展示直角 `[登录 / 注册]` 引导按钮。
+
+---
+
+### 方案 C 特权管理控制台与全链路 Fail-Secure 鉴权隔离 (Scheme C RBAC & 404 Disguise)
+* **DOM 树节点级物理消除**：
+  * 侧边栏底部、用户卡片上方设立独立 `// ADMINISTRATION` 特权控制台模块；
+  * 采用严格 `v-if="userStore.isLoggedIn && (userStore.hasRole('ADMIN') || userStore.hasRole('TEACHER'))"` 条件渲染，普通学生与游客在页面 DOM 树中物理消除该节点。
+* **全链路 Fail-Secure 404 防嗅探防御**：
+  * 全局路由守卫 `router.beforeEach` 升级为递归安全核验（`to.matched.some`）；
+  * 针对未授权角色或未登录访客尝试探测 `/admin/**` 路径时，一律静默伪装重定向至 `{ name: 'not-found' }`（404 Not Found），消除 `403 Forbidden` 暴露后台路径存在性的安全漏洞。
+* **后端零信任数字签名保障**：所有 `/api/admin/**` 管理接口严格受 Spring Boot `@RequireRole` 拦截器与 HMAC-SHA256 JWT 双重数字签名守护。
+
+---
+
+### 动效体验升级：全域排名与公告栏动态流式入场 (Cascade Drop-in Animation)
+* **瀑布流阶梯式掉落入场**：
+  * 全域天梯排名（`RankingsView.vue`）与公告看板（`AnnouncementsBoardView.vue`）全面接入与题集大厅同款的自上而下阶梯式卡片掉落动效；
+  * 结合 CSS 变量 `--drop-index` 自动计算错位延迟，页面初次加载或切换标签时呈现连贯流畅的物理下落阻尼质感。
+
+---
+
 ## [v0.3.0] - 2026-10-29
 
 ### 身份认证现代化：邮箱与密码体系升级 (Email & Password Authentication)

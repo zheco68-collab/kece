@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KECE 后台管理 UI 放置方案对比 Demo</title>
+  <style>
+    :root {
+      --bg: #f8f9fa;
+      --surface: #ffffff;
+      --surface-subtle: #f1f3f5;
+      --surface-hover: #eceef1;
+      --ink: #111111;
+      --ink-secondary: #475569;
+      --ink-tertiary: #94a3b8;
+      --line: #e2e8f0;
+      --line-strong: #0f172a;
+      --accent: #1677ff;
+      --sidebar-width: 236px;
+      --sidebar-collapsed-width: 68px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --font-mono: "JetBrains Mono", Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      border-radius: 0 !important;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+      font-size: 14px;
+      overflow-x: hidden;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 顶部方案调控控制器 */
+    .deck-bar {
+      background: #0f172a;
+      color: #94a3b8;
+      padding: 10px 24px;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12.5px;
+      z-index: 1000;
+      position: sticky;
+      top: 0;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .deck-badge {
+      background: #7c3aed;
+      color: #fff;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+    }
+
+    .deck-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .deck-btn {
+      background: #1e293b;
+      color: #cbd5e1;
+      border: 1px solid #334155;
+      padding: 5px 12px;
+      font-size: 11.5px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      transition: all 0.15s ease;
+    }
+    .deck-btn:hover {
+      background: #334155;
+      color: #fff;
+    }
+    .deck-btn.active {
+      background: #ffffff;
+      color: #0f172a;
+      font-weight: 700;
+      border-color: #ffffff;
+    }
+
+    .deck-sep {
+      color: #334155;
+      margin: 0 4px;
+    }
+
+    /* 方案说明横幅 */
+    .proposal-banner {
+      background: #1e1b4b;
+      color: #e0e7ff;
+      padding: 10px 24px;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #312e81;
+    }
+
+    .proposal-badge {
+      background: #4f46e5;
+      color: #fff;
+      padding: 1px 6px;
+      font-size: 11px;
+      font-weight: 700;
+      margin-right: 8px;
+    }
+
+    /* 整体双栏容器 */
+    .app-wrapper {
+      display: flex;
+      min-height: calc(100vh - 84px);
+    }
+
+    /* =========================================
+       左侧边栏 (AppSidebar)
+       ========================================= */
+    .app-sidebar {
+      width: var(--sidebar-width);
+      min-width: var(--sidebar-width);
+      background: var(--surface);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 84px;
+      height: calc(100vh - 84px);
+      z-index: 100;
+      transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .app-sidebar.is-collapsed {
+      width: var(--sidebar-collapsed-width);
+      min-width: var(--sidebar-collapsed-width);
+    }
+
+    /* 侧边栏头部 */
+    .sidebar-header {
+      padding: 16px 16px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 62px;
+    }
+
+    .brand-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--ink);
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .brand-logo {
+      height: 28px;
+      width: auto;
+      display: block;
+      flex-shrink: 0;
+    }
+
+    .brand-meta {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.15;
+    }
+
+    .brand-name {
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      color: var(--ink);
+    }
+
+    .brand-sub {
+      font-size: 10px;
+      color: var(--ink-tertiary);
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+
+    .collapse-toggle {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--ink-tertiary);
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .collapse-toggle:hover {
+      border-color: var(--line);
+      color: var(--ink);
+      background: var(--surface-subtle);
+    }
+
+    /* 导航菜单容器 */
+    .sidebar-nav {
+      flex: 1;
+      padding: 10px 8px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .nav-group-title {
+      font-size: 10.5px;
+      font-family: var(--font-mono);
+      color: var(--ink-tertiary);
+      padding: 8px 10px 4px;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .nav-item-wrap {
+      position: relative;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8.5px 12px;
+      color: var(--ink-secondary);
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+      border-left: 3px solid transparent;
+    }
+
+    .nav-item-left {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .nav-icon {
+      width: 17px;
+      height: 17px;
+      flex-shrink: 0;
+      stroke-width: 1.8;
+      color: var(--ink-secondary);
+      transition: color 0.15s ease;
+    }
+
+    .nav-label {
+      font-size: 13.5px;
+      white-space: nowrap;
+      transition: opacity 0.15s;
+    }
+
+    .nav-item:hover {
+      background: var(--surface-subtle);
+      color: var(--ink);
+    }
+    .nav-item:hover .nav-icon {
+      color: var(--ink);
+    }
+
+    /* 激活态（左侧指示条） */
+    .nav-item.active {
+      background: #f1f3f5;
+      color: #111111;
+      font-weight: 700;
+      border-left: 3px solid #111111;
+      padding-left: 9px;
+    }
+    .nav-item.active .nav-icon {
+      color: #111111;
+      stroke-width: 2.2;
+    }
+
+    /* 题库折叠箭头 */
+    .chevron-icon {
+      width: 12px;
+      height: 12px;
+      color: var(--ink-tertiary);
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .chevron-icon.is-open {
+      transform: rotate(180deg);
+    }
+
+    /* 题库手风琴二级子菜单 */
+    .sub-nav-list {
+      display: flex;
+      flex-direction: column;
+      padding-left: 18px;
+      margin: 2px 0 6px;
+      border-left: 1.5px solid var(--line);
+      margin-left: 20px;
+      gap: 2px;
+    }
+
+    .sub-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      color: var(--ink-secondary);
+      text-decoration: none;
+      font-size: 12.5px;
+      transition: all 0.12s ease;
+    }
+    .sub-nav-item:hover {
+      color: var(--ink);
+      background: var(--surface-subtle);
+    }
+    .sub-nav-item.active {
+      color: var(--ink);
+      font-weight: 700;
+      background: #e2e8f0;
+      border-left: 2px solid var(--ink);
+      padding-left: 8px;
+    }
+
+    .sub-tag {
+      font-size: 9.5px;
+      font-weight: 700;
+      padding: 1px 4px;
+      background: #e2e8f0;
+      color: #475569;
+      font-family: var(--font-mono);
+    }
+
+    /* 折叠态右侧悬浮菜单 (Flyout Popover) */
+    .flyout-menu {
+      display: none;
+      position: absolute;
+      left: calc(100% + 4px);
+      top: 0;
+      min-width: 180px;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-top: 2px solid var(--ink);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.1);
+      padding: 4px 0;
+      z-index: 200;
+    }
+
+    .flyout-title {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--ink-tertiary);
+      padding: 6px 12px 4px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 4px;
+    }
+
+    .flyout-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      color: var(--ink-secondary);
+      text-decoration: none;
+      font-size: 12.5px;
+      transition: all 0.12s ease;
+    }
+    .flyout-item:hover {
+      background: var(--surface-subtle);
+      color: var(--ink);
+    }
+
+    .app-sidebar.is-collapsed .nav-item-wrap:hover .flyout-menu {
+      display: block;
+    }
+
+    /* =========================================
+       侧边栏底部：用户信息
+       ========================================= */
+    .sidebar-footer {
+      border-top: 1px solid var(--line);
+      padding: 12px 10px;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+    }
+
+    .user-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 8px;
+      border: 1px solid var(--line);
+      background: #ffffff;
+      text-decoration: none;
+      color: var(--ink);
+      transition: all 0.15s ease;
+      cursor: pointer;
+      position: relative;
+    }
+    .user-card:hover {
+      border-color: var(--ink);
+      background: var(--bg);
+    }
+    .user-card:hover .user-name {
+      text-decoration: underline;
+    }
+
+    .user-avatar-wrap {
+      width: 34px;
+      height: 34px;
+      background: #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 13px;
+      flex-shrink: 0;
+      border: 1px solid var(--line);
+      position: relative;
+    }
+
+    .avatar-status-dot {
+      position: absolute;
+      bottom: -2px;
+      right: -2px;
+      width: 7px;
+      height: 7px;
+      background: #10b981;
+      border: 1.5px solid #ffffff;
+    }
+
+    .user-info {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex: 1;
+    }
+
+    .user-top-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .user-name {
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--ink);
+    }
+
+    .user-role-badge {
+      font-size: 10px;
+      font-weight: 600;
+      background: #7048e8;
+      color: #fff;
+      padding: 1px 4px;
+      line-height: 1.2;
+    }
+
+    .user-uid {
+      font-size: 10.5px;
+      color: var(--ink-tertiary);
+      font-family: var(--font-mono);
+      margin-top: 1px;
+    }
+
+    .btn-logout {
+      background: #ffffff;
+      color: var(--ink-secondary);
+      border: 1px solid var(--line);
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn-logout:hover {
+      border-color: #ef4444;
+      color: #ef4444;
+      background: #fef2f2;
+    }
+
+    /* 方案 C 专属：侧边栏独立的 SYSTEM // 管理中枢 导航组 */
+    .admin-nav-group {
+      display: none;
+      border-top: 1px solid var(--line);
+      padding-top: 8px;
+      margin-top: 6px;
+    }
+    .admin-nav-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8.5px 12px;
+      background: #faf5ff;
+      border: 1px solid #e9d5ff;
+      color: #6b21a8;
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      margin-top: 4px;
+      transition: all 0.15s ease;
+    }
+    .admin-nav-item:hover {
+      background: #6b21a8;
+      color: #ffffff;
+      border-color: #6b21a8;
+    }
+
+    /* 方案 B 专属：用户卡片弹出式操作菜单 (Popover Menu) */
+    .user-popover-menu {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 10px;
+      width: calc(100% - 20px);
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-top: 2px solid var(--ink);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+      z-index: 300;
+      padding: 4px 0;
+    }
+    .popover-header {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--bg);
+    }
+    .popover-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 12.5px;
+      font-weight: 500;
+      transition: background 0.12s;
+      cursor: pointer;
+    }
+    .popover-item:hover {
+      background: var(--surface-subtle);
+    }
+    .popover-item.admin-highlight {
+      background: #0f172a;
+      color: #ffffff;
+      font-weight: 700;
+      margin: 4px 8px;
+      padding: 8px 10px;
+    }
+    .popover-item.admin-highlight:hover {
+      background: #1e293b;
+    }
+    .popover-sep {
+      height: 1px;
+      background: var(--line);
+      margin: 4px 0;
+    }
+
+    /* 方案 D 专属：侧边栏底部模式切换条 */
+    .mode-switch-card {
+      display: none;
+      background: var(--surface-subtle);
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+      margin-bottom: 6px;
+    }
+    .mode-head {
+      font-size: 10.5px;
+      font-family: var(--font-mono);
+      color: var(--ink-tertiary);
+      margin-bottom: 4px;
+    }
+    .btn-switch-admin {
+      width: 100%;
+      background: #111;
+      color: #fff;
+      padding: 6px 10px;
+      border: none;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    /* 折叠状态样式 */
+    .app-sidebar.is-collapsed .brand-meta,
+    .app-sidebar.is-collapsed .nav-label,
+    .app-sidebar.is-collapsed .chevron-icon,
+    .app-sidebar.is-collapsed .sub-nav-list,
+    .app-sidebar.is-collapsed .nav-group-title,
+    .app-sidebar.is-collapsed .user-info,
+    .app-sidebar.is-collapsed .admin-nav-group,
+    .app-sidebar.is-collapsed .mode-switch-card,
+    .app-sidebar.is-collapsed .btn-logout span {
+      display: none !important;
+    }
+
+    .app-sidebar.is-collapsed .sidebar-header {
+      padding: 14px 10px;
+      justify-content: center;
+    }
+    .app-sidebar.is-collapsed .nav-item {
+      padding: 10px 0;
+      justify-content: center;
+      border-left: 3px solid transparent;
+    }
+    .app-sidebar.is-collapsed .nav-item.active {
+      border-left: 3px solid #111111;
+    }
+    .app-sidebar.is-collapsed .nav-item-left {
+      gap: 0;
+    }
+    .app-sidebar.is-collapsed .user-card {
+      padding: 6px 0;
+      justify-content: center;
+      border: none;
+      background: transparent;
+    }
+
+    /* =========================================
+       右侧主内容工作区 (Main Viewport)
+       ========================================= */
+    .app-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .main-topbar {
+      height: 50px;
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--line);
+      padding: 0 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 84px;
+      z-index: 50;
+    }
+
+    .breadcrumb-trail {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--ink-secondary);
+    }
+    .bc-item.active {
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    /* 方案 A 专属：顶栏右侧独立直角工程胶囊 (Top Right Capsule) */
+    .topbar-admin-btn {
+      display: none;
+      align-items: center;
+      gap: 7px;
+      background: #111111;
+      color: #ffffff;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      font-family: var(--font-mono);
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+    .topbar-admin-btn:hover {
+      background: #2563eb;
+    }
+    .btn-shield-icon {
+      width: 13px;
+      height: 13px;
+      stroke-width: 2;
+    }
+
+    .telemetry-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #a7f3d0;
+      padding: 2px 8px;
+    }
+    .dot-online {
+      width: 6px;
+      height: 6px;
+      background: #10b981;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+    }
+
+    .viewport-content {
+      flex: 1;
+      padding: 28px 36px 60px;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .current-plan-card {
+      background: #ffffff;
+      border: 1px solid #111111;
+      border-left: 4px solid #7c3aed;
+      padding: 14px 20px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .plan-tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      background: #7c3aed;
+      color: #fff;
+      padding: 2px 6px;
+      margin-right: 6px;
+    }
+    .plan-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+    .plan-desc {
+      font-size: 12.5px;
+      color: var(--ink-secondary);
+      margin-top: 3px;
+    }
+
+    /* 仿真页面元素 */
+    .mock-hero {
+      display: grid;
+      grid-template-columns: 1fr 400px;
+      gap: 32px;
+      margin-bottom: 40px;
+    }
+    .hero-title {
+      font-size: 32px;
+      font-weight: 900;
+      line-height: 1.2;
+      margin-bottom: 14px;
+    }
+    .hero-desc {
+      font-size: 14px;
+      color: var(--ink-secondary);
+      line-height: 1.6;
+      margin-bottom: 20px;
+      max-width: 520px;
+    }
+    .mock-telemetry-box {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      padding: 18px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部方案控制器 -->
+  <div class="deck-bar">
+    <div class="deck-controls">
+      <span class="deck-badge">ADMIN UI POSITION</span>
+      <span style="color:#fff; font-weight:700;">切换测试 4 套后台入口位置:</span>
+      <button class="deck-btn active" id="btn-plan-a" onclick="switchPlan('A')">方案 A：顶栏右侧独立胶囊 (⭐最推荐)</button>
+      <button class="deck-btn" id="btn-plan-b" onclick="switchPlan('B')">方案 B：用户头像点击下拉菜单 (GitHub/GitLab心智)</button>
+      <button class="deck-btn" id="btn-plan-c" onclick="switchPlan('C')">方案 C：侧边栏独立系统组</button>
+      <button class="deck-btn" id="btn-plan-d" onclick="switchPlan('D')">方案 D：侧边栏底部模式切换条</button>
+      <span class="deck-sep">|</span>
+      <button class="deck-btn" id="btn-toggle-collapse" onclick="toggleSidebar()">折叠/展开侧边栏</button>
+    </div>
+  </div>
+
+  <!-- 方案说明条 -->
+  <div class="proposal-banner">
+    <div id="banner-text">
+      <span class="proposal-badge">方案 A 预览</span>
+      <strong>顶栏右侧独立胶囊入口</strong>：侧边栏保持 100% 专注做题导航；「后台管理 CONSOLE →」置于右侧顶栏最右侧，无论侧边栏是否折叠均清晰立即可达！
+    </div>
+  </div>
+
+  <div class="app-wrapper">
+    <!-- 左侧固定侧边栏 (AppSidebar) -->
+    <aside class="app-sidebar" id="sidebar">
+      <!-- 头部：品牌 Logo + 折叠控制 -->
+      <div class="sidebar-header">
+        <a href="javascript:void(0)" class="brand-link">
+          <img src="file:///c:/Users/zco/Desktop/KECE/frontend/public/kece-logo.png" alt="Logo" class="brand-logo" onerror="this.src='https://dummyimage.com/28x28/111/fff.png&text=K'">
+          <div class="brand-meta">
+            <span class="brand-name">KECE 课测</span>
+            <span class="brand-sub">// PLATFORM</span>
+          </div>
+        </a>
+        <button class="collapse-toggle" title="折叠/展开侧边栏" onclick="toggleSidebar()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="11 17 6 12 11 7"></polyline>
+            <polyline points="18 17 13 12 18 7"></polyline>
+          </svg>
+        </button>
+      </div>
+
+      <!-- 核心导航区域 -->
+      <nav class="sidebar-nav">
+        <div class="nav-group-title">WORKSPACE // 练习与考核</div>
+
+        <!-- 01 首页 -->
+        <div class="nav-item-wrap">
+          <a href="javascript:void(0)" class="nav-item active" onclick="activateNav(this, '平台首页')">
+            <div class="nav-item-left">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+              </svg>
+              <span class="nav-label">首页</span>
+            </div>
+          </a>
+          <div class="flyout-menu">
+            <div class="flyout-title">01 // 首页</div>
+            <a href="javascript:void(0)" class="flyout-item">系统门户主页</a>
+          </div>
+        </div>
+
+        <!-- 02 题库 -->
+        <div class="nav-item-wrap">
+          <div class="nav-item" id="repo-item" onclick="toggleRepoAccordion()">
+            <div class="nav-item-left">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <polyline points="16 18 22 12 16 6"></polyline>
+                <polyline points="8 6 2 12 8 18"></polyline>
+              </svg>
+              <span class="nav-label">题库</span>
+            </div>
+            <svg class="chevron-icon is-open" id="repo-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <div class="flyout-menu">
+            <div class="flyout-title">02 // 题库中心</div>
+            <a href="javascript:void(0)" class="flyout-item"><span class="sub-tag">ALGO</span> 算法编程 OJ</a>
+            <a href="javascript:void(0)" class="flyout-item"><span class="sub-tag">SQL</span> 数据库题实战</a>
+            <a href="javascript:void(0)" class="flyout-item"><span class="sub-tag">QUIZ</span> 客观理论题库</a>
+          </div>
+          <div class="sub-nav-list" id="repo-submenu">
+            <a href="javascript:void(0)" class="sub-nav-item"><span class="sub-tag">ALGO</span> 算法编程</a>
+            <a href="javascript:void(0)" class="sub-nav-item"><span class="sub-tag">SQL</span> 数据库题</a>
+            <a href="javascript:void(0)" class="sub-nav-item"><span class="sub-tag">QUIZ</span> 客观理论</a>
+          </div>
+        </div>
+
+        <!-- 03 题集 -->
+        <div class="nav-item-wrap">
+          <a href="javascript:void(0)" class="nav-item" onclick="activateNav(this, '专题题集')">
+            <div class="nav-item-left">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+              </svg>
+              <span class="nav-label">题集</span>
+            </div>
+          </a>
+          <div class="flyout-menu"><div class="flyout-title">03 // 专题题集</div><a href="javascript:void(0)" class="flyout-item">专项闯关题单</a></div>
+        </div>
+
+        <!-- 04 课练 -->
+        <div class="nav-item-wrap">
+          <a href="javascript:void(0)" class="nav-item" onclick="activateNav(this, '随堂课练')">
+            <div class="nav-item-left">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M2 3h20"></path>
+                <path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"></path>
+                <path d="m7 21 5-5 5 5"></path>
+              </svg>
+              <span class="nav-label">课练</span>
+            </div>
+          </a>
+          <div class="flyout-menu"><div class="flyout-title">04 // 随堂课练</div><a href="javascript:void(0)" class="flyout-item">打卡与随堂练习</a></div>
+        </div>
+
+        <!-- 05 考试 -->
+        <div class="nav-item-wrap">
+          <a href="javascript:void(0)" class="nav-item" onclick="activateNav(this, '在线机考')">
+            <div class="nav-item-left">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <circle cx="12" cy="12" r="9"></circle>
+                <polyline points="12 6 12 12 15 15"></polyline>
+              </svg>
+              <span class="nav-label">考试</span>
+            </div>
+          </a>
+          <div class="flyout-menu"><div class="flyout-title">05 // 在线机考</div><a href="javascript:void(0)" class="flyout-item">期末与限时考试</a></div>
+        </div>
+
+        <div class="nav-group-title" style="margin-top:6px;">COMMUNITY // 社区与个人</div>
+
+        <!-- 06 排名 -->
+        <div class="nav-item-wrap">
+          <a href="javascript:void(0)" class="nav-item" onclick="activateNav(this, '天梯榜单')">
+            <div class="nav-item-left">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+              </svg>
+              <span class="nav-label">排名</span>
+            </div>
+          </a>
+          <div class="flyout-menu"><div class="flyout-title">06 // 天梯榜单</div><a href="javascript:void(0)" class="flyout-item">全站 AC 排名榜</a></div>
+        </div>
+
+        <!-- 07 公告栏 -->
+        <div class="nav-item-wrap">
+          <a href="javascript:void(0)" class="nav-item" onclick="activateNav(this, '平台公告')">
+            <div class="nav-item-left">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              </svg>
+              <span class="nav-label">公告栏</span>
+            </div>
+          </a>
+          <div class="flyout-menu"><div class="flyout-title">07 // 平台公告</div><a href="javascript:void(0)" class="flyout-item">系统与考场通知</a></div>
+        </div>
+
+        <!-- 08 个人主页 -->
+        <div class="nav-item-wrap">
+          <a href="javascript:void(0)" class="nav-item" id="nav-profile" onclick="activateNav(this, '个人主页')">
+            <div class="nav-item-left">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+              <span class="nav-label">个人主页</span>
+            </div>
+          </a>
+          <div class="flyout-menu"><div class="flyout-title">08 // 个人中心</div><a href="javascript:void(0)" class="flyout-item">做题战绩与提交记录</a></div>
+        </div>
+
+        <!-- 方案 C 专属：独立的 SYSTEM // 管理中枢 -->
+        <div class="admin-nav-group" id="plan-c-group">
+          <div class="nav-group-title" style="color:#7c3aed;">ADMINISTRATION // 控制台</div>
+          <a href="javascript:void(0)" class="admin-nav-item">
+            <span>⚙ 后台管理系统</span>
+            <span class="mono" style="font-size:11px;">→</span>
+          </a>
+        </div>
+      </nav>
+
+      <!-- 侧边栏底部 -->
+      <div class="sidebar-footer">
+        <!-- 方案 D 专属：模式切换卡 -->
+        <div class="mode-switch-card" id="plan-d-box">
+          <div class="mode-head">// CONSOLE ACCESS</div>
+          <button class="btn-switch-admin">
+            <span>进入管理控制台 →</span>
+          </button>
+        </div>
+
+        <!-- 用户卡片（头像+名字直达个人主页；方案 B 时点击弹出菜单） -->
+        <div class="user-card" id="user-footer-card" onclick="handleUserCardClick()">
+          <div class="user-avatar-wrap" title="点击查看个人主页">
+            <span>Z</span>
+            <span class="avatar-status-dot" title="在线"></span>
+          </div>
+          <div class="user-info">
+            <div class="user-top-line">
+              <span class="user-name">zheco68</span>
+              <span class="user-role-badge">管理员</span>
+            </div>
+            <span class="user-uid" id="user-subtext">UID: 27 · 点击进主页 ↗</span>
+          </div>
+        </div>
+
+        <!-- 方案 B 专属：用户卡片弹出式菜单 (Popover) -->
+        <div class="user-popover-menu" id="user-popover">
+          <div class="popover-header">
+            <div style="font-weight:700; font-size:13px;">zheco68 <span class="user-role-badge">ADMIN</span></div>
+            <div class="mono" style="font-size:11px; color:var(--ink-tertiary);">UID: 27 · zheco68@gmail.com</div>
+          </div>
+          <div class="popover-item" onclick="activateNav(document.getElementById('nav-profile'), '个人主页'); hidePopover();">
+            <span>👤 个人主页</span>
+            <span class="mono" style="font-size:11px; color:var(--ink-tertiary);">/profile</span>
+          </div>
+          <div class="popover-item">
+            <span>📝 修改资料 / 密码</span>
+          </div>
+          <div class="popover-sep"></div>
+          <!-- 特权进入后台入口 -->
+          <div class="popover-item admin-highlight" onclick="alert('进入后台管理系统 (/admin)')">
+            <span>⚡ 管理控制台 (Admin Console)</span>
+            <span class="mono">→</span>
+          </div>
+          <div class="popover-sep"></div>
+          <div class="popover-item" style="color:#ef4444;">
+            <span>🚪 退出登录</span>
+          </div>
+        </div>
+
+        <button class="btn-logout" title="退出登录">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+          <span>退出登录</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- 右侧主体内容区 (Main Content) -->
+    <main class="app-main">
+      <!-- 极简辅助栏 (Topbar) -->
+      <header class="main-topbar">
+        <div class="breadcrumb-trail">
+          <span class="mono" style="color:var(--ink-tertiary);">KECE //</span>
+          <span class="bc-item">PORTAL</span>
+          <span class="mono" style="color:var(--ink-tertiary);">/</span>
+          <span class="bc-item active" id="current-page-text">平台首页</span>
+        </div>
+        <div class="topbar-right">
+          <!-- 方案 A 专属：顶栏右侧独立直角工程胶囊 -->
+          <a href="javascript:void(0)" class="topbar-admin-btn" id="plan-a-topbar-btn" title="直达管理后台控制台" onclick="alert('跳转进入后台管理 (/admin)')">
+            <svg class="btn-shield-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            <span>后台管理 // CONSOLE →</span>
+          </a>
+
+          <div class="telemetry-pill">
+            <span class="dot-online"></span>
+            <span>CLUSTER: 2/2 ONLINE</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- 页面实际工作区 -->
+      <div class="viewport-content">
+        <!-- 方案对比卡片 -->
+        <div class="current-plan-card" id="plan-detail-card">
+          <div>
+            <div style="display:flex; align-items:center;">
+              <span class="plan-tag" id="plan-tag-text">PLAN A</span>
+              <span class="plan-title" id="plan-title-text">顶栏右侧独立胶囊入口（⭐ 最推荐）</span>
+            </div>
+            <div class="plan-desc" id="plan-desc-text">
+              在右侧顶栏最右侧放置纯黑工程胶囊 [ ⚙ 后台管理 // CONSOLE → ]。侧边栏保持 100% 纯粹的学生做题导航；顶栏空间充裕，管理员一眼就能看到，日常做题完全不产生视觉干扰。
+            </div>
+          </div>
+          <button class="deck-btn" style="background:#111; color:#fff;" onclick="toggleSidebar()">测试折叠 68px 表现</button>
+        </div>
+
+        <div class="mock-hero">
+          <div class="hero-text">
+            <h1 class="hero-title">多维度编程与<br>技能评测平台</h1>
+            <p class="hero-desc">
+              无缝集成算法 OJ、数据库 OJ、前端 AI 智能评测及标准客观题系统。基于高可用强隔离沙箱与独立临时库，提供确定性、防作弊的全真技术考核。
+            </p>
+          </div>
+          <div class="mock-telemetry-box">
+            <div class="mono" style="font-weight:700; margin-bottom:12px;">// SYSTEM STATUS</div>
+            <div style="font-size:12px; color:var(--ink-secondary);">当前演示平台处于前台客户端视角。点击上方控制器可体验不同后台入口放置效果。</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    let currentPlan = 'A';
+
+    function switchPlan(plan) {
+      currentPlan = plan;
+      document.querySelectorAll('.deck-btn').forEach(b => {
+        if (b.id && b.id.startsWith('btn-plan-')) b.classList.remove('active');
+      });
+      document.getElementById('btn-plan-' + plan.toLowerCase()).classList.add('active');
+
+      // 隐藏所有方案的特有元素
+      document.getElementById('plan-a-topbar-btn').style.display = 'none';
+      document.getElementById('plan-c-group').style.display = 'none';
+      document.getElementById('plan-d-box').style.display = 'none';
+      document.getElementById('user-popover').style.display = 'none';
+
+      const bannerText = document.getElementById('banner-text');
+      const tagText = document.getElementById('plan-tag-text');
+      const titleText = document.getElementById('plan-title-text');
+      const descText = document.getElementById('plan-desc-text');
+      const userSub = document.getElementById('user-subtext');
+
+      if (plan === 'A') {
+        document.getElementById('plan-a-topbar-btn').style.display = 'inline-flex';
+        bannerText.innerHTML = '<span class="proposal-badge">方案 A 预览</span><strong>顶栏右侧独立工程胶囊</strong>：侧边栏 100% 专注做题导航；顶栏右侧直达后台，无论侧边栏是否折叠均清晰立即可达！';
+        tagText.innerText = 'PLAN A';
+        titleText.innerText = '顶栏右侧独立工程胶囊（⭐ 最推荐）';
+        descText.innerText = '在右侧顶部辅助条最右侧放置直角黑色胶囊 [ ⚙ 后台管理 // CONSOLE → ]。与侧边栏完全解耦，做题时不抢视觉，管理员随时一键直达。';
+        userSub.innerText = 'UID: 27 · 点击进主页 ↗';
+      } else if (plan === 'B') {
+        bannerText.innerHTML = '<span class="proposal-badge" style="background:#0284c7;">方案 B 预览</span><strong>用户头像点击弹出菜单 (Popover)</strong>：点击左下角头像或用户名，弹出浮层选择「个人主页」或「⚡ 管理控制台」；对标 GitHub/GitLab。';
+        tagText.innerText = 'PLAN B';
+        titleText.innerText = '用户头像点击下拉菜单（GitHub / GitLab 心智）';
+        descText.innerText = '点击左下角用户头像，弹出浮层卡片，内嵌「⚡ 管理控制台」高亮专区。平时没有任何多余按钮，收放自如。';
+        userSub.innerText = 'UID: 27 · 点击展开菜单 ▾';
+      } else if (plan === 'C') {
+        document.getElementById('plan-c-group').style.display = 'block';
+        bannerText.innerHTML = '<span class="proposal-badge" style="background:#7c3aed;">方案 C 预览</span><strong>侧边栏独立管理中枢组 (ADMINISTRATION)</strong>：在侧边栏导航最下方开辟独立特权区块，紫黑色直角条高亮。';
+        tagText.innerText = 'PLAN C';
+        titleText.innerText = '侧边栏独立系统组（独立严谨）';
+        descText.innerText = '在侧边栏导航菜单最底部添加「ADMINISTRATION // 控制台」分组与 [ ⚙ 后台管理系统 → ]，仅管理员登录后可见。';
+        userSub.innerText = 'UID: 27 · 点击进主页 ↗';
+      } else if (plan === 'D') {
+        document.getElementById('plan-d-box').style.display = 'block';
+        bannerText.innerHTML = '<span class="proposal-badge" style="background:#059669;">方案 D 预览</span><strong>侧边栏底部模式切换条</strong>：位于用户卡片上方，以工作空间/工作模式形态切换前台与后台控制台。';
+        tagText.innerText = 'PLAN D';
+        titleText.innerText = '侧边栏底部模式切换卡（工作空间切换）';
+        descText.innerText = '在用户卡片上方常驻极简的 [ // CONSOLE ACCESS: 进入管理控制台 → ] 模块，直观明确。';
+        userSub.innerText = 'UID: 27 · 点击进主页 ↗';
+      }
+    }
+
+    function handleUserCardClick() {
+      if (currentPlan === 'B') {
+        const pop = document.getElementById('user-popover');
+        pop.style.display = pop.style.display === 'block' ? 'none' : 'block';
+      } else {
+        activateNav(document.getElementById('nav-profile'), '个人主页');
+      }
+    }
+
+    function hidePopover() {
+      document.getElementById('user-popover').style.display = 'none';
+    }
+
+    function toggleSidebar() {
+      const sb = document.getElementById('sidebar');
+      sb.classList.toggle('is-collapsed');
+    }
+
+    function toggleRepoAccordion() {
+      const chevron = document.getElementById('repo-chevron');
+      const submenu = document.getElementById('repo-submenu');
+      chevron.classList.toggle('is-open');
+      submenu.style.display = submenu.style.display === 'none' ? 'flex' : 'none';
+    }
+
+    function activateNav(el, title) {
+      document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+      el.classList.add('active');
+      document.getElementById('current-page-text').innerText = title;
+    }
+
+    // 初始化方案 A
+    switchPlan('A');
+  </script>
+</body>
+</html>
