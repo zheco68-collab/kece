@@ -20,11 +20,11 @@ describe('AppSidebar.vue 侧边栏与方案 C 鉴权测试 (frontend/src/__tests
     })
   }
 
-  it('1. 正常渲染 8 个前台主导航项 (首页、题库、题集、课练、考试、排名、公告栏、个人主页)', () => {
+  it('1. 正常渲染 8 个前台主导航项 (首页、题库、题集、课练、考试、排名、公告栏、个人主页)', async () => {
     const wrapper = mountSidebar()
     const text = wrapper.text()
 
-    // 检查 8 大主导航文本
+    // 验证 8 个主导航标题文本均展示
     expect(text).toContain('首页')
     expect(text).toContain('题库')
     expect(text).toContain('题集')
@@ -34,7 +34,16 @@ describe('AppSidebar.vue 侧边栏与方案 C 鉴权测试 (frontend/src/__tests
     expect(text).toContain('公告栏')
     expect(text).toContain('个人主页')
 
-    // 检查 8 大导航的目标路由链接
+    // 初始状态下题库与题集手风琴默认收起（accordion-content 不在 DOM 中）
+    expect(wrapper.findAll('.accordion-content')).toHaveLength(0)
+
+    // 点击手风琴展开项后，验证子路由链接渲染
+    const triggers = wrapper.findAll('.nav-accordion-trigger')
+    for (const trigger of triggers) {
+      await trigger.trigger('click')
+    }
+
+    // 验证 8 大导航目标路由
     const links = wrapper.findAll('a').map((el) => el.attributes('href'))
     expect(links).toContain('/')
     expect(links).toContain('/questions')

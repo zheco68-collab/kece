@@ -80,7 +80,8 @@ describe('AppSidebar.vue', () => {
     expect(localStorage.getItem('kece_sidebar_collapsed')).toBe('false')
   })
 
-  it('displays sub-menu for 题库 (ALGO, SQL, QUIZ)', () => {
+  it('displays sub-menu for 题库 (ALGO, SQL, QUIZ) when active or expanded', () => {
+    currentRoutePath = '/questions'
     const wrapper = mount(AppSidebar)
     const text = wrapper.text()
 
@@ -220,20 +221,22 @@ describe('AppSidebar.vue', () => {
     const questionsGroup = wrapper.findAll('.nav-accordion-group').find((g) => g.text().includes('题库'))
     expect(questionsGroup).toBeDefined()
     const questionTrigger = questionsGroup!.find('.nav-accordion-trigger')
-    expect(questionsGroup!.find('.accordion-content').exists()).toBe(true)
-
-    // First click: collapse accordion
-    await questionTrigger.trigger('click')
+    // 初始状态下收起：accordion-content 不存在
     expect(questionsGroup!.find('.accordion-content').exists()).toBe(false)
+
+    // 第一次点击：展开手风琴
+    await questionTrigger.trigger('click')
+    expect(questionsGroup!.find('.accordion-content').exists()).toBe(true)
     expect(mockPush).not.toHaveBeenCalled()
 
-    // Second click: expand accordion
+    // 第二次点击：收起手风琴
     await questionTrigger.trigger('click')
-    expect(questionsGroup!.find('.accordion-content').exists()).toBe(true)
+    expect(questionsGroup!.find('.accordion-content').exists()).toBe(false)
     expect(mockPush).not.toHaveBeenCalled()
   })
 
   it('renders 3 problem sets sub-items with corresponding query parameters in expanded mode', () => {
+    currentRoutePath = '/problem-sets'
     const wrapper = mount(AppSidebar)
     const psGroup = wrapper.findAll('.nav-accordion-group').find((g) => g.text().includes('题集'))
     expect(psGroup).toBeDefined()
@@ -274,16 +277,17 @@ describe('AppSidebar.vue', () => {
     expect(psGroup).toBeDefined()
 
     const psTrigger = psGroup!.find('.nav-accordion-trigger')
-    expect(psGroup!.find('.accordion-content').exists()).toBe(true)
-
-    // First click: collapse problem sets accordion
-    await psTrigger.trigger('click')
+    // 初始状态下收起：accordion-content 不存在
     expect(psGroup!.find('.accordion-content').exists()).toBe(false)
+
+    // 第一次点击：展开题集手风琴
+    await psTrigger.trigger('click')
+    expect(psGroup!.find('.accordion-content').exists()).toBe(true)
     expect(mockPush).not.toHaveBeenCalled()
 
-    // Second click: expand problem sets accordion
+    // 第二次点击：收起题集手风琴
     await psTrigger.trigger('click')
-    expect(psGroup!.find('.accordion-content').exists()).toBe(true)
+    expect(psGroup!.find('.accordion-content').exists()).toBe(false)
     expect(mockPush).not.toHaveBeenCalled()
   })
 
@@ -332,5 +336,11 @@ describe('AppSidebar.vue', () => {
     expect(algoItem?.classes()).not.toContain('active')
     expect(dbItem?.classes()).toContain('active')
     expect(quizItem?.classes()).not.toContain('active')
+  })
+  it('keeps questions and problem sets accordions collapsed by default on initial home route', () => {
+    currentRoutePath = '/'
+    const wrapper = mount(AppSidebar)
+    const openAccordions = wrapper.findAll('.accordion-content')
+    expect(openAccordions).toHaveLength(0)
   })
 })

@@ -24,15 +24,15 @@ function getInitialCollapsed(): boolean {
 // 侧边栏折叠状态：读取 localStorage 记忆或默认为展开 (false)
 const isCollapsed = ref(getInitialCollapsed())
 
-// 题库手风琴折叠状态（展开模式下可用）
-const isQuestionsAccordionOpen = ref(true)
+// 题库手风琴折叠状态（展开模式下可用，默认初始收起）
+const isQuestionsAccordionOpen = ref(false)
 
 // 悬浮气泡防抖与状态（折叠模式下题库子菜单）
 const isFlyoutVisible = ref(false)
 let flyoutTimer: ReturnType<typeof setTimeout> | null = null
 
-// 题集手风琴折叠状态（展开模式下可用）
-const isProblemSetsAccordionOpen = ref(true)
+// 题集手风琴折叠状态（展开模式下可用，默认初始收起）
+const isProblemSetsAccordionOpen = ref(false)
 
 // 悬浮气泡防抖与状态（折叠模式下题集子菜单）
 const isPsFlyoutVisible = ref(false)
@@ -70,15 +70,12 @@ function isQuestionsActive(): boolean {
 }
 
 // 路由监听：若路由属于题库或题集任一模块，自动展开手风琴
+// 路由激活监听：根据当前路由自动展开激活模块的手风琴；非激活模块默认保持收起
 watch(
   () => route.path,
   () => {
-    if (isQuestionsActive() && !isCollapsed.value) {
-      isQuestionsAccordionOpen.value = true
-    }
-    if (isProblemSetsActive() && !isCollapsed.value) {
-      isProblemSetsAccordionOpen.value = true
-    }
+    isQuestionsAccordionOpen.value = isQuestionsActive() && !isCollapsed.value
+    isProblemSetsAccordionOpen.value = isProblemSetsActive() && !isCollapsed.value
   },
   { immediate: true }
 )
