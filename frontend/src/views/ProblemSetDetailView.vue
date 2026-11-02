@@ -20,7 +20,7 @@ const detail = ref<ProblemSetDetail | null>(null)
 const descriptionHtml = computed(() => renderMarkdown(detail.value?.description || ''))
 const loading = ref(true)
 const error = ref('')
-const collapsedSections = ref<Set<number>>(new Set())
+const expandedSections = ref<Set<number>>(new Set())
 const statusFilter = ref<'ALL' | 'UNSOLVED' | 'SOLVED'>('ALL')
 
 const categoryLabels: Record<string, string> = {
@@ -95,13 +95,13 @@ async function toggleFav() {
 }
 
 function toggleSection(secId: number) {
-  const next = new Set(collapsedSections.value)
+  const next = new Set(expandedSections.value)
   if (next.has(secId)) {
     next.delete(secId)
   } else {
     next.add(secId)
   }
-  collapsedSections.value = next
+  expandedSections.value = next
 }
 
 function filteredSectionItems(items: ProblemSetItemVO[]): ProblemSetItemVO[] {
@@ -303,13 +303,13 @@ onMounted(loadDetail)
                 {{ sec.solvedCount }} / {{ sec.totalCount }} 已通过
               </span>
               <span class="sec-toggle">
-                {{ collapsedSections.has(sec.id) ? '+ 展开' : '− 收起' }}
+                {{ expandedSections.has(sec.id) ? '− 收起' : '+ 展开' }}
               </span>
             </div>
           </div>
 
           <div
-            v-if="!collapsedSections.has(sec.id)"
+            v-if="expandedSections.has(sec.id)"
             :key="`${sec.id}-${statusFilter}`"
             class="section-items"
           >
