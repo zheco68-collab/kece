@@ -146,7 +146,7 @@ async function loadData() {
 
     if (questionId.value > 0) {
       try {
-        question.value = await databaseApi.detail(questionId.value)
+        question.value = await databaseApi.detail(questionId.value, practiceCode.value || undefined)
       } catch {
         /* 忽略 */
       }
@@ -158,19 +158,57 @@ async function loadData() {
   }
 }
 
+const fromSetId = computed(() => {
+  const s = route.query.setId
+  return s ? String(s) : null
+})
+
+const practiceCode = computed(() => {
+  const c = route.query.practiceCode
+  return c ? String(c).toUpperCase() : null
+})
+
+const pqId = computed(() => {
+  const p = route.query.pqId
+  return p ? String(p) : null
+})
+
+function buildContextQuery(): Record<string, string> | undefined {
+  const query: Record<string, string> = {}
+  if (fromSetId.value) {
+    query.setId = fromSetId.value
+    if (route.query.itemId) query.itemId = String(route.query.itemId)
+  }
+  if (practiceCode.value) {
+    query.practiceCode = practiceCode.value
+    if (pqId.value) query.pqId = pqId.value
+  }
+  return Object.keys(query).length ? query : undefined
+}
+
 function reEdit() {
   if (questionId.value > 0) {
-    router.push(`/database/${questionId.value}/submit`)
+    router.push({ path: `/database/${questionId.value}/submit`, query: buildContextQuery() })
+  } else if (practiceCode.value) {
+    router.push(`/practice/${practiceCode.value}`)
   } else {
-    router.push('/database')
+    router.push(fromSetId.value ? `/problem-sets/${fromSetId.value}` : '/database')
   }
 }
 
 function backToQuestion() {
   if (questionId.value > 0) {
-    router.push(`/database/${questionId.value}`)
+    router.push({ path: `/database/${questionId.value}`, query: buildContextQuery() })
+  } else if (practiceCode.value) {
+    router.push(`/practice/${practiceCode.value}`)
   } else {
-    router.push('/database')
+    router.push(fromSetId.value ? `/problem-sets/${fromSetId.value}` : '/database')
+  }
+}
+
+function backToPractice() {
+  if (practiceCode.value) {
+    router.push(`/practice/${practiceCode.value}`)
   }
 }
 
@@ -380,10 +418,13 @@ onBeforeUnmount(stopPolling)
       <!-- 底部操作导航条：统一全部为黑底白字高反差直角按钮 -->
       <footer class="result-actions-bar card">
         <div class="actions-left">
+          <button v-if="practiceCode" class="btn btn-primary" @click="backToPractice">
+            ← 返回随堂课练 (#{{ practiceCode }})
+          </button>
           <button class="btn btn-primary" @click="backToQuestion">
             返回题目描述
           </button>
-          <RouterLink to="/submissions" class="btn btn-primary">
+          <RouterLink v-if="!practiceCode" to="/submissions" class="btn btn-primary">
             查看所有历史提交
           </RouterLink>
         </div>

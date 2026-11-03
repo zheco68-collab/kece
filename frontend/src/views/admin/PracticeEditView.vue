@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { practiceApi } from '@/api/practice'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { adminApi } from '@/api/admin'
+import { practiceApi } from '@/api/practice'
 import { ApiError } from '@/api/request'
-import FormField from '@/components/FormField.vue'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/user'
-import type { Question, DbQuestion, ObjectiveQuestion } from '@/types'
+import type { DbQuestion, ObjectiveQuestion, Question } from '@/types'
 import type { PracticeQuestionItem } from '@/types/practice'
 
+const route = useRoute()
 const router = useRouter()
+const editId = computed(() => (route.params.id ? Number(route.params.id) : null))
+const isEdit = computed(() => editId.value !== null)
 const toast = useToast()
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.hasRole('ADMIN'))
@@ -25,11 +27,14 @@ const form = reactive({
   durationMinutes: 45,
 })
 
+const durationPresets = [0, 15, 30, 45, 60, 90, 120]
+
 /** 已选题目项 */
 interface SelectedItem {
   questionId: number
   questionType: 'ALGO' | 'DB' | 'OBJECTIVE'
   objectiveType?: 'SINGLE' | 'MULTIPLE' | 'JUDGE' | 'FILL'
+  difficulty?: string
   score: number
   title: string
 }
@@ -38,8 +43,12 @@ const selected = ref<SelectedItem[]>([])
 const formErrors = reactive({ title: '', questions: '' })
 const titleInputRef = ref<HTMLInputElement | null>(null)
 
+// 批量快速赋分
+const batchObjScore = ref(5)
+const batchPracScore = ref(20)
+
 // ---- 题库选取 ----
-type PickTab = 'ALGO' | 'DB' | 'SINGLE' | 'JUDGE' | 'MULTIPLE' | 'FILL' | 'ALL_OBJ'
+type PickTab = 'SINGLE' | 'JUDGE' | 'MULTIPLE' | 'FILL' | 'DB' | 'ALGO' | 'ALL_OBJ'
 const tab = ref<PickTab>('SINGLE')
 const tabKeyword = ref('')
 const algoList = ref<Question[]>([])
@@ -56,6 +65,25 @@ const typeTabs: Array<{ value: PickTab; label: string }> = [
   { value: 'ALL_OBJ', label: '全部客观题' },
 ]
 
+function getItemBadge(diffOrType?: string, qType?: 'ALGO' | 'DB' | 'OBJECTIVE') {
+  const d = (diffOrType || '').toUpperCase()
+  if (d === 'EASY') return { label: '简单', cls: 'pill-easy' }
+  if (d === 'MEDIUM') return { label: '中等', cls: 'pill-medium' }
+  if (d === 'HARD') return { label: '困难', cls: 'pill-hard' }
+
+  if (d === 'SELECT') return { label: 'SELECT 查询', cls: 'pill-select' }
+  if (d === 'DML') return { label: 'DML 操作', cls: 'pill-dml' }
+
+  if (d === 'SINGLE') return { label: '单选题', cls: 'pill-single' }
+  if (d === 'MULTIPLE') return { label: '多选题', cls: 'pill-multiple' }
+  if (d === 'JUDGE') return { label: '判断题', cls: 'pill-judge' }
+  if (d === 'FILL') return { label: '填空题', cls: 'pill-fill' }
+
+  if (qType === 'DB') return { label: 'SQL', cls: 'pill-select' }
+  if (qType === 'OBJECTIVE') return { label: '客观题', cls: 'pill-single' }
+  return { label: '编程', cls: 'pill-medium' }
+}
+
 async function loadSource() {
   listLoading.value = true
   try {
@@ -67,8 +95,9 @@ async function loadSource() {
     } else if (tab.value === 'ALL_OBJ') {
       objList.value = (await adminApi.listObjectiveQuestions({ keyword, page: 1, size: 100 })).list
     } else {
-      // 单选、判断、多选、填空独立分类题库
-      objList.value = (await adminApi.listObjectiveQuestions({ type: tab.value, keyword, page: 1, size: 100 })).list
+      objList.value = (
+        await adminApi.listObjectiveQuestions({ type: tab.value, keyword, page: 1, size: 100 })
+      ).list
     }
   } catch {
     pageError.value = '加载题库失败，请稍后重试'
@@ -80,18 +109,17 @@ async function loadSource() {
 let tabKeywordTimer: ReturnType<typeof setTimeout> | null = null
 watch(tabKeyword, () => {
   if (tabKeywordTimer !== null) clearTimeout(tabKeywordTimer)
-  tabKeywordTimer = setTimeout(loadSource, 300)
+  tabKeywordTimer = setTimeout(loadSource, 260)
 })
 watch(tab, loadSource)
 
 interface SourceRowItem {
   id: number
   label: string
-  type: string
+  type: 'ALGO' | 'DB' | 'OBJECTIVE'
   objectiveType?: 'SINGLE' | 'MULTIPLE' | 'JUDGE' | 'FILL'
+  difficulty: string
   defaultScore: number
-  tagText: string
-  tagClass: string
 }
 
 function sourceRows(): SourceRowItem[] {
@@ -100,9 +128,8 @@ function sourceRows(): SourceRowItem[] {
       id: q.id,
       label: q.title,
       type: 'ALGO',
+      difficulty: q.difficulty || 'MEDIUM',
       defaultScore: 20,
-      tagText: '算法',
-      tagClass: 'badge-algo',
     }))
   }
   if (tab.value === 'DB') {
@@ -110,43 +137,41 @@ function sourceRows(): SourceRowItem[] {
       id: q.id,
       label: q.title,
       type: 'DB',
+      difficulty: q.type || 'SELECT',
       defaultScore: 20,
-      tagText: 'SQL',
-      tagClass: 'badge-db',
     }))
   }
   return objList.value.map((q) => {
-    const text = q.content.length > 50 ? `${q.content.slice(0, 50)}…` : q.content
-    const typeLabel = q.type === 'SINGLE' ? '单选' : q.type === 'JUDGE' ? '判断' : q.type === 'MULTIPLE' ? '多选' : '填空'
-    const tagClass = `badge-${q.type.toLowerCase()}`
+    const text = q.content.length > 56 ? `${q.content.slice(0, 56)}…` : q.content
     const defaultScore = q.score || (q.type === 'JUDGE' ? 2 : 5)
     return {
       id: q.id,
       label: text,
       type: 'OBJECTIVE',
-      objectiveType: q.type as any,
+      objectiveType: q.type as 'SINGLE' | 'MULTIPLE' | 'JUDGE' | 'FILL',
+      difficulty: q.type || 'SINGLE',
       defaultScore,
-      tagText: typeLabel,
-      tagClass,
     }
   })
 }
 
-function isSelected(questionId: number): boolean {
-  const isObj = tab.value !== 'ALGO' && tab.value !== 'DB'
-  if (isObj) {
-    return selected.value.some((s) => s.questionId === questionId && s.questionType === 'OBJECTIVE')
-  }
-  return selected.value.some((s) => s.questionId === questionId && s.questionType === tab.value)
+function isSelected(row: SourceRowItem): boolean {
+  return selected.value.some((s) => s.questionId === row.id && s.questionType === row.type)
 }
 
-function addQuestion(row: SourceRowItem) {
-  if (isSelected(row.id)) return
-  const qType: 'ALGO' | 'DB' | 'OBJECTIVE' = (row.type === 'ALGO' || row.type === 'DB') ? row.type : 'OBJECTIVE'
+function toggleSelectQuestion(row: SourceRowItem) {
+  const idx = selected.value.findIndex(
+    (s) => s.questionId === row.id && s.questionType === row.type,
+  )
+  if (idx >= 0) {
+    selected.value.splice(idx, 1)
+    return
+  }
   selected.value.push({
     questionId: row.id,
-    questionType: qType,
+    questionType: row.type,
     objectiveType: row.objectiveType,
+    difficulty: row.difficulty,
     score: row.defaultScore,
     title: row.label,
   })
@@ -163,60 +188,42 @@ function moveQuestion(index: number, dir: -1 | 1) {
   selected.value.splice(target, 0, item)
 }
 
-const stats = computed(() => {
-  const res = {
-    single: { count: 0, score: 0 },
-    judge: { count: 0, score: 0 },
-    multiple: { count: 0, score: 0 },
-    fill: { count: 0, score: 0 },
-    db: { count: 0, score: 0 },
-    algo: { count: 0, score: 0 },
-    totalScore: 0,
-    totalCount: selected.value.length,
-  }
+const sectionStats = computed(() => {
+  let objCount = 0
+  let objScore = 0
+  let dbCount = 0
+  let dbScore = 0
+  let algoCount = 0
+  let algoScore = 0
+
   for (const s of selected.value) {
     const sc = Number(s.score) || 0
-    res.totalScore += sc
-    if (s.questionType === 'ALGO') {
-      res.algo.count++
-      res.algo.score += sc
+    if (s.questionType === 'OBJECTIVE') {
+      objCount++
+      objScore += sc
     } else if (s.questionType === 'DB') {
-      res.db.count++
-      res.db.score += sc
+      dbCount++
+      dbScore += sc
     } else {
-      const ot = s.objectiveType
-      if (ot === 'JUDGE' || s.title.startsWith('[判断]')) {
-        res.judge.count++
-        res.judge.score += sc
-      } else if (ot === 'MULTIPLE' || s.title.startsWith('[多选]')) {
-        res.multiple.count++
-        res.multiple.score += sc
-      } else if (ot === 'FILL' || s.title.startsWith('[填空]')) {
-        res.fill.count++
-        res.fill.score += sc
-      } else {
-        res.single.count++
-        res.single.score += sc
-      }
+      algoCount++
+      algoScore += sc
     }
   }
-  return res
+  return {
+    objCount,
+    objScore,
+    dbCount,
+    dbScore,
+    algoCount,
+    algoScore,
+    totalScore: objScore + dbScore + algoScore,
+  }
 })
-
-function getSelectedBadge(s: SelectedItem) {
-  if (s.questionType === 'ALGO') return { text: '编程算法', class: 'badge-algo' }
-  if (s.questionType === 'DB') return { text: '数据库 SQL', class: 'badge-db' }
-  const ot = s.objectiveType
-  if (ot === 'JUDGE' || s.title.startsWith('[判断]')) return { text: '判断题', class: 'badge-judge' }
-  if (ot === 'MULTIPLE' || s.title.startsWith('[多选]')) return { text: '多选题', class: 'badge-multiple' }
-  if (ot === 'FILL' || s.title.startsWith('[填空]')) return { text: '填空题', class: 'badge-fill' }
-  return { text: '单选题', class: 'badge-single' }
-}
 
 function autoSortByStandards() {
   const getOrderWeight = (s: SelectedItem) => {
     if (s.questionType === 'OBJECTIVE') {
-      const ot = s.objectiveType
+      const ot = (s.objectiveType || s.difficulty || '').toUpperCase()
       if (ot === 'SINGLE' || s.title.startsWith('[单选]')) return 1
       if (ot === 'JUDGE' || s.title.startsWith('[判断]')) return 2
       if (ot === 'MULTIPLE' || s.title.startsWith('[多选]')) return 3
@@ -227,10 +234,40 @@ function autoSortByStandards() {
     return 6
   }
   selected.value.sort((a, b) => getOrderWeight(a) - getOrderWeight(b))
-  toast.success('已按标准课练题型顺序自动排布（单选→判断→多选→填空→SQL→编程）')
+  toast.success('已按「01 客观题 → 02 数据库 SQL → 03 算法编程」标准章节顺序重排')
 }
 
-const totalScore = computed(() => stats.value.totalScore)
+function applyBatchObjScore() {
+  const val = Math.max(1, Number(batchObjScore.value) || 5)
+  let count = 0
+  for (const s of selected.value) {
+    if (s.questionType === 'OBJECTIVE') {
+      s.score = val
+      count++
+    }
+  }
+  if (count > 0) {
+    toast.success(`已将 ${count} 道客观题分值统一设为 ${val} 分`)
+  } else {
+    toast.info('当前试卷中暂无客观题')
+  }
+}
+
+function applyBatchPracScore() {
+  const val = Math.max(1, Number(batchPracScore.value) || 20)
+  let count = 0
+  for (const s of selected.value) {
+    if (s.questionType === 'ALGO' || s.questionType === 'DB') {
+      s.score = val
+      count++
+    }
+  }
+  if (count > 0) {
+    toast.success(`已将 ${count} 道实操题分值统一设为 ${val} 分`)
+  } else {
+    toast.info('当前试卷中暂无 SQL 或算法实操题')
+  }
+}
 
 async function save() {
   formErrors.title = form.title.trim() ? '' : '请填写课练标题'
@@ -239,7 +276,6 @@ async function save() {
   if (formErrors.title) {
     toast.error('请填写课练标题')
     titleInputRef.value?.focus()
-    titleInputRef.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     return
   }
 
@@ -248,8 +284,9 @@ async function save() {
     return
   }
 
-  if (!form.durationMinutes || form.durationMinutes < 5 || form.durationMinutes > 300) {
-    const msg = '课上时长需在 5 至 300 分钟之间'
+  const dm = Number(form.durationMinutes)
+  if (Number.isNaN(dm) || (dm !== 0 && (dm < 5 || dm > 300))) {
+    const msg = '课上时长需设为 0（不限时）或 5 至 300 分钟之间'
     pageError.value = msg
     toast.error(msg)
     return
@@ -272,22 +309,32 @@ async function save() {
       sortOrder: idx + 1,
     }))
 
-    const res = await practiceApi.create({
-      title: form.title.trim(),
-      description: form.description.trim() || undefined,
-      durationMinutes: form.durationMinutes,
-      questions: questionsPayload,
-    })
-
-    toast.success(`课堂练习发起成功！6 位上机口令：${res.accessCode}`)
-    router.push('/admin/practices')
+    if (isEdit.value && editId.value) {
+      await practiceApi.update(editId.value, {
+        title: form.title.trim(),
+        description: form.description.trim() || undefined,
+        durationMinutes: dm,
+        questions: questionsPayload,
+      })
+      toast.success('课堂练习配置与题目已无损更新')
+      router.push(`/admin/practices/${editId.value}/overview`)
+    } else {
+      const res = await practiceApi.create({
+        title: form.title.trim(),
+        description: form.description.trim() || undefined,
+        durationMinutes: dm,
+        questions: questionsPayload,
+      })
+      toast.success(`课堂练习发起成功！6 位上机口令：${res.accessCode}`)
+      router.push('/admin/practices')
+    }
   } catch (e) {
     const errorMsg =
       e instanceof ApiError
         ? e.message
         : e instanceof Error
           ? e.message
-          : '发起课练失败，请重试'
+          : '保存课练失败，请重试'
     pageError.value = errorMsg
     toast.error(errorMsg)
   } finally {
@@ -295,477 +342,832 @@ async function save() {
   }
 }
 
-onMounted(loadSource)
+async function loadExistingPractice() {
+  if (!editId.value) return
+  try {
+    const res = await practiceApi.overview(editId.value)
+    form.title = res.title
+    form.description = res.description || ''
+    form.durationMinutes = res.durationMinutes ?? 45
+    if (res.questionAccuracies) {
+      selected.value = res.questionAccuracies.map((q) => ({
+        questionId: q.questionId,
+        questionType: q.questionType as 'ALGO' | 'DB' | 'OBJECTIVE',
+        objectiveType:
+          q.questionType === 'OBJECTIVE' && q.subType
+            ? (q.subType as 'SINGLE' | 'MULTIPLE' | 'JUDGE' | 'FILL')
+            : undefined,
+        difficulty: q.subType || undefined,
+        score: q.fullScore,
+        title: q.title,
+      }))
+    }
+  } catch {
+    pageError.value = '加载已有课练信息失败'
+  }
+}
+
+onMounted(async () => {
+  await loadSource()
+  if (isEdit.value) {
+    await loadExistingPractice()
+  }
+})
 </script>
 
 <template>
-  <div class="practice-edit container">
-    <h1 class="page-title">发起课堂练习</h1>
+  <div class="practice-composer container">
+    <!-- 面包屑 -->
+    <nav class="nav-trail">
+      <RouterLink to="/admin/practices">随堂课练管理</RouterLink>
+      <span class="sep">/</span>
+      <span class="current">{{ isEdit ? '编辑课堂练习' : '发起课堂练习' }}</span>
+    </nav>
 
-    <p v-if="pageError" class="submit-error">{{ pageError }}</p>
+    <!-- 顶栏：标题 + 主操作按钮 -->
+    <div class="page-head">
+      <div class="head-left">
+        <h1 class="page-title">{{ isEdit ? '编辑随堂课练' : '随堂课练组卷工作台' }}</h1>
+        <p class="muted head-sub">
+          左侧检索题库点选入卷 · 右侧按「客观 / SQL / 算法」实时预览与批量赋分
+        </p>
+      </div>
 
-    <!-- 基本信息卡片 -->
-    <div class="form card">
-      <FormField label="练习标题" :error="formErrors.title">
+      <div class="head-actions">
+        <button class="btn btn-ghost" type="button" @click="router.push('/admin/practices')">
+          取消返回
+        </button>
+        <button class="btn btn-primary" type="button" :disabled="submitting" @click="save">
+          {{
+            submitting
+              ? '保存中…'
+              : isEdit
+                ? '保存修改 →'
+                : '发起课练并生成口令 →'
+          }}
+        </button>
+      </div>
+    </div>
+
+    <p v-if="pageError" class="error-banner">{{ pageError }}</p>
+
+    <!-- 顶部紧凑基础配置栏 -->
+    <div class="config-bar card">
+      <div class="config-col">
+        <label class="field-label">
+          课练标题 <span class="req">*</span>
+          <span v-if="formErrors.title" class="field-err">{{ formErrors.title }}</span>
+        </label>
         <input
           ref="titleInputRef"
           v-model="form.title"
           class="input"
           type="text"
-          placeholder="例如：第4周上机实验：动态规划与SQL分析实战"
+          placeholder="例如：第04次实验课：树与二叉树专项随堂课练"
         />
-      </FormField>
 
-      <FormField label="练习说明（Markdown）">
-        <textarea
+        <label class="field-label mt-8">课堂说明（可选）</label>
+        <input
           v-model="form.description"
           class="input"
-          rows="3"
-          placeholder="可选，提示学生本次上机考核范围、重点算法或课堂注意事项..."
-        ></textarea>
-      </FormField>
-
-      <FormField label="课上时长（分钟）">
-        <input
-          v-model.number="form.durationMinutes"
-          class="input num"
-          type="number"
-          min="5"
-          max="300"
-          placeholder="45"
-        />
-      </FormField>
-    </div>
-
-    <!-- 组卷：选择题库 -->
-    <div class="picker card">
-      <h2 class="section-title">
-        题库选择
-        <span class="scope-tip" :class="isAdmin ? 'admin' : 'teacher'">
-          {{ isAdmin ? '管理员权限 · 全站题库无限制' : '教师权限 · 仅可选择本人创建的题目' }}
-        </span>
-      </h2>
-      <div class="tabs">
-        <button
-          v-for="t in typeTabs"
-          :key="t.value"
-          class="tab"
-          :class="{ active: tab === t.value }"
-          type="button"
-          @click="tab = t.value"
-        >
-          {{ t.label }}
-        </button>
-        <input
-          v-model="tabKeyword"
-          class="input search"
           type="text"
-          placeholder="搜索该题型题目…"
+          placeholder="简要说明本次上机考核范围、重点算法或课堂注意事项…"
         />
       </div>
 
-      <div v-if="listLoading" class="state-card"><div class="loading-spinner"></div><p class="muted">正在加载题库…</p></div>
-      <ul v-else class="source-list">
-        <li
-          v-for="row in sourceRows()"
-          :key="`${tab}-${row.id}`"
-          class="source-row"
-        >
-          <span class="type-pill" :class="row.tagClass">{{ row.tagText }}</span>
-          <span class="source-label">{{ row.label }}</span>
-          <span class="source-score-hint">建议 {{ row.defaultScore }} 分</span>
+      <div class="config-col">
+        <label class="field-label">课堂限时（分钟） <span class="req">*</span></label>
+        <div class="duration-row">
+          <input
+            v-model.number="form.durationMinutes"
+            class="input duration-input mono"
+            type="number"
+            min="0"
+            max="300"
+            placeholder="45"
+          />
+          <span class="duration-unit muted">分钟（0 代表不限时，或设 5 ~ 300 分钟）</span>
+        </div>
+
+        <label class="field-label mt-8">快捷时长预设</label>
+        <div class="preset-row">
           <button
-            class="btn btn-ghost btn-sm"
+            v-for="mins in durationPresets"
+            :key="mins"
             type="button"
-            :disabled="isSelected(row.id)"
-            @click="addQuestion(row)"
+            class="preset-btn mono"
+            :class="{ active: form.durationMinutes === mins }"
+            @click="form.durationMinutes = mins"
           >
-            {{ isSelected(row.id) ? '已在卷中' : '+ 添加' }}
+            {{ mins === 0 ? '不限时' : `${mins}m` }}
           </button>
-        </li>
-        <li v-if="sourceRows().length === 0" class="muted empty">
-          {{ isAdmin ? '该题型暂无可选题库' : '暂无可用题目（教师仅可选择本人创建的题目）' }}
-        </li>
-      </ul>
+        </div>
+      </div>
     </div>
 
-    <!-- 已选题目清单 -->
-    <div class="chosen card">
-      <div class="chosen-header-row">
-        <h2 class="section-title">
-          已选题目（共 {{ selected.length }} 题 · 满分 {{ totalScore }} 分）
-          <span v-if="formErrors.questions" class="error-text">{{ formErrors.questions }}</span>
-        </h2>
-        <button
-          v-if="selected.length > 1"
-          class="btn btn-outline-sort btn-sm"
-          type="button"
-          title="按单选、判断、多选、填空、SQL、编程规范顺序重新排布"
-          @click="autoSortByStandards"
-        >
-          ⚡ 按标准题型顺序自动排布
-        </button>
-      </div>
+    <!-- 左右双栏组卷工作台 -->
+    <div class="composer-workbench">
+      <!-- 左栏：题库检索与挑选池 -->
+      <section class="workbench-panel card">
+        <div class="panel-head">
+          <div class="panel-head-left">
+            <h2 class="panel-title">题库检索池</h2>
+            <span class="scope-badge mono">
+              {{ isAdmin ? '管理员 · 全站题库' : '教师 · 本人题库' }}
+            </span>
+          </div>
 
-      <!-- 题型统计横幅 -->
-      <div v-if="selected.length > 0" class="subtotal-bar">
-        <span v-if="stats.single.count > 0" class="sub-pill single">单选: {{ stats.single.count }}题 ({{ stats.single.score }}分)</span>
-        <span v-if="stats.judge.count > 0" class="sub-pill judge">判断: {{ stats.judge.count }}题 ({{ stats.judge.score }}分)</span>
-        <span v-if="stats.multiple.count > 0" class="sub-pill multiple">多选: {{ stats.multiple.count }}题 ({{ stats.multiple.score }}分)</span>
-        <span v-if="stats.fill.count > 0" class="sub-pill fill">填空: {{ stats.fill.count }}题 ({{ stats.fill.score }}分)</span>
-        <span v-if="stats.db.count > 0" class="sub-pill db">SQL: {{ stats.db.count }}题 ({{ stats.db.score }}分)</span>
-        <span v-if="stats.algo.count > 0" class="sub-pill algo">编程: {{ stats.algo.count }}题 ({{ stats.algo.score }}分)</span>
-      </div>
-
-      <ul class="chosen-list">
-        <li v-for="(s, i) in selected" :key="i" class="chosen-row">
-          <span class="chosen-order mono">#{{ i + 1 }}</span>
-          <span class="type-pill" :class="getSelectedBadge(s).class">
-            {{ getSelectedBadge(s).text }}
-          </span>
-          <span class="chosen-label">{{ s.title }}</span>
-          <span class="chosen-score">
+          <div class="panel-search-wrap">
             <input
-              v-model.number="s.score"
-              class="input score-input"
-              type="number"
-              min="1"
+              v-model="tabKeyword"
+              class="input panel-search"
+              type="search"
+              placeholder="搜索当前题型题目…"
             />
-            分
-          </span>
-          <button
-            class="btn btn-ghost btn-sm btn-icon"
-            type="button"
-            title="上移"
-            :disabled="i === 0"
-            @click="moveQuestion(i, -1)"
-          >
-            ↑
-          </button>
-          <button
-            class="btn btn-ghost btn-sm btn-icon"
-            type="button"
-            title="下移"
-            :disabled="i === selected.length - 1"
-            @click="moveQuestion(i, 1)"
-          >
-            ↓
-          </button>
-          <button
-            class="btn btn-ghost btn-sm btn-danger"
-            type="button"
-            @click="removeQuestion(i)"
-          >
-            移除
-          </button>
-        </li>
-        <li v-if="selected.length === 0" class="muted empty">尚未选择题目，请在上方按类别添加题目</li>
-      </ul>
-    </div>
+          </div>
+        </div>
 
-    <!-- 底部操作按钮 -->
-    <div class="actions">
-      <p v-if="pageError || formErrors.title || formErrors.questions" class="action-error-hint">
-        ⚠ {{ pageError || formErrors.title || formErrors.questions }}
-      </p>
-      <div class="action-buttons">
-        <button class="btn btn-ghost" type="button" @click="router.push('/admin/practices')">
-          取消
-        </button>
-        <button class="btn btn-primary" type="button" :disabled="submitting" @click="save">
-          {{ submitting ? '生成口令中…' : '发起课堂练习并生成口令 →' }}
-        </button>
-      </div>
+        <div class="type-tabs-bar">
+          <button
+            v-for="t in typeTabs"
+            :key="t.value"
+            type="button"
+            class="type-tab-btn"
+            :class="{ active: tab === t.value }"
+            @click="tab = t.value"
+          >
+            {{ t.label }}
+          </button>
+        </div>
+
+        <div v-if="listLoading" class="loading-box muted">
+          <span class="loading-spin"></span>
+          <span>正在加载题库…</span>
+        </div>
+        <ul v-else class="bank-list">
+          <li
+            v-for="row in sourceRows()"
+            :key="`${row.type}-${row.id}`"
+            class="bank-row"
+            :class="{ 'is-picked': isSelected(row) }"
+            @click="toggleSelectQuestion(row)"
+          >
+            <div class="bank-row-main">
+              <span class="q-id mono">#{{ row.id }}</span>
+              <span
+                class="difficulty-pill"
+                :class="getItemBadge(row.difficulty, row.type).cls"
+              >
+                {{ getItemBadge(row.difficulty, row.type).label }}
+              </span>
+              <span class="q-label" :title="row.label">{{ row.label }}</span>
+            </div>
+
+            <div class="bank-row-right">
+              <span class="score-hint mono">{{ row.defaultScore }}分</span>
+              <button
+                type="button"
+                class="pick-btn"
+                :class="{ picked: isSelected(row) }"
+                @click.stop="toggleSelectQuestion(row)"
+              >
+                {{ isSelected(row) ? '✓ 已选' : '+ 选入' }}
+              </button>
+            </div>
+          </li>
+          <li v-if="sourceRows().length === 0" class="panel-empty muted">
+            {{
+              isAdmin
+                ? '该分类下暂无可选题目'
+                : '暂无可用题目（教师仅可选择本人创建的题目）'
+            }}
+          </li>
+        </ul>
+      </section>
+
+      <!-- 右栏：实时试卷结构预览与赋分台 -->
+      <section class="workbench-panel sticky-panel card">
+        <div class="panel-head">
+          <div class="panel-head-left">
+            <h2 class="panel-title">
+              已选试卷结构
+              <span class="mono">
+                ({{ selected.length }} 题 · 满分 {{ sectionStats.totalScore }} 分)
+              </span>
+            </h2>
+          </div>
+
+          <button
+            v-if="selected.length > 1"
+            type="button"
+            class="btn btn-ghost btn-sm sort-btn"
+            title="按 01客观 → 02SQL → 03算法 标准顺序自动重排"
+            @click="autoSortByStandards"
+          >
+            ⚡ 标准章节排序
+          </button>
+        </div>
+
+        <!-- 章节统计与批量赋分条 -->
+        <div v-if="selected.length > 0" class="batch-bar">
+          <div class="sec-summary-row mono">
+            <span v-if="sectionStats.objCount > 0" class="sec-chip">
+              01 客观: {{ sectionStats.objCount }}题 ({{ sectionStats.objScore }}分)
+            </span>
+            <span v-if="sectionStats.dbCount > 0" class="sec-chip">
+              02 SQL: {{ sectionStats.dbCount }}题 ({{ sectionStats.dbScore }}分)
+            </span>
+            <span v-if="sectionStats.algoCount > 0" class="sec-chip">
+              03 算法: {{ sectionStats.algoCount }}题 ({{ sectionStats.algoScore }}分)
+            </span>
+          </div>
+
+          <div class="batch-score-ops">
+            <div v-if="sectionStats.objCount > 0" class="batch-group">
+              <span class="batch-label">客观题统一</span>
+              <input
+                v-model.number="batchObjScore"
+                type="number"
+                min="1"
+                class="batch-input mono"
+              />
+              <button type="button" class="batch-apply-btn" @click="applyBatchObjScore">
+                设分
+              </button>
+            </div>
+            <div v-if="sectionStats.dbCount + sectionStats.algoCount > 0" class="batch-group">
+              <span class="batch-label">实操题统一</span>
+              <input
+                v-model.number="batchPracScore"
+                type="number"
+                min="1"
+                class="batch-input mono"
+              />
+              <button type="button" class="batch-apply-btn" @click="applyBatchPracScore">
+                设分
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="selected.length === 0" class="panel-empty muted">
+          尚未选择题目，请在左侧题库检索池点击「+ 选入」组卷
+          <p v-if="formErrors.questions" class="field-err mt-8">{{ formErrors.questions }}</p>
+        </div>
+
+        <ul v-else class="paper-list">
+          <li
+            v-for="(s, i) in selected"
+            :key="`${s.questionType}-${s.questionId}`"
+            class="paper-row"
+          >
+            <div class="paper-row-main">
+              <span class="paper-order mono">#{{ String(i + 1).padStart(2, '0') }}</span>
+              <span
+                class="difficulty-pill"
+                :class="getItemBadge(s.difficulty || s.objectiveType, s.questionType).cls"
+              >
+                {{ getItemBadge(s.difficulty || s.objectiveType, s.questionType).label }}
+              </span>
+              <span class="paper-title" :title="s.title">{{ s.title }}</span>
+            </div>
+
+            <div class="paper-row-ops">
+              <div class="score-box">
+                <input
+                  v-model.number="s.score"
+                  type="number"
+                  min="1"
+                  class="score-input mono"
+                />
+                <span class="score-unit">分</span>
+              </div>
+
+              <button
+                type="button"
+                class="icon-op-btn"
+                title="上移"
+                :disabled="i === 0"
+                @click="moveQuestion(i, -1)"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                class="icon-op-btn"
+                title="下移"
+                :disabled="i === selected.length - 1"
+                @click="moveQuestion(i, 1)"
+              >
+                ↓
+              </button>
+              <button
+                type="button"
+                class="icon-op-btn danger"
+                title="移除题目"
+                @click="removeQuestion(i)"
+              >
+                ×
+              </button>
+            </div>
+          </li>
+        </ul>
+      </section>
     </div>
   </div>
 </template>
 
 <style scoped>
-.practice-edit {
-  padding-top: 32px;
+.practice-composer {
+  padding-top: 24px;
+  padding-bottom: 72px;
 }
 
-.page-title {
-  margin: 28px 0 8px;
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.5px;
+.mono {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
-.form,
-.picker,
-.chosen {
-  padding: 16px;
-  margin-bottom: 16px;
-}
-
-.field-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-}
-
-.num {
-  max-width: 240px;
-}
-
-.section-title {
-  margin: 0 0 12px;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.tabs {
+.nav-trail {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  font-size: 12.5px;
+  color: var(--ink-tertiary);
+}
+.nav-trail a {
+  color: var(--ink-secondary);
+  text-decoration: none;
+}
+.nav-trail a:hover {
+  color: var(--ink);
+}
+.nav-trail .current {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
   flex-wrap: wrap;
 }
+.page-title {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+.head-sub {
+  margin: 0;
+  font-size: 13.5px;
+}
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
-.tab {
-  padding: 6px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--pill);
-  background: var(--surface);
+.error-banner {
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  color: var(--danger);
   font-size: 13px;
+  font-weight: 500;
+}
+
+/* 顶部紧凑基础配置栏 */
+.config-bar {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 24px;
+  padding: 16px 20px;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 0;
+}
+.config-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+.mt-8 {
+  margin-top: 6px;
+}
+.req {
+  color: var(--danger);
+}
+.field-err {
+  color: var(--danger);
+  font-weight: 500;
+  margin-left: 6px;
+}
+.duration-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.duration-input {
+  width: 110px;
+  font-weight: 700;
+}
+.duration-unit {
+  font-size: 12.5px;
+}
+.preset-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.preset-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  border-radius: 0;
+  transition: all 0.12s ease;
 }
-
-.tab.active {
-  border-color: var(--ink);
+.preset-btn:hover,
+.preset-btn.active {
   background: var(--ink);
-  color: #fff;
+  border-color: var(--ink);
+  color: #ffffff;
 }
 
-.search {
-  width: 240px;
-  margin-left: auto;
+/* 左右双栏组卷工作台 */
+.composer-workbench {
+  display: grid;
+  grid-template-columns: 1.18fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+.workbench-panel {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 0;
+  overflow: hidden;
+}
+.sticky-panel {
+  position: sticky;
+  top: 20px;
 }
 
-.source-list,
-.chosen-list {
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.panel-head-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.panel-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 700;
+}
+.scope-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-secondary);
+}
+.panel-search-wrap {
+  width: 200px;
+}
+.panel-search {
+  width: 100%;
+  height: 30px;
+  font-size: 12.5px;
+}
+
+.type-tabs-bar {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+.type-tab-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink-secondary);
+  cursor: pointer;
+  border-radius: 0;
+  transition: all 0.12s ease;
+}
+.type-tab-btn:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.type-tab-btn.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* 左栏题库列表 */
+.bank-list,
+.paper-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  max-height: 540px;
+  overflow-y: auto;
 }
-
-.source-row,
-.chosen-row {
+.bank-row,
+.paper-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  transition: background 0.12s ease;
+}
+.bank-row {
+  cursor: pointer;
+}
+.bank-row:hover {
+  background: var(--bg);
+}
+.bank-row.is-picked {
+  background: #f8fafc;
+}
+.bank-row:last-child,
+.paper-row:last-child {
+  border-bottom: none;
 }
 
-.source-label,
-.chosen-label {
-  flex: 1;
+.bank-row-main,
+.paper-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
+  flex: 1;
+}
+.q-id,
+.paper-order {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-secondary);
+  flex-shrink: 0;
+}
+.q-label,
+.paper-title {
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13.5px;
+  color: var(--ink);
 }
 
-.chosen-order {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--ink);
-  color: #fff;
+/* 题目徽标样式（与全局题集编辑及前台一致） */
+.difficulty-pill {
+  min-width: 58px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 0;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.pill-easy {
+  background: #2b8a3e;
+  color: #ffffff;
+  border: 1px solid #237032;
+}
+.pill-medium {
+  background: #e67700;
+  color: #ffffff;
+  border: 1px solid #c96500;
+}
+.pill-hard {
+  background: #c92a2a;
+  color: #ffffff;
+  border: 1px solid #b02525;
+}
+.pill-select {
+  background: #1e1e1e;
+  color: #ffffff;
+  border: 1px solid #111111;
+}
+.pill-dml {
+  background: #495057;
+  color: #ffffff;
+  border: 1px solid #343a40;
+}
+.pill-single {
+  background: #f8f9fa;
+  color: #18181b;
+  border: 1px solid #d4d4d8;
+}
+.pill-multiple {
+  background: #d4d4d8;
+  color: #18181b;
+  border: 1px solid #a1a1aa;
+}
+.pill-judge {
+  background: #52525b;
+  color: #ffffff;
+  border: 1px solid #3f3f46;
+}
+.pill-fill {
+  background: #18181b;
+  color: #ffffff;
+  border: 1px solid #09090b;
+}
+
+.bank-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.score-hint {
+  font-size: 11.5px;
+  color: var(--ink-tertiary);
+}
+.pick-btn {
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  border-radius: 0;
+}
+.pick-btn:hover {
+  border-color: var(--ink);
+}
+.pick-btn.picked {
+  background: #ebfbee;
+  border-color: #b2f2bb;
+  color: #2b8a3e;
+}
+
+/* 右栏试卷预览与批量设分条 */
+.sort-btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 0;
+}
+.batch-bar {
+  padding: 10px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sec-summary-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sec-chip {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+.batch-score-ops {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.batch-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.batch-label {
+  font-size: 11.5px;
+  color: var(--ink-secondary);
+}
+.batch-input {
+  width: 48px;
+  height: 24px;
+  border: 1px solid var(--line);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+.batch-apply-btn {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  cursor: pointer;
+}
+.batch-apply-btn:hover {
+  border-color: var(--ink);
+}
+
+.paper-row-ops {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.score-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 4px;
+}
+.score-input {
+  width: 52px;
+  height: 26px;
+  border: 1px solid var(--line);
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.score-unit {
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+.icon-op-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  flex-shrink: 0;
 }
-
-.type-pill {
-  padding: 1px 7px;
-  font-size: 11px;
-  font-weight: 700;
-  border: 1px solid var(--line);
-  border-radius: 0;
-  white-space: nowrap;
+.icon-op-btn:hover:not(:disabled) {
+  border-color: var(--ink);
 }
-
-.pill-algo {
-  color: #2b8a3e;
-  background: #ebfbee;
-  border-color: #b2f2bb;
+.icon-op-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
-
-.pill-db {
-  color: #111111;
-  background: #f1f3f5;
-  border-color: #ced4da;
-}
-
-.pill-objective {
-  color: #7048e8;
-  background: #f8f0fc;
-  border-color: #d0bfff;
-}
-
-.chosen-score {
-  color: var(--ink-tertiary);
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.score-input {
-  width: 64px;
-}
-
-.empty {
-  padding: 12px 0;
-  font-size: 13px;
-}
-
-.error-text {
-  color: var(--danger);
-  font-size: 13px;
-  font-weight: 400;
-  margin-left: 8px;
-}
-
-.actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 12px;
-  padding-bottom: 40px;
-}
-
-.action-buttons {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.action-error-hint {
-  margin: 0;
-  color: var(--danger);
-  font-size: 13.5px;
-  font-weight: 500;
-  background: var(--danger-bg);
-  padding: 6px 14px;
-  border: 1px solid var(--danger);
-  border-radius: var(--radius);
-}
-
-.btn-icon {
-  width: 28px;
-  padding: 0;
-}
-
-.btn-danger {
+.icon-op-btn.danger {
   color: var(--danger);
 }
-
-.btn-danger:hover {
+.icon-op-btn.danger:hover {
   background: var(--danger-bg);
   border-color: var(--danger);
 }
 
-.submit-error {
-  color: var(--danger);
+.panel-empty {
+  padding: 36px 20px;
+  text-align: center;
   font-size: 13px;
-  margin-bottom: 12px;
 }
 
-.scope-tip {
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  margin-left: 10px;
-  vertical-align: middle;
-  letter-spacing: 0.5px;
-}
-
-.scope-tip.teacher {
-  background: #2b8a3e;
-  color: #fff;
-}
-
-.scope-tip.admin {
-  background: #7048e8;
-  color: #fff;
-}
-
-/* 题型与统计栏样式 */
-.chosen-header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.btn-outline-sort {
-  background: #fff;
-  border: 1px solid #1e1e1e;
-  color: #1e1e1e;
-  font-weight: 700;
-  cursor: pointer;
-  padding: 5px 12px;
-  font-size: 12px;
-}
-
-.btn-outline-sort:hover {
-  background: #1e1e1e;
-  color: #fff;
-}
-
-.subtotal-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 12px;
-  background: #f8f9fa;
-  border: 1px dashed #ced4da;
-  margin-bottom: 14px;
-}
-
-.sub-pill {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 8px;
-  background: #fff;
-  border: 1px solid #dee2e6;
-}
-
-.sub-pill.single { border-color: #74c0fc; color: #1971c2; }
-.sub-pill.judge { border-color: #8ce99a; color: #2b8a3e; }
-.sub-pill.multiple { border-color: #b197fc; color: #7950f2; }
-.sub-pill.fill { border-color: #ffd43b; color: #f59f00; }
-.sub-pill.db { border-color: #63e6be; color: #0ca678; }
-.sub-pill.algo { border-color: #4dabf7; color: #1864ab; }
-
-.badge-single { background: #e7f5ff; color: #1971c2; }
-.badge-judge { background: #ebfbee; color: #2b8a3e; }
-.badge-multiple { background: #f3f0ff; color: #7950f2; }
-.badge-fill { background: #fff9db; color: #f59f00; }
-.badge-db { background: #e6fcf5; color: #0ca678; }
-.badge-algo { background: #e7f5ff; color: #1864ab; }
-
-.source-score-hint {
-  font-size: 11px;
-  color: #868e96;
-  white-space: nowrap;
-  flex-shrink: 0;
+@media (max-width: 920px) {
+  .config-bar,
+  .composer-workbench {
+    grid-template-columns: 1fr;
+  }
+  .sticky-panel {
+    position: static;
+  }
 }
 </style>
-

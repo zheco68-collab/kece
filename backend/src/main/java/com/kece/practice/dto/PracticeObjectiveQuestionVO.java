@@ -15,7 +15,7 @@ public class PracticeObjectiveQuestionVO {
 
     private Long practiceQuestionId;
     private Long questionId;
-    private String type; // SINGLE, MULTIPLE, FILL
+    private String type; // SINGLE, MULTIPLE, JUDGE, FILL
     private String content;
     private List<String> options;
     private Integer score;
@@ -27,4 +27,7 @@ public class PracticeObjectiveQuestionVO {
     private Integer userScore;
     private Boolean isCorrect;
     private Boolean answered;
+
+    /** 标准答案（仅在课练已截止、学生已交卷或教师管理预览时返回，未交卷作答中严格置 null）。 */
+    private String correctAnswer;
 }

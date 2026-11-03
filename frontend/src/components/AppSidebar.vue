@@ -52,8 +52,9 @@ function toggleCollapse() {
   emit('collapse-change', isCollapsed.value)
 }
 
-// 题库及其子路径深层匹配
+// 题库及其子路径深层匹配（当从随堂课练或题集进入做题时，归属课练或题集，不激活题库）
 function isQuestionsActive(): boolean {
+  if (route.query.practiceCode || route.query.setId) return false
   const p = route.path
   return (
     p === '/questions' ||
@@ -72,7 +73,7 @@ function isQuestionsActive(): boolean {
 // 路由监听：若路由属于题库或题集任一模块，自动展开手风琴
 // 路由激活监听：根据当前路由自动展开激活模块的手风琴；非激活模块默认保持收起
 watch(
-  () => route.path,
+  () => [route.path, route.query.practiceCode, route.query.setId],
   () => {
     isQuestionsAccordionOpen.value = isQuestionsActive() && !isCollapsed.value
     isProblemSetsAccordionOpen.value = isProblemSetsActive() && !isCollapsed.value
@@ -86,11 +87,11 @@ function isHomeActive(): boolean {
 }
 
 function isProblemSetsActive(): boolean {
-  return route.path === '/problem-sets' || route.path.startsWith('/problem-sets/')
+  return Boolean(route.query.setId) || route.path === '/problem-sets' || route.path.startsWith('/problem-sets/')
 }
 
 function isPracticeActive(): boolean {
-  return route.path === '/practice' || route.path.startsWith('/practice/')
+  return Boolean(route.query.practiceCode) || route.path === '/practice' || route.path.startsWith('/practice/')
 }
 
 function isExamsActive(): boolean {

@@ -48,8 +48,10 @@ public class DbQuestionController {
 
     @Operation(summary = "数据库题目详情")
     @GetMapping("/{id}")
-    public ApiResponse<DbQuestionVO> detail(@PathVariable Long id) {
-        return ApiResponse.success(questionService.detail(id));
+    public ApiResponse<DbQuestionVO> detail(
+            @PathVariable Long id,
+            @RequestParam(required = false) String practiceCode) {
+        return ApiResponse.success(questionService.detail(id, practiceCode));
     }
 
     @Operation(summary = "创建数据库题目")
@@ -80,6 +82,11 @@ public class DbQuestionController {
     @PostMapping("/{id}/submit")
     public ApiResponse<SubmissionVO> submit(
             @PathVariable Long id, @Valid @RequestBody DbSubmitRequest request) {
-        return ApiResponse.success(submissionService.submit(id, request.getSql()));
+        return ApiResponse.success(
+                submissionService.submit(
+                        id,
+                        request.getSql(),
+                        request.getPracticeCode(),
+                        request.getPracticeQuestionId()));
     }
 }

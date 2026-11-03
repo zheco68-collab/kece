@@ -15,8 +15,8 @@ public interface LessonPracticeMemberMapper {
 
     @Insert(
             """
-        INSERT INTO `lesson_practice_member` (practice_id, user_id, total_score, solved_count, joined_at, submitted)
-        VALUES (#{practiceId}, #{userId}, #{totalScore}, #{solvedCount}, #{joinedAt}, #{submitted})
+        INSERT INTO `lesson_practice_member` (practice_id, user_id, total_score, solved_count, penalty_time, joined_at, submitted)
+        VALUES (#{practiceId}, #{userId}, #{totalScore}, #{solvedCount}, #{penaltyTime}, #{joinedAt}, #{submitted})
     """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(LessonPracticeMember member);
@@ -27,8 +27,20 @@ public interface LessonPracticeMemberMapper {
             @Param("practiceId") Long practiceId, @Param("userId") Long userId);
 
     @Select(
-            "SELECT * FROM `lesson_practice_member` WHERE practice_id = #{practiceId} ORDER BY total_score DESC, solved_count DESC, joined_at ASC")
+            """
+        SELECT * FROM `lesson_practice_member`
+        WHERE practice_id = #{practiceId}
+        ORDER BY total_score DESC, solved_count DESC, penalty_time ASC, joined_at ASC
+    """)
     List<LessonPracticeMember> listByPracticeId(Long practiceId);
+
+    @Select(
+            """
+        SELECT * FROM `lesson_practice_member`
+        WHERE practice_id = #{practiceId}
+        ORDER BY total_score DESC, solved_count DESC, penalty_time ASC, joined_at ASC
+    """)
+    List<LessonPracticeMember> listScoreboard(Long practiceId);
 
     @Select("SELECT COUNT(*) FROM `lesson_practice_member` WHERE practice_id = #{practiceId}")
     int countByPracticeId(Long practiceId);
@@ -51,6 +63,21 @@ public interface LessonPracticeMemberMapper {
             @Param("userId") Long userId,
             @Param("totalScore") int totalScore,
             @Param("solvedCount") int solvedCount);
+
+    @Update(
+            """
+        UPDATE `lesson_practice_member`
+        SET total_score = #{totalScore}, solved_count = #{solvedCount},
+            penalty_time = #{penaltyTime}, last_active_at = #{lastActiveAt}
+        WHERE practice_id = #{practiceId} AND user_id = #{userId}
+    """)
+    int updateScoreAndSolvedWithPenalty(
+            @Param("practiceId") Long practiceId,
+            @Param("userId") Long userId,
+            @Param("totalScore") int totalScore,
+            @Param("solvedCount") int solvedCount,
+            @Param("penaltyTime") long penaltyTime,
+            @Param("lastActiveAt") LocalDateTime lastActiveAt);
 
     @Update(
             """

@@ -27,6 +27,9 @@ public class PracticeDetailVO {
     private LocalDateTime endTime;
     private Long remainingSeconds;
 
+    /** 当前用户是否为该课练的授课教师或系统管理员（管理预览视角）。 */
+    private Boolean canManage;
+
     /** 当前用户在该课练的状态。 */
     private Boolean myJoined;
 

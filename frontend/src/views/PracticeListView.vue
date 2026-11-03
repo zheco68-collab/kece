@@ -1,63 +1,121 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { practiceApi } from '@/api/practice'
-import { useUserStore } from '@/stores/user'
+import Pagination from '@/components/Pagination.vue'
 import { useToast } from '@/composables/useToast'
+import { useUserStore } from '@/stores/user'
 import type { PracticeSummary } from '@/types/practice'
 
+const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const { error: toastError, success: toastSuccess } = useToast()
 
 const practices = ref<PracticeSummary[]>([])
+const total = ref(0)
+const page = ref(1)
+const size = 15
 const loading = ref(true)
+
+const keyword = ref('')
+const currentTab = ref<'ALL' | 'ACTIVE' | 'ENDED'>('ALL')
+const scopeTab = ref<'ALL' | 'MINE'>('ALL')
+
+// 右上角口令直达舱
 const inputCode = ref('')
 const joining = ref(false)
-const currentTab = ref<'ALL' | 'ACTIVE' | 'ENDED'>('ALL')
+const topCodeInputRef = ref<HTMLInputElement | null>(null)
 
-// 口令验证弹窗状态
-const targetPractice = ref<PracticeSummary | null>(null)
-const modalCode = ref('')
-const modalJoining = ref(false)
-const modalError = ref('')
-const modalInputRef = ref<HTMLInputElement | null>(null)
+// 行内口令直通状态（点击未解锁进行中课练直接在行右侧展开）
+const inlineUnlockId = ref<number | null>(null)
+const inlineCode = ref('')
+const inlineJoining = ref(false)
 
-const isTeacherOrAdmin = computed(() =>
-  userStore.hasRole('TEACHER') || userStore.hasRole('ADMIN')
-)
+/**
+ * 后端仅对「本人已加入」或「本场授课教师 / 管理员」返回非空 accessCode
+ */
+function canDirectEnter(p: PracticeSummary): boolean {
+  return Boolean(p.accessCode)
+}
 
-const filteredPractices = computed(() => {
-  if (currentTab.value === 'ACTIVE') {
-    return practices.value.filter((p) => p.status === 'ACTIVE')
+function isManagerPreview(p: PracticeSummary): boolean {
+  return !p.myJoined && Boolean(p.accessCode)
+}
+
+function formatQuestionDist(p: PracticeSummary): string {
+  const obj = p.objectiveCount || 0
+  const prac = p.practicalCount || 0
+  if (obj > 0 && prac > 0) {
+    return `客观 ${obj} · 实操 ${prac}`
   }
-  if (currentTab.value === 'ENDED') {
-    return practices.value.filter((p) => p.status === 'ENDED')
+  if (obj > 0) {
+    return `客观 ${obj} 题`
   }
-  return practices.value
-})
+  if (prac > 0) {
+    return `实操 ${prac} 题`
+  }
+  return `共 ${p.questionCount || 0} 题`
+}
 
 async function fetchPractices() {
   loading.value = true
   try {
-    const res = await practiceApi.list({ page: 1, size: 50 })
-    practices.value = res.list
+    const res = await practiceApi.list({
+      keyword: keyword.value.trim() || undefined,
+      status: currentTab.value === 'ALL' ? undefined : currentTab.value,
+      joinedOnly: scopeTab.value === 'MINE' ? true : undefined,
+      page: page.value,
+      size,
+    })
+    practices.value = res.list || []
+    total.value = res.total || 0
   } catch (e) {
-    toastError(e instanceof Error ? e.message : '加载课练列表失败')
+    toastError(e instanceof Error ? e.message : '加载随堂课练列表失败')
   } finally {
     loading.value = false
   }
 }
 
-// 顶部快捷输入口令加入
-async function handleJoinByCode() {
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(keyword, () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    page.value = 1
+    fetchPractices()
+  }, 260)
+})
+
+watch(currentTab, () => {
+  page.value = 1
+  inlineUnlockId.value = null
+  fetchPractices()
+})
+
+watch(scopeTab, () => {
+  page.value = 1
+  inlineUnlockId.value = null
+  fetchPractices()
+})
+
+watch(page, () => {
+  inlineUnlockId.value = null
+  fetchPractices()
+})
+
+function handleTopCodeInput(e: Event) {
+  const target = e.target as HTMLInputElement
+  inputCode.value = target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
+}
+
+async function handleJoinByTopCode() {
   const code = inputCode.value.trim().toUpperCase()
   if (!code) {
-    toastError('请输入 6 位课练口令')
+    toastError('请输入 6 位课堂口令')
     return
   }
   if (!userStore.isLoggedIn) {
-    toastError('请先登录后再加入课练')
+    toastError('请先登录后再进入随堂课练')
     router.push('/login')
     return
   }
@@ -65,7 +123,7 @@ async function handleJoinByCode() {
   joining.value = true
   try {
     await practiceApi.join(code)
-    toastSuccess('加入课练成功！正在进入房间…')
+    toastSuccess('口令验证成功，正在进入课练…')
     router.push(`/practice/${code}`)
   } catch (e) {
     toastError(e instanceof Error ? e.message : '口令错误或课练不存在')
@@ -74,857 +132,856 @@ async function handleJoinByCode() {
   }
 }
 
-function handleInputCode(e: Event) {
-  const target = e.target as HTMLInputElement
-  inputCode.value = target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
-}
-
-// 点击课练卡片：已加入则直接进入，未加入且进行中则打开专属口令输入弹窗
-function openJoinModal(p: PracticeSummary) {
-  if (p.myJoined && p.accessCode) {
+function handleRowClick(p: PracticeSummary) {
+  if (canDirectEnter(p) && p.accessCode) {
     router.push(`/practice/${p.accessCode}`)
     return
   }
   if (p.status === 'ENDED') {
-    toastError('该课练已截止收卷，无法加入')
     return
   }
+  openInlineUnlock(p)
+}
+
+function openInlineUnlock(p: PracticeSummary) {
   if (!userStore.isLoggedIn) {
     toastError('请先登录后再输入口令进入课练')
     router.push('/login')
     return
   }
-  targetPractice.value = p
-  modalCode.value = ''
-  modalError.value = ''
+  inlineUnlockId.value = p.id
+  inlineCode.value = ''
   nextTick(() => {
-    modalInputRef.value?.focus()
+    const el = document.getElementById(`inline-code-input-${p.id}`) as HTMLInputElement | null
+    el?.focus()
   })
 }
 
-function closeJoinModal() {
-  targetPractice.value = null
-  modalCode.value = ''
-  modalError.value = ''
+function closeInlineUnlock() {
+  inlineUnlockId.value = null
+  inlineCode.value = ''
 }
 
-async function handleModalJoin() {
-  const code = modalCode.value.trim().toUpperCase()
+function handleInlineCodeInput(e: Event) {
+  const target = e.target as HTMLInputElement
+  inlineCode.value = target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
+}
+
+async function submitInlineUnlock(p: PracticeSummary) {
+  const code = inlineCode.value.trim().toUpperCase()
   if (!code) {
-    modalError.value = '请输入 6 位课练口令'
+    toastError('请输入 6 位课堂口令')
     return
   }
-  modalJoining.value = true
-  modalError.value = ''
+  inlineJoining.value = true
   try {
-    await practiceApi.join(code)
-    toastSuccess(`口令验证成功！正在进入「${targetPractice.value?.title}」…`)
-    const targetCode = code
-    closeJoinModal()
-    router.push(`/practice/${targetCode}`)
+    await practiceApi.join(code, p.id)
+    toastSuccess(`已解锁「${p.title}」，正在进入…`)
+    closeInlineUnlock()
+    router.push(`/practice/${code}`)
   } catch (e) {
-    modalError.value = e instanceof Error ? e.message : '口令错误，请核对教师公布的房间口令'
+    toastError(e instanceof Error ? e.message : '口令与当前课练不匹配，请核对教师公布的口令')
   } finally {
-    modalJoining.value = false
+    inlineJoining.value = false
   }
 }
 
 onMounted(() => {
+  const unlockParam = route.query.unlock
+  if (unlockParam) {
+    inputCode.value = String(unlockParam).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
+    nextTick(() => {
+      topCodeInputRef.value?.focus()
+    })
+  }
   fetchPractices()
 })
 </script>
 
 <template>
-  <div class="practice-list-page container">
-    <!-- 头部说明 -->
-    <header class="page-head">
-      <div class="head-main">
+  <div class="practice-hall container">
+    <!-- 顶部标题 + 右上角紧凑口令直达舱 -->
+    <div class="page-head">
+      <div class="page-head-left">
         <h1 class="page-title">随堂课练</h1>
-        <p class="muted">免建班免排期 · 6 位口令凭码上机 · 实时评测对拍 · 教师大屏投屏</p>
+        <p class="muted head-sub">
+          6 位课堂口令凭码上机 · 客观与实操混排评测 · 实时榜单演进
+        </p>
       </div>
-      <div v-if="isTeacherOrAdmin" class="head-extra">
-        <RouterLink to="/admin/practices" class="btn btn-ghost btn-sm teacher-link">
-          <span>教师控制台：管理课练 →</span>
-        </RouterLink>
-      </div>
-    </header>
 
-    <!-- 6 位口令快速加入横幅 -->
-    <div class="join-banner card">
-      <div class="join-info">
-        <div class="join-icon-wrap">
-          <svg class="key-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 2l-2 2m-1.5 1.5L16 7l-1.5-1.5-3 3 1.5 1.5L9 13H5v4h4v-2l2-2 1.5 1.5 3-3-1.5-1.5 1.5-1.5 2-2 3.5 3.5 1.5-1.5z" />
-          </svg>
-        </div>
-        <div class="join-text">
-          <h2 class="join-title">输入 6 位课堂口令即刻入场</h2>
-          <p class="muted join-desc">老师在黑板或投影仪上公布的房间口令，学生输入后直接同步开练</p>
-        </div>
-      </div>
-      <div class="join-action">
-        <div class="join-input-group">
-          <input
-            :value="inputCode"
-            type="text"
-            class="input code-input mono"
-            placeholder="如 KE98A2"
-            maxlength="8"
-            @input="handleInputCode"
-            @keydown.enter="handleJoinByCode"
-          />
-          <button
-            class="btn btn-primary btn-join"
-            :disabled="joining || !inputCode.trim()"
-            @click="handleJoinByCode"
-          >
-            {{ joining ? '加入中…' : '进入课练 →' }}
-          </button>
-        </div>
+      <div class="head-code-dock">
+        <span class="dock-label mono">KEY 口令入场</span>
+        <input
+          ref="topCodeInputRef"
+          :value="inputCode"
+          type="text"
+          class="dock-input mono"
+          placeholder="如 KE98A2"
+          maxlength="8"
+          @input="handleTopCodeInput"
+          @keydown.enter="handleJoinByTopCode"
+        />
+        <button
+          type="button"
+          class="btn btn-primary dock-btn"
+          :disabled="joining || !inputCode.trim()"
+          @click="handleJoinByTopCode"
+        >
+          {{ joining ? '验证中…' : '进入课练 →' }}
+        </button>
       </div>
     </div>
 
-    <!-- 筛选工具栏 -->
+    <!-- 单行综合工具栏（z-index: 2，配合下方卡片掉落动效） -->
     <div class="toolbar card">
-      <div class="status-tabs">
-        <button
-          class="tab"
-          :class="{ active: currentTab === 'ALL' }"
-          @click="currentTab = 'ALL'"
-        >
-          全部课练 ({{ practices.length }})
-        </button>
-        <button
-          class="tab"
-          :class="{ active: currentTab === 'ACTIVE' }"
-          @click="currentTab = 'ACTIVE'"
-        >
-          进行中 ({{ practices.filter((p) => p.status === 'ACTIVE').length }})
-        </button>
-        <button
-          class="tab"
-          :class="{ active: currentTab === 'ENDED' }"
-          @click="currentTab = 'ENDED'"
-        >
-          已结束 ({{ practices.filter((p) => p.status === 'ENDED').length }})
-        </button>
-      </div>
-
-      <button
-        class="btn btn-ghost btn-sm btn-refresh"
-        :disabled="loading"
-        @click="fetchPractices"
-      >
-        {{ loading ? '刷新中…' : '刷新状态 ↻' }}
-      </button>
-    </div>
-
-    <!-- 状态反馈 -->
-    <div v-if="loading && practices.length === 0" class="state-card card">
-      <div class="loading-spinner"></div><p class="muted">正在加载随堂课练活动…</p>
-    </div>
-
-    <div v-else-if="filteredPractices.length === 0" class="empty">
-      当前暂无可参与的随堂课练
-    </div>
-
-    <!-- 课练流式卡片列表 -->
-    <div v-else class="practice-list">
-      <article
-        v-for="p in filteredPractices"
-        :key="p.id"
-        class="practice-card card"
-      >
-        <div class="practice-main">
-          <div class="practice-title-row">
-            <h2
-              class="practice-title"
-              :class="{ 'is-ended': p.status === 'ENDED' }"
-              @click="openJoinModal(p)"
-            >
-              <!-- 课练访问凭证状态标识：已解锁 vs 需口令（保护课堂私密性，大厅绝不明文暴露 6 位口令） -->
-              <span v-if="p.myJoined" class="code-unlocked-pill" title="已输入口令解锁，点击可直接进入">
-                <svg class="inline-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <rect x="3" y="11" width="18" height="11" />
-                  <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-                </svg>
-                <span>已解锁</span>
-              </span>
-              <span v-else class="code-lock-pill" title="该课练受课堂口令保护，需输入口令进入">
-                <svg class="inline-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <rect x="3" y="11" width="18" height="11" />
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                </svg>
-                <span>需口令</span>
-              </span>
-
-              <span class="practice-name">{{ p.title }}</span>
-            </h2>
-
-            <div class="practice-badges">
-              <span
-                class="badge status-badge"
-                :class="p.status === 'ACTIVE' ? 'status-ongoing' : 'status-ended'"
-              >
-                <span v-if="p.status === 'ACTIVE'" class="pulse-dot"></span>
-                {{ p.status === 'ACTIVE' ? '进行中' : '已归档' }}
-              </span>
-              <span v-if="p.myJoined" class="badge badge-joined">
-                已参练 · {{ p.myScore ?? 0 }} 分
-              </span>
-              <span v-if="p.mySubmitted" class="badge badge-submitted">
-                已交卷
-              </span>
-            </div>
-          </div>
-
-          <p v-if="p.description" class="practice-desc">
-            {{ p.description }}
-          </p>
-
-          <!-- 参数排盘 -->
-          <div class="practice-meta-row">
-            <div class="meta-item">
-              <span class="meta-k">发起教师</span>
-              <span class="meta-v">{{ p.teacherName }}</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-k">限时时长</span>
-              <span class="meta-v mono">{{ p.durationMinutes > 0 ? `${p.durationMinutes} 分钟` : '不限时' }}</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-k">试题构成</span>
-              <span class="meta-v">
-                {{ p.objectiveCount > 0 ? `客观题 ${p.objectiveCount} 题 · ` : '' }}实操 {{ p.practicalCount }} 题
-              </span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-k">参练人数</span>
-              <span class="meta-v mono">{{ p.memberCount }} 人</span>
-            </div>
-          </div>
+      <div class="toolbar-left">
+        <div class="search-wrap">
+          <svg class="search-icon" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z" />
+          </svg>
+          <input
+            v-model="keyword"
+            class="input search-input"
+            type="search"
+            placeholder="搜索课练名称、说明…"
+          />
         </div>
 
-        <div class="practice-action">
+        <div class="filter-tabs">
           <button
-            v-if="isTeacherOrAdmin && p.accessCode && p.status === 'ACTIVE'"
-            class="btn btn-ghost btn-sm btn-projector"
             type="button"
-            title="查看课练实时数据看板"
-            @click="router.push(`/practice/${p.accessCode}/monitor`)"
+            class="tab-btn"
+            :class="{ active: currentTab === 'ALL' }"
+            @click="currentTab = 'ALL'"
           >
-            课练数据 ↗
+            全部课练
           </button>
+          <button
+            type="button"
+            class="tab-btn"
+            :class="{ active: currentTab === 'ACTIVE' }"
+            @click="currentTab = 'ACTIVE'"
+          >
+            进行中
+          </button>
+          <button
+            type="button"
+            class="tab-btn"
+            :class="{ active: currentTab === 'ENDED' }"
+            @click="currentTab = 'ENDED'"
+          >
+            已结束
+          </button>
+        </div>
+      </div>
 
-          <!-- 已结束课练：已加入用户可进入复盘回顾，未加入者不可再加入 -->
-          <template v-if="p.status === 'ENDED'">
-            <button
-              v-if="p.myJoined && p.accessCode"
-              class="btn btn-secondary btn-sm btn-enter"
-              type="button"
-              @click="router.push(`/practice/${p.accessCode}`)"
-            >
-              <span>查看回顾</span>
-              <svg class="cta-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="5" y1="12" x2="19" y2="12" />
-                <polyline points="12 5 19 12 12 19" />
-              </svg>
-            </button>
-            <button
-              v-else
-              class="btn btn-ghost btn-sm btn-ended"
-              disabled
-              type="button"
-            >
-              已结束
-            </button>
-          </template>
+      <div class="toolbar-right">
+        <div v-if="userStore.isLoggedIn" class="status-tabs">
+          <button
+            type="button"
+            class="status-tab"
+            :class="{ active: scopeTab === 'ALL' }"
+            @click="scopeTab = 'ALL'"
+          >
+            全部
+          </button>
+          <button
+            type="button"
+            class="status-tab"
+            :class="{ active: scopeTab === 'MINE' }"
+            @click="scopeTab = 'MINE'"
+          >
+            已参与
+          </button>
+        </div>
 
-          <!-- 进行中课练 -->
-          <template v-else>
-            <!-- 已加入用户可直接进入，未加入用户需点按弹出口令验证框 -->
-            <button
-              v-if="p.myJoined && p.accessCode"
-              class="btn btn-primary btn-sm btn-enter"
-              type="button"
-              @click="router.push(`/practice/${p.accessCode}`)"
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm refresh-btn"
+          :disabled="loading"
+          @click="fetchPractices"
+        >
+          {{ loading ? '刷新中…' : '↻ 刷新' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 全站统一加载与空状态 -->
+    <div v-if="loading && practices.length === 0" class="loading-box card muted">
+      <span class="loading-spin"></span>
+      <span>正在加载随堂课练…</span>
+    </div>
+
+    <div v-else-if="practices.length === 0" class="empty-box card">
+      <p class="empty-title">暂无匹配的随堂课练</p>
+      <p class="muted empty-desc">可直接在右上角输入教师公布的 6 位课堂口令入场</p>
+    </div>
+
+    <!-- 题集风单行紧凑卡片列表（1:1 继承题集/题库 cardDropIn 掉落动画） -->
+    <div
+      v-else
+      :key="`${page}-${currentTab}-${scopeTab}`"
+      class="question-list"
+    >
+      <article
+        v-for="(p, index) in practices"
+        :key="p.id"
+        class="question-item card"
+        :class="{ 'is-ended-unjoined': p.status === 'ENDED' && !canDirectEnter(p) }"
+        :style="{ '--drop-index': index }"
+        @click="handleRowClick(p)"
+      >
+        <!-- 左侧：状态指示图标 + 序号 + 标题与工业风标签组 -->
+        <div class="q-main-layout">
+          <div class="q-status-wrap">
+            <!-- 已交卷或已参练结束：与题库一致的绿圆勾 -->
+            <span
+              v-if="p.mySubmitted || (p.status === 'ENDED' && p.myJoined)"
+              class="status-icon solved"
+              title="已参练完成"
             >
-              <span>进入课练</span>
-              <svg class="cta-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="5" y1="12" x2="19" y2="12" />
-                <polyline points="12 5 19 12 12 19" />
+              <svg viewBox="0 0 16 16" fill="currentColor">
+                <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05Z" />
               </svg>
-            </button>
-            <button
-              v-else
-              class="btn btn-secondary btn-sm btn-key-enter"
-              type="button"
-              @click="openJoinModal(p)"
+            </span>
+            <!-- 进行中且已解锁（或教师免密直达）：绿色脉冲点 -->
+            <span
+              v-else-if="p.status === 'ACTIVE' && canDirectEnter(p)"
+              class="status-icon ongoing-dot"
+              :title="isManagerPreview(p) ? '进行中 · 教师免密视角' : '进行中 · 已解锁'"
+            ></span>
+            <!-- 进行中但未解锁：锁图标 -->
+            <span
+              v-else-if="p.status === 'ACTIVE' && !canDirectEnter(p)"
+              class="status-icon locked-key"
+              title="需输入 6 位课堂口令解锁"
             >
-              <svg class="cta-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="11" width="18" height="11" />
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
-              <span>输入口令进入</span>
-            </button>
+            </span>
+            <!-- 已结束未参练：空心灰环 -->
+            <span v-else class="status-icon unsolved" :title="isManagerPreview(p) ? '已结束 · 教师视角' : '已结束 · 未参练'">
+              <span class="unsolved-ring"></span>
+            </span>
+          </div>
+
+          <span class="q-number mono">#{{ String((page - 1) * size + index + 1).padStart(2, '0') }}</span>
+
+          <div class="q-content">
+            <div class="q-title-line">
+              <h3 class="q-title" :class="{ 'muted-title': p.status === 'ENDED' && !canDirectEnter(p) }">
+                {{ p.title }}
+              </h3>
+              <span v-if="p.description" class="q-desc-inline">— {{ p.description }}</span>
+            </div>
+
+            <div class="q-tags-row">
+              <span class="meta-tag type mono">{{ formatQuestionDist(p) }}</span>
+              <span class="meta-tag limits mono">
+                {{ p.durationMinutes > 0 ? `限时 ${p.durationMinutes} 分钟` : '不限时' }}
+              </span>
+              <span class="meta-tag limits mono">教师: {{ p.teacherName }}</span>
+              <span class="meta-tag limits mono">{{ p.memberCount }} 人参练</span>
+              <span v-if="p.myJoined" class="meta-tag progress mono">
+                {{ p.mySubmitted ? '已交卷' : '已解锁' }} · {{ p.myScore ?? 0 }} 分
+              </span>
+              <span v-else-if="isManagerPreview(p)" class="meta-tag manager mono">
+                管理视角 · #{{ p.accessCode }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧：状态标识 + 动作入口 -->
+        <div class="q-right-layout" @click.stop>
+          <!-- 场景 A：授课教师 / 管理员免密视角 -->
+          <template v-if="isManagerPreview(p) && p.accessCode">
+            <span
+              class="difficulty-pill"
+              :class="p.status === 'ACTIVE' ? 'pill-easy' : 'pill-ended'"
+            >
+              {{ p.status === 'ACTIVE' ? '进行中' : '已结束' }}
+            </span>
+            <span class="action-cta" @click="router.push(`/practice/${p.accessCode}`)">
+              <span class="cta-text">进入视角</span>
+              <svg class="cta-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M6 3l5 5-5 5" />
+              </svg>
+            </span>
+          </template>
+
+          <!-- 场景 1：进行中 · 学生已解锁 -->
+          <template v-else-if="p.status === 'ACTIVE' && p.myJoined && p.accessCode">
+            <span class="difficulty-pill pill-easy">进行中</span>
+            <span class="action-cta" @click="router.push(`/practice/${p.accessCode}`)">
+              <span class="cta-text">进入课练</span>
+              <svg class="cta-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M6 3l5 5-5 5" />
+              </svg>
+            </span>
+          </template>
+
+          <!-- 场景 2：进行中 · 未解锁（支持行内直接展开口令输入条，绑定 p.id 防串房） -->
+          <template v-else-if="p.status === 'ACTIVE' && !p.myJoined">
+            <span class="difficulty-pill pill-easy">进行中</span>
+
+            <div v-if="inlineUnlockId === p.id" class="inline-code-box">
+              <input
+                :id="`inline-code-input-${p.id}`"
+                :value="inlineCode"
+                type="text"
+                class="inline-code-input mono"
+                placeholder="6位口令"
+                maxlength="8"
+                @input="handleInlineCodeInput"
+                @keydown.enter="submitInlineUnlock(p)"
+                @keydown.esc="closeInlineUnlock"
+              />
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                :disabled="inlineJoining || !inlineCode.trim()"
+                @click="submitInlineUnlock(p)"
+              >
+                {{ inlineJoining ? '…' : '进房 →' }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                title="取消"
+                @click="closeInlineUnlock"
+              >
+                ×
+              </button>
+            </div>
+
+            <span v-else class="action-cta" @click="openInlineUnlock(p)">
+              <span class="cta-text">输入口令</span>
+              <svg class="cta-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M6 3l5 5-5 5" />
+              </svg>
+            </span>
+          </template>
+
+          <!-- 场景 3：已结束 · 已参练 -->
+          <template v-else-if="p.status === 'ENDED' && p.myJoined && p.accessCode">
+            <span class="difficulty-pill pill-ended">已结束</span>
+            <span class="action-cta" @click="router.push(`/practice/${p.accessCode}`)">
+              <span class="cta-text">查看回顾</span>
+              <svg class="cta-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M6 3l5 5-5 5" />
+              </svg>
+            </span>
+          </template>
+
+          <!-- 场景 4：已结束 · 未参练（仅保留单个徽章） -->
+          <template v-else>
+            <span class="difficulty-pill pill-ended">已结束</span>
           </template>
         </div>
       </article>
     </div>
 
-    <!-- 专属课练口令输入验证弹窗 -->
-    <Teleport to="body">
-      <div v-if="targetPractice" class="modal-backdrop" @click.self="closeJoinModal">
-        <div class="modal card">
-          <div class="modal-header">
-            <div class="modal-lock-badge">
-              <svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-            </div>
-            <div class="modal-header-text">
-              <h2 class="modal-title">输入课练口令</h2>
-              <p class="modal-subtitle muted">进入「{{ targetPractice.title }}」</p>
-            </div>
-          </div>
-
-          <div class="modal-body">
-            <label class="modal-label">6 位课堂口令（老师在黑板或投屏公布）</label>
-            <input
-              ref="modalInputRef"
-              v-model="modalCode"
-              type="text"
-              class="input modal-code-input mono"
-              placeholder="如 KE98A2"
-              maxlength="8"
-              @keydown.enter="handleModalJoin"
-            />
-            <p v-if="modalError" class="modal-error">{{ modalError }}</p>
-          </div>
-
-          <div class="modal-footer">
-            <button class="btn btn-ghost btn-sm" type="button" @click="closeJoinModal">
-              取消
-            </button>
-            <button
-              class="btn btn-primary btn-sm btn-verify"
-              type="button"
-              :disabled="modalJoining || !modalCode.trim()"
-              @click="handleModalJoin"
-            >
-              {{ modalJoining ? '验证中…' : '验证并进入 →' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <Pagination
+      v-if="total > size"
+      v-model:page="page"
+      :size="size"
+      :total="total"
+    />
   </div>
 </template>
 
 <style scoped>
-.practice-list-page {
-  padding-top: 40px;
-  padding-bottom: 64px;
+.practice-hall {
+  padding-top: 32px;
+  padding-bottom: 72px;
 }
 
-/* 头部 */
+.mono {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+/* 顶部标题 + 右上角口令直达舱 */
 .page-head {
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
-  align-items: flex-start;
+  gap: 20px;
   margin-bottom: 24px;
-  gap: 16px;
   flex-wrap: wrap;
 }
-
+.page-head-left {
+  flex: 1;
+  min-width: 260px;
+}
 .page-title {
-  margin: 0 0 4px;
-  font-size: 28px;
-  font-weight: 800;
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 700;
   letter-spacing: -0.5px;
-  color: var(--ink);
 }
-
-.teacher-link {
-  font-weight: 600;
-}
-
-/* 6 位口令加入横幅卡片 */
-.join-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 20px 24px;
-  margin-bottom: 20px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-sm);
-  flex-wrap: wrap;
-}
-
-.join-info {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-width: 0;
-}
-
-.join-icon-wrap {
-  width: 44px;
-  height: 44px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink);
-  flex-shrink: 0;
-}
-
-.key-icon {
-  width: 20px;
-  height: 20px;
-}
-
-.join-title {
-  margin: 0 0 4px;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.join-desc {
+.head-sub {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 
-.join-action {
-  flex-shrink: 0;
-}
-
-.join-input-group {
+.head-code-dock {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 0;
 }
-
-.code-input {
-  width: 150px;
-  height: 40px;
-  font-size: 15px;
+.dock-label {
+  padding: 0 10px 0 6px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 1.5px;
+  color: var(--ink-secondary);
+  border-right: 1px solid var(--line);
+  white-space: nowrap;
+}
+.dock-input {
+  width: 148px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
   text-transform: uppercase;
   text-align: center;
+  border-radius: 0;
+  outline: none;
 }
-
-.btn-join {
-  height: 40px;
-  padding: 0 20px;
-  font-size: 14px;
+.dock-input:focus {
+  border-color: var(--ink);
+}
+.dock-btn {
+  height: 34px;
+  padding: 0 16px;
+  font-size: 13px;
   font-weight: 600;
+  border-radius: 0;
   white-space: nowrap;
 }
 
-/* 检索与状态工具条 */
+/* 顶部综合工具栏（z-index: 2 与题集/题库完全一致） */
 .toolbar {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 18px;
+  padding: 12px 16px;
   margin-bottom: 20px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-sm);
-  flex-wrap: wrap;
-}
-
-.status-tabs {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.tab {
-  padding: 6px 16px;
-  border-radius: var(--radius);
-  font-size: 13.5px;
-  color: var(--ink-secondary);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.tab.active {
-  background: var(--button);
-  border-color: var(--button);
-  color: #fff;
-  font-weight: 600;
-}
-
-.btn-refresh {
-  font-size: 12.5px;
-}
-
-.loading {
-  padding: 48px 0;
-  text-align: center;
-}
-
-.empty {
-  padding: 48px 0;
-  text-align: center;
-  color: var(--ink-tertiary);
-  font-size: 14px;
-}
-
-/* 课练卡片流式列表（与考试大厅完全对齐） */
-.practice-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.practice-card {
-  padding: 22px 26px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-sm);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.practice-card:hover {
-  box-shadow: var(--shadow-md);
-  border-color: var(--ink);
-}
-
-.practice-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.practice-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.practice-title {
-  margin: 0;
-  font-size: 17.5px;
-  font-weight: 700;
-  color: var(--ink);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-}
-
-.practice-name {
-  transition: color 0.15s ease;
-}
-
-.practice-title:hover .practice-name {
-  color: var(--ink);
-  text-decoration: underline;
-}
-
-.code-unlocked-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  font-size: 11.5px;
-  font-weight: 600;
-  background: #ebfbee;
-  color: #2b8a3e;
-  border: 1px solid rgba(43, 138, 62, 0.3);
-  border-radius: var(--radius);
-  flex-shrink: 0;
-}
-
-.code-lock-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  font-size: 11.5px;
-  font-weight: 600;
-  background: var(--bg);
-  color: var(--ink-tertiary);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  flex-shrink: 0;
-}
-
-.inline-lock {
-  width: 11px;
-  height: 11px;
-}
-
-.practice-badges {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.status-badge {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 2px 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.status-ongoing {
-  background: #e8f5e9;
-  color: #2e7d32;
-  border: 1px solid rgba(46, 125, 50, 0.3);
-}
-
-.status-ended {
-  background: #f0f0f0;
-  color: var(--ink-tertiary);
-  border: 1px solid var(--line);
-}
-
-.pulse-dot {
-  width: 6px;
-  height: 6px;
-  background: #2e7d32;
   border-radius: 0;
-  animation: pulse 1s infinite alternate;
-}
-
-@keyframes pulse {
-  from {
-    opacity: 0.3;
-    transform: scale(0.8);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1.2);
-  }
-}
-
-.badge-joined {
-  background: #ebfbee;
-  color: #2b8a3e;
-  border: 1px solid #b2f2bb;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 2px 8px;
-}
-
-.badge-submitted {
-  background: #f1f3f5;
-  color: var(--ink-secondary);
-  border: 1px solid #ced4da;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 2px 8px;
-}
-
-.practice-desc {
-  margin: 0;
-  font-size: 13.5px;
-  color: var(--ink-secondary);
-  line-height: 1.5;
-  max-width: 780px;
-}
-
-.practice-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 22px;
+  border: 1px solid var(--line);
+  background: var(--surface);
   flex-wrap: wrap;
-  padding-top: 2px;
 }
-
-.meta-item {
+.toolbar-left {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex: 1;
 }
-
-.meta-k {
-  color: var(--ink-tertiary);
-  font-size: 12px;
+.search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 240px;
 }
-
-.meta-v {
+.search-icon {
+  position: absolute;
+  left: 10px;
+  width: 14px;
+  height: 14px;
   color: var(--ink-secondary);
+  pointer-events: none;
+}
+.search-input {
+  width: 100%;
+  height: 34px;
+  padding-left: 32px;
+  font-size: 13.5px;
+  border-radius: 0;
+  background: var(--bg);
+}
+.filter-tabs {
+  display: flex;
+  gap: 6px;
+}
+.tab-btn {
+  padding: 5px 12px;
+  font-size: 13px;
   font-weight: 500;
+  border-radius: 0;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tab-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.tab-btn.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #ffffff;
+  font-weight: 600;
 }
 
-/* 操作按钮 */
-.practice-action {
-  flex-shrink: 0;
+.toolbar-right {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
-}
-
-.btn-enter {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 9px 18px;
-  font-weight: 600;
-  font-size: 13.5px;
-}
-
-.btn-key-enter {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  font-weight: 600;
-  font-size: 13px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  color: var(--ink);
-  transition: all 0.15s ease;
-}
-
-.btn-key-enter:hover {
-  background: var(--ink);
-  color: #ffffff;
-  border-color: var(--ink);
-}
-
-.cta-arrow {
-  width: 13px;
-  height: 13px;
-}
-
-.cta-lock {
-  width: 13px;
-  height: 13px;
-}
-
-.btn-projector {
-  padding: 9px 14px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-/* 验证口令弹窗样式 */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 20px;
-}
-
-.modal {
-  width: 100%;
-  max-width: 440px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-md);
-  padding: 24px;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 20px;
-}
-
-.modal-lock-badge {
-  width: 42px;
-  height: 42px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink);
   flex-shrink: 0;
 }
+.status-tabs {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  padding: 2px;
+}
+.status-tab {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: var(--ink-secondary);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.status-tab.active {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.refresh-btn {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  border-radius: 0;
+}
 
-.lock-icon {
+/* 题目/题集/课练卡片列表（1:1 继承题集与题库的 cardDropIn 按序弹簧掉落动画） */
+.question-list {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.question-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 0;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: cardDropIn 0.44s cubic-bezier(0.25, 1.15, 0.5, 1) backwards;
+  animation-delay: calc(var(--drop-index, 0) * 45ms);
+  will-change: transform, opacity;
+}
+.question-item:hover {
+  border-color: var(--ink);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px) !important;
+}
+.question-item.is-ended-unjoined {
+  cursor: default;
+}
+.question-item.is-ended-unjoined:hover {
+  border-color: var(--line);
+  box-shadow: var(--shadow-sm);
+  transform: none !important;
+}
+
+@keyframes cardDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-38px) scale(0.985);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(3px) scale(1.002);
+  }
+  82% {
+    opacity: 1;
+    transform: translateY(-1.5px) scale(0.999);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .question-item {
+    animation: none !important;
+  }
+}
+
+.q-main-layout {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex: 1;
+}
+.q-status-wrap {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.status-icon.solved {
+  color: #2b8a3e;
   width: 20px;
   height: 20px;
+  display: inline-flex;
+}
+.status-icon.ongoing-dot {
+  width: 10px;
+  height: 10px;
+  background: #2b8a3e;
+  display: inline-block;
+  box-shadow: 0 0 0 3px rgba(43, 138, 62, 0.18);
+}
+.status-icon.locked-key {
+  color: var(--ink-secondary);
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+}
+.status-icon.unsolved {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.unsolved-ring {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #d0d0d0;
+  border-radius: 50%;
 }
 
-.modal-header-text {
+.q-number {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink-secondary);
+  min-width: 36px;
+  flex-shrink: 0;
+}
+.q-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+}
+.q-title-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   min-width: 0;
 }
-
-.modal-title {
-  margin: 0 0 2px;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.modal-subtitle {
+.q-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.q-title.muted-title {
+  color: var(--ink-secondary);
+}
+.q-desc-inline {
+  font-size: 12.5px;
+  color: var(--ink-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.q-tags-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.meta-tag {
+  font-size: 11.5px;
+  padding: 1px 7px;
+  line-height: 1.4;
+  border-radius: 0;
+}
+.meta-tag.limits {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--ink-secondary);
+}
+.meta-tag.type {
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  color: #3f3f46;
+  font-weight: 600;
+}
+.meta-tag.progress {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #059669;
+  font-weight: 600;
+}
+.meta-tag.manager {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+/* 右侧状态徽标与操作入口（对齐题集 .difficulty-pill 与 .action-cta） */
+.q-right-layout {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.difficulty-pill {
+  min-width: 58px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 0;
+  letter-spacing: 0.3px;
   white-space: nowrap;
 }
-
-.modal-body {
-  margin-bottom: 22px;
+.pill-easy {
+  background: #2b8a3e;
+  color: #ffffff;
+  border: 1px solid #237032;
+}
+.pill-ended {
+  background: #e9ecef;
+  color: var(--ink-secondary);
+  border: 1px solid var(--line);
 }
 
-.modal-label {
-  display: block;
-  font-size: 12.5px;
+.action-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ink-secondary);
-  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.question-item:hover .action-cta {
+  color: var(--ink);
+}
+.question-item:hover .cta-arrow {
+  transform: translateX(3px);
+}
+.cta-arrow {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s ease;
 }
 
-.modal-code-input {
-  height: 46px;
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: 3px;
+/* 行内口令展开条 */
+.inline-code-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px;
+  background: var(--bg);
+  border: 1px solid var(--ink);
+}
+.inline-code-input {
+  width: 112px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
   text-transform: uppercase;
   text-align: center;
+  outline: none;
+}
+.inline-code-input:focus {
+  border-color: var(--ink);
 }
 
-.modal-error {
-  color: var(--danger);
-  font-size: 12.5px;
-  margin: 8px 0 0;
+/* 加载与空状态 */
+.loading-box,
+.empty-box {
+  padding: 48px 24px;
+  text-align: center;
+  border-radius: 0;
 }
-
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.btn-verify {
-  padding: 8px 20px;
+.empty-title {
+  margin: 0 0 4px;
+  font-size: 15px;
   font-weight: 600;
+}
+.empty-desc {
+  margin: 0;
+  font-size: 13px;
+}
+
+@media (max-width: 860px) {
+  .page-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .head-code-dock {
+    width: 100%;
+  }
+  .dock-input {
+    flex: 1;
+  }
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .search-wrap {
+    width: 100%;
+  }
+  .question-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .q-right-layout {
+    justify-content: flex-end;
+    padding-top: 8px;
+    border-top: 1px dashed var(--line);
+  }
 }
 </style>

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { questionApi } from '@/api/question'
 import { submissionApi } from '@/api/submission'
+import { practiceApi } from '@/api/practice'
 import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -24,22 +25,37 @@ const { confirm } = useConfirm()
 
 const id = computed(() => Number(route.params.id))
 
+const practiceCode = computed(() => {
+  const c = route.query.practiceCode
+  return c ? String(c).toUpperCase() : null
+})
+const pqId = computed(() => {
+  const p = route.query.pqId
+  return p ? Number(p) : null
+})
+
 const fromSetId = computed(() => {
   const s = route.query.setId
   return s ? String(s) : null
 })
 
 function goBackToDetail() {
-  const query = fromSetId.value
-    ? { setId: fromSetId.value, itemId: String(route.query.itemId || '') }
-    : undefined
-  router.push({ path: `/questions/${id.value}`, query })
+  const query: Record<string, string> = {}
+  if (fromSetId.value) {
+    query.setId = fromSetId.value
+    if (route.query.itemId) query.itemId = String(route.query.itemId)
+  }
+  if (practiceCode.value) {
+    query.practiceCode = practiceCode.value
+    if (pqId.value) query.pqId = String(pqId.value)
+  }
+  router.push({ path: '/questions/' + id.value, query: Object.keys(query).length ? query : undefined })
 }
 
 const question = ref<Question | null>(null)
 const loading = ref(true)
 const error = ref('')
-
+const practiceLockNotice = ref('')
 
 const languages = computed(() =>
   (question.value?.languages ?? []).filter((l) => SUPPORTED_LANGUAGES.includes(l)),
@@ -102,16 +118,25 @@ async function submit() {
   submitting.value = true
   submitError.value = ''
   try {
+    const bindPractice = Boolean(practiceCode.value && pqId.value && !practiceLockNotice.value)
     const s = await submissionApi.submit({
       questionId: id.value,
       language: language.value,
       codeContent: { [FILENAMES[language.value]]: code },
+      practiceCode: bindPractice ? practiceCode.value! : undefined,
+      practiceQuestionId: bindPractice ? pqId.value! : undefined,
     })
-    // 提交成功后立即跳转至独立的结果页面
-    const query = fromSetId.value
-      ? { setId: fromSetId.value, itemId: String(route.query.itemId || '') }
-      : undefined
-    router.push({ path: `/questions/${id.value}/result/${s.submissionId}`, query })
+
+    const query: Record<string, string> = {}
+    if (fromSetId.value) {
+      query.setId = fromSetId.value
+      if (route.query.itemId) query.itemId = String(route.query.itemId)
+    }
+    if (practiceCode.value) {
+      query.practiceCode = practiceCode.value
+      if (pqId.value) query.pqId = String(pqId.value)
+    }
+    router.push({ path: `/questions/${id.value}/result/${s.submissionId}`, query: Object.keys(query).length ? query : undefined })
   } catch (e) {
     submitError.value = e instanceof Error ? e.message : '提交失败'
     toastError(submitError.value)
@@ -130,7 +155,7 @@ function onKeydown(e: KeyboardEvent) {
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
   try {
-    question.value = await questionApi.detail(id.value)
+    question.value = await questionApi.detail(id.value, practiceCode.value || undefined)
     if (question.value.languages?.length) {
       const preferred = question.value.languages.find((l) => SUPPORTED_LANGUAGES.includes(l))
       if (preferred) {
@@ -138,6 +163,20 @@ onMounted(async () => {
       }
     }
     restoreDrafts()
+    if (practiceCode.value) {
+      practiceApi
+        .detail(practiceCode.value)
+        .then((pd) => {
+          if (pd.canManage && !pd.myJoined) {
+            practiceLockNotice.value = '当前处于教师预览视角，新提交仅作题面调试，不会计入学生课练成绩表。'
+          } else if (pd.status === 'ENDED' || pd.mySubmitted) {
+            practiceLockNotice.value = '当前课练已封卷锁定，新提交仅作日常练习，不再计入课练成绩。'
+          }
+        })
+        .catch(() => {
+          /* 忽略课练锁定状态预检异常 */
+        })
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : '加载题目失败'
   } finally {
@@ -166,6 +205,19 @@ onBeforeUnmount(() => {
 
     <!-- 提交主工作区 -->
     <template v-else-if="question">
+      <div v-if="practiceLockNotice" class="practice-lock-banner card">
+        <span class="lock-dot"></span>
+        <span>{{ practiceLockNotice }}</span>
+        <button
+          v-if="practiceCode"
+          type="button"
+          class="btn btn-ghost btn-sm"
+          @click="router.push(`/practice/${practiceCode}`)"
+        >
+          返回随堂课练 (#{{ practiceCode }})
+        </button>
+      </div>
+
       <!-- 顶栏导航卡片 -->
       <header class="submit-header card">
         <div class="header-left">
@@ -279,6 +331,28 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.practice-lock-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border: 1px solid #f59f00;
+  background: #fff9db;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 0;
+}
+.practice-lock-banner .btn {
+  margin-left: auto;
+}
+.lock-dot {
+  width: 7px;
+  height: 7px;
+  background: #e67700;
+  flex-shrink: 0;
 }
 
 /* 状态加载卡片 */
@@ -552,4 +626,3 @@ onBeforeUnmount(() => {
   animation: spin 0.8s linear infinite;
 }
 </style>
-

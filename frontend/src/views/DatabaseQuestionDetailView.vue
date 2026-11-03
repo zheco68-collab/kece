@@ -30,13 +30,24 @@ const typeLabels: Record<DbQuestionType, string> = {
 const descriptionHtml = computed(() => renderMarkdown(question.value?.description ?? ''))
 const sampleCases = computed(() => (question.value?.testCases ?? []).filter((tc) => tc.isSample === 1))
 
+const practiceCode = computed(() => {
+  const c = route.query.practiceCode
+  return c ? String(c).toUpperCase() : null
+})
+const pqId = computed(() => {
+  const p = route.query.pqId
+  return p ? Number(p) : null
+})
+
 const fromSetId = computed(() => {
   const s = route.query.setId
   return s ? String(s) : null
 })
 
 function goBack() {
-  if (fromSetId.value) {
+  if (practiceCode.value) {
+    router.push(`/practice/${practiceCode.value}`)
+  } else if (fromSetId.value) {
     router.push(`/problem-sets/${fromSetId.value}`)
   } else {
     router.push('/database')
@@ -44,10 +55,16 @@ function goBack() {
 }
 
 function goToSubmit() {
-  const query = fromSetId.value
-    ? { setId: fromSetId.value, itemId: String(route.query.itemId || '') }
-    : undefined
-  router.push({ path: `/database/${id.value}/submit`, query })
+  const query: Record<string, string> = {}
+  if (fromSetId.value) {
+    query.setId = fromSetId.value
+    if (route.query.itemId) query.itemId = String(route.query.itemId)
+  }
+  if (practiceCode.value) {
+    query.practiceCode = practiceCode.value
+    if (pqId.value) query.pqId = String(pqId.value)
+  }
+  router.push({ path: `/database/${id.value}/submit`, query: Object.keys(query).length ? query : undefined })
 }
 
 async function loadSolvedStatus() {
@@ -64,7 +81,7 @@ async function loadSolvedStatus() {
 
 onMounted(async () => {
   try {
-    question.value = await databaseApi.detail(id.value)
+    question.value = await databaseApi.detail(id.value, practiceCode.value || undefined)
     if (question.value?.authorName) {
       authorName.value = question.value.authorName
       authorAvatarUrl.value = question.value.authorAvatarUrl || null
@@ -94,7 +111,9 @@ onMounted(async () => {
     <div v-else-if="error" class="state-card card">
       <div class="error-title">加载失败</div>
       <p class="error-msg">{{ error }}</p>
-      <button class="btn btn-outline" @click="goBack">{{ fromSetId ? '返回题集' : '返回数据库题库' }}</button>
+      <button class="btn btn-outline" @click="goBack">
+        {{ practiceCode ? `返回随堂课练 (#${practiceCode})` : fromSetId ? '返回题集' : '返回数据库题库' }}
+      </button>
     </div>
 
     <!-- 题目主内容区 -->
@@ -107,7 +126,7 @@ onMounted(async () => {
               <line x1="19" y1="12" x2="5" y2="12" />
               <polyline points="12 19 5 12 12 5" />
             </svg>
-            <span>{{ fromSetId ? '返回题集' : '返回数据库题库' }}</span>
+            <span>{{ practiceCode ? `返回随堂课练 (#${practiceCode})` : fromSetId ? '返回题集' : '返回数据库题库' }}</span>
           </button>
 
           <div class="header-status-tags">
@@ -595,5 +614,38 @@ onMounted(async () => {
 }
 .prose :deep(tr:hover) {
   background: #fcfcfc;
+}
+
+.practice-context-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+.context-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.context-bar-dot {
+  width: 6px;
+  height: 6px;
+  background: #2b8a3e;
+  display: inline-block;
+}
+.btn-context-back {
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid #374151;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.btn-context-back:hover {
+  background: #1f2937;
 }
 </style>

@@ -1,5 +1,7 @@
 package com.kece.question.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kece.common.exception.BusinessException;
 import com.kece.common.response.PageParam;
 import com.kece.common.response.PageResult;
@@ -7,6 +9,7 @@ import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
 import com.kece.common.security.AuthUser;
 import com.kece.common.security.Role;
+import com.kece.practice.service.LessonPracticeService;
 import com.kece.question.dto.QuestionRequest;
 import com.kece.question.dto.QuestionVO;
 import com.kece.question.dto.TestCaseRequest;
@@ -18,6 +21,7 @@ import com.kece.question.mapper.TestCaseMapper;
 import com.kece.submission.mapper.SubmissionMapper;
 import com.kece.user.entity.User;
 import com.kece.user.mapper.UserMapper;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -25,14 +29,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.time.Duration;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
-
 
 /** 算法题库业务逻辑。 */
 @Slf4j
@@ -54,12 +56,22 @@ public class QuestionService {
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
 
+    @Autowired(required = false)
+    private ObjectProvider<LessonPracticeService> practiceServiceProvider;
+
     public PageResult<QuestionVO> list(
-            String keyword, String difficulty, String tag, String userStatus, int page, int size, boolean all) {
+            String keyword,
+            String difficulty,
+            String tag,
+            String userStatus,
+            int page,
+            int size,
+            boolean all) {
         PageParam p = PageParam.of(page, size);
         Integer status = (all && isPrivileged()) ? null : 1;
 
-        boolean isPublicQuery = (userStatus == null || userStatus.isBlank()) && (!all || !isPrivileged());
+        boolean isPublicQuery =
+                (userStatus == null || userStatus.isBlank()) && (!all || !isPrivileged());
         String cacheKey = null;
         if (isPublicQuery) {
             cacheKey = buildListCacheKey(p.page(), p.size(), difficulty, tag, keyword);
@@ -104,9 +116,11 @@ public class QuestionService {
                         p.offset(),
                         p.size());
         long total =
-                questionMapper.count(keyword, difficulty, tag, status, null, includeIds, excludeIds);
-        PageResult<QuestionVO> result = new PageResult<>(
-                questions.stream().map(this::toListVO).toList(), total, p.page(), p.size());
+                questionMapper.count(
+                        keyword, difficulty, tag, status, null, includeIds, excludeIds);
+        PageResult<QuestionVO> result =
+                new PageResult<>(
+                        questions.stream().map(this::toListVO).toList(), total, p.page(), p.size());
         if (isPublicQuery && cacheKey != null) {
             putCachedList(cacheKey, result);
         }
@@ -120,7 +134,13 @@ public class QuestionService {
 
     /** 后台算法题列表：ADMIN 可按 createdBy 筛选，非 ADMIN 仅见自己出的题。 */
     public PageResult<QuestionVO> listAdmin(
-            String keyword, String difficulty, String tag, Integer status, Long createdBy, int page, int size) {
+            String keyword,
+            String difficulty,
+            String tag,
+            Integer status,
+            Long createdBy,
+            int page,
+            int size) {
         PageParam p = PageParam.of(page, size);
         Long targetCreatedBy = createdBy;
         AuthUser user = AuthContextHolder.get();
@@ -138,17 +158,28 @@ public class QuestionService {
                         null,
                         p.offset(),
                         p.size());
-        long total = questionMapper.count(keyword, difficulty, tag, status, targetCreatedBy, null, null);
+        long total =
+                questionMapper.count(
+                        keyword, difficulty, tag, status, targetCreatedBy, null, null);
         return new PageResult<>(
                 questions.stream().map(this::toListVO).toList(), total, p.page(), p.size());
     }
 
     public PageResult<QuestionVO> listAdmin(
-            String keyword, String difficulty, Integer status, Long createdBy, int page, int size) {
+            String keyword,
+            String difficulty,
+            Integer status,
+            Long createdBy,
+            int page,
+            int size) {
         return listAdmin(keyword, difficulty, null, status, createdBy, page, size);
     }
 
     public QuestionVO detail(Long id) {
+        return detail(id, null);
+    }
+
+    public QuestionVO detail(Long id, String practiceCode) {
         String detailKey = CACHE_DETAIL_PREFIX + id;
         try {
             String cached = redis.opsForValue().get(detailKey);
@@ -163,7 +194,9 @@ public class QuestionService {
         }
 
         Question question = getQuestionOrThrow(id);
-        if (question.getStatus() != 1 && !canManage(question)) {
+        if ((question.getStatus() == null || question.getStatus() != 1)
+                && !canManage(question)
+                && !canAccessViaPractice(practiceCode, id)) {
             throw new BusinessException(ResultCode.NOT_FOUND, "题目不存在");
         }
         QuestionVO vo = toVO(question);
@@ -175,6 +208,20 @@ public class QuestionService {
             }
         }
         return vo;
+    }
+
+    private boolean canAccessViaPractice(String practiceCode, Long questionId) {
+        if (practiceCode == null || practiceCode.isBlank() || practiceServiceProvider == null) {
+            return false;
+        }
+        Long userId = AuthContextHolder.currentUserId();
+        if (userId == null) {
+            return false;
+        }
+        LessonPracticeService practiceService = practiceServiceProvider.getIfAvailable();
+        return practiceService != null
+                && practiceService.canUserAccessQuestionViaPractice(
+                        practiceCode, userId, "ALGO", questionId);
     }
 
     @Transactional
@@ -478,11 +525,12 @@ public class QuestionService {
                 request.getLanguages() == null ? "cpp,java,python" : request.getLanguages());
         question.setStatus(request.getStatus() == null ? 1 : request.getStatus());
         if (request.getTags() != null) {
-            String joined = request.getTags().stream()
-                    .map(String::trim)
-                    .filter(s -> !s.isEmpty())
-                    .distinct()
-                    .collect(java.util.stream.Collectors.joining(","));
+            String joined =
+                    request.getTags().stream()
+                            .map(String::trim)
+                            .filter(s -> !s.isEmpty())
+                            .distinct()
+                            .collect(java.util.stream.Collectors.joining(","));
             question.setTags(joined.isEmpty() ? null : joined);
         }
     }
@@ -615,28 +663,35 @@ public class QuestionService {
         if (rawList == null || rawList.isEmpty()) {
             return List.of();
         }
-        List<String> tags = rawList.stream()
-                .flatMap(t -> java.util.Arrays.stream(t.split(",")))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .distinct()
-                .sorted()
-                .toList();
+        List<String> tags =
+                rawList.stream()
+                        .flatMap(t -> java.util.Arrays.stream(t.split(",")))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .distinct()
+                        .sorted()
+                        .toList();
 
         try {
-            redis.opsForValue().set(CACHE_TAGS_KEY, objectMapper.writeValueAsString(tags), CACHE_TTL);
+            redis.opsForValue()
+                    .set(CACHE_TAGS_KEY, objectMapper.writeValueAsString(tags), CACHE_TTL);
         } catch (Exception e) {
             log.warn("写入标签缓存失败: {}", e.getMessage());
         }
         return tags;
     }
 
-    private String buildListCacheKey(int page, int size, String difficulty, String tag, String keyword) {
+    private String buildListCacheKey(
+            int page, int size, String difficulty, String tag, String keyword) {
         return CACHE_LIST_PREFIX
-                + page + ":"
-                + size + ":"
-                + (difficulty == null ? "" : difficulty.trim()) + ":"
-                + (tag == null ? "" : tag.trim()) + ":"
+                + page
+                + ":"
+                + size
+                + ":"
+                + (difficulty == null ? "" : difficulty.trim())
+                + ":"
+                + (tag == null ? "" : tag.trim())
+                + ":"
                 + (keyword == null ? "" : keyword.trim());
     }
 
@@ -644,7 +699,8 @@ public class QuestionService {
         try {
             String json = redis.opsForValue().get(key);
             if (json != null && !json.isBlank()) {
-                return objectMapper.readValue(json, new TypeReference<PageResult<QuestionVO>>() {});
+                return objectMapper.readValue(
+                        json, new TypeReference<PageResult<QuestionVO>>() {});
             }
         } catch (Exception e) {
             log.warn("读取题目列表缓存失败 key={}: {}", key, e.getMessage());

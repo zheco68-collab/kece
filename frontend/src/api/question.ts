@@ -45,7 +45,10 @@ export interface TestCaseSummaryVO {
 export const questionApi = {
   list: (params: QuestionListParams) => http.get<PageResult<Question>>('/questions', { params }),
   listTags: () => http.get<string[]>('/questions/tags'),
-  detail: (id: number | string) => http.get<Question>(`/questions/${id}`),
+  detail: (id: number | string, practiceCode?: string) =>
+    http.get<Question>(`/questions/${id}`, {
+      params: practiceCode ? { practiceCode } : undefined,
+    }),
   create: (body: QuestionWriteRequest) => http.post<Question>('/questions', body),
   update: (id: number | string, body: QuestionWriteRequest) =>
     http.put<Question>(`/questions/${id}`, body),

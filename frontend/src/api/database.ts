@@ -44,9 +44,22 @@ export interface DbQuestionWriteRequest {
 export const databaseApi = {
   list: (params: DbQuestionListParams) =>
     http.get<PageResult<DbQuestion>>('/db-questions', { params }),
-  detail: (id: number | string) => http.get<DbQuestion>(`/db-questions/${id}`),
-  submit: (id: number | string, sql: string) =>
-    http.post<Submission>(`/db-questions/${id}/submit`, { sql }),
+  detail: (id: number | string, practiceCode?: string) =>
+    http.get<DbQuestion>(`/db-questions/${id}`, {
+      params: practiceCode ? { practiceCode } : undefined,
+    }),
+  submit: (
+    id: number | string,
+    sql: string,
+    practiceCtx?: { practiceCode?: string; practiceQuestionId?: number },
+  ) =>
+    http.post<Submission>(`/db-questions/${id}/submit`, {
+      sql,
+      ...(practiceCtx?.practiceCode ? { practiceCode: practiceCtx.practiceCode } : {}),
+      ...(practiceCtx?.practiceQuestionId
+        ? { practiceQuestionId: practiceCtx.practiceQuestionId }
+        : {}),
+    }),
   listSubmissions: (params?: DbSubmissionListParams) =>
     http.get<PageResult<DbSubmissionRecord>>('/db-submissions', { params }),
   getSubmission: (id: number | string) => http.get<Submission>(`/db-submissions/${id}`),

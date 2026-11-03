@@ -1,5 +1,7 @@
 package com.kece.database.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kece.common.exception.BusinessException;
 import com.kece.common.response.PageParam;
 import com.kece.common.response.PageResult;
@@ -16,20 +18,20 @@ import com.kece.database.entity.DbTestCase;
 import com.kece.database.mapper.DbQuestionMapper;
 import com.kece.database.mapper.DbSubmissionMapper;
 import com.kece.database.mapper.DbTestCaseMapper;
+import com.kece.practice.service.LessonPracticeService;
 import com.kece.user.entity.User;
 import com.kece.user.mapper.UserMapper;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.time.Duration;
-import java.util.Set;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
-
 
 /** 数据库题目业务逻辑。 */
 @Slf4j
@@ -49,6 +51,9 @@ public class DbQuestionService {
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
 
+    @Autowired(required = false)
+    private ObjectProvider<LessonPracticeService> practiceServiceProvider;
+
     public PageResult<DbQuestionVO> list(
             String type, String keyword, int page, int size, boolean all) {
         return list(type, keyword, null, page, size, all);
@@ -59,7 +64,8 @@ public class DbQuestionService {
         PageParam p = PageParam.of(page, size);
         Integer status = (all && isPrivileged()) ? null : 1;
 
-        boolean isPublicQuery = (userStatus == null || userStatus.isBlank()) && (!all || !isPrivileged());
+        boolean isPublicQuery =
+                (userStatus == null || userStatus.isBlank()) && (!all || !isPrivileged());
         String cacheKey = null;
         if (isPublicQuery) {
             cacheKey = buildListCacheKey(p.page(), p.size(), type, keyword);
@@ -96,11 +102,9 @@ public class DbQuestionService {
                 questionMapper.findPage(
                         type, keyword, status, null, includeIds, excludeIds, p.offset(), p.size());
         long total = questionMapper.count(type, keyword, status, null, includeIds, excludeIds);
-        PageResult<DbQuestionVO> result = new PageResult<>(
-                items.stream().map(this::toListVO).toList(),
-                total,
-                p.page(),
-                p.size());
+        PageResult<DbQuestionVO> result =
+                new PageResult<>(
+                        items.stream().map(this::toListVO).toList(), total, p.page(), p.size());
         if (isPublicQuery && cacheKey != null) {
             putCachedList(cacheKey, result);
         }
@@ -125,6 +129,10 @@ public class DbQuestionService {
     }
 
     public DbQuestionVO detail(Long id) {
+        return detail(id, null);
+    }
+
+    public DbQuestionVO detail(Long id, String practiceCode) {
         boolean privileged = isPrivileged();
         String detailKey = CACHE_DETAIL_PREFIX + id + (privileged ? ":priv" : ":pub");
         try {
@@ -141,7 +149,7 @@ public class DbQuestionService {
 
         DbQuestion question = getQuestionOrThrow(id);
         if (question.getStatus() == null || question.getStatus() != 1) {
-            if (!canManage(question)) {
+            if (!canManage(question) && !canAccessViaPractice(practiceCode, id)) {
                 throw new BusinessException(ResultCode.NOT_FOUND, "题目不存在");
             }
         }
@@ -154,6 +162,20 @@ public class DbQuestionService {
             }
         }
         return vo;
+    }
+
+    private boolean canAccessViaPractice(String practiceCode, Long questionId) {
+        if (practiceCode == null || practiceCode.isBlank() || practiceServiceProvider == null) {
+            return false;
+        }
+        Long userId = AuthContextHolder.currentUserId();
+        if (userId == null) {
+            return false;
+        }
+        LessonPracticeService practiceService = practiceServiceProvider.getIfAvailable();
+        return practiceService != null
+                && practiceService.canUserAccessQuestionViaPractice(
+                        practiceCode, userId, "DB", questionId);
     }
 
     @Transactional
@@ -276,8 +298,12 @@ public class DbQuestionService {
     }
 
     private DbQuestionVO toVO(DbQuestion question, boolean privileged, boolean withCases) {
-        List<DbTestCaseVO> caseVOs = withCases ? buildCaseVOs(question.getId(), privileged) : List.of();
-        User author = question.getCreatedBy() != null ? userMapper.findById(question.getCreatedBy()) : null;
+        List<DbTestCaseVO> caseVOs =
+                withCases ? buildCaseVOs(question.getId(), privileged) : List.of();
+        User author =
+                question.getCreatedBy() != null
+                        ? userMapper.findById(question.getCreatedBy())
+                        : null;
         return DbQuestionVO.builder()
                 .id(question.getId())
                 .title(question.getTitle())
@@ -315,11 +341,15 @@ public class DbQuestionService {
         }
         return result;
     }
+
     private String buildListCacheKey(int page, int size, String type, String keyword) {
         return CACHE_LIST_PREFIX
-                + page + ":"
-                + size + ":"
-                + (type == null ? "" : type.trim()) + ":"
+                + page
+                + ":"
+                + size
+                + ":"
+                + (type == null ? "" : type.trim())
+                + ":"
                 + (keyword == null ? "" : keyword.trim());
     }
 
@@ -327,7 +357,8 @@ public class DbQuestionService {
         try {
             String json = redis.opsForValue().get(key);
             if (json != null && !json.isBlank()) {
-                return objectMapper.readValue(json, new TypeReference<PageResult<DbQuestionVO>>() {});
+                return objectMapper.readValue(
+                        json, new TypeReference<PageResult<DbQuestionVO>>() {});
             }
         } catch (Exception e) {
             log.warn("读取数据库题目列表缓存失败 key={}: {}", key, e.getMessage());

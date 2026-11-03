@@ -10,6 +10,12 @@ const route = useRoute()
 // 动态面包屑导航计算：工业风等宽标签，如 KECE // PORTAL / RANKINGS
 const currentSection = computed(() => {
   const path = route.path
+  if (route.query.practiceCode) {
+    return `PRACTICE // #${String(route.query.practiceCode).toUpperCase()}`
+  }
+  if (route.query.setId) {
+    return 'PROBLEM SETS'
+  }
   if (path === '/' || route.name === 'home') return 'HOME'
   if (path.startsWith('/rankings') || path === '/leaderboard' || path === '/rank') return 'RANKINGS'
   if (path.startsWith('/problem-sets')) {

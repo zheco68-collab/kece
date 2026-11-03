@@ -20,8 +20,12 @@ public class LessonPracticeSubmission {
     private String questionType; // OBJECTIVE, ALGO, DB
     private String answer;
     private Long submissionId;
-    private String status; // ACCEPTED, WRONG_ANSWER, PENDING, etc.
+    private Long bestSubmissionId;
+    private String status; // ACCEPTED, PARTIAL, WRONG_ANSWER, PENDING, etc.
     private Integer score;
+    private Integer attemptCount;
     private String resultJson;
     private LocalDateTime createdAt;
+    private LocalDateTime bestAchievedAt;
+    private LocalDateTime updatedAt;
 }

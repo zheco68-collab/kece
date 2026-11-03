@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { databaseApi } from '@/api/database'
+import { practiceApi } from '@/api/practice'
 import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -17,9 +18,40 @@ const { confirm } = useConfirm()
 
 const id = computed(() => Number(route.params.id))
 
+const practiceCode = computed(() => {
+  const c = route.query.practiceCode
+  return c ? String(c).toUpperCase() : null
+})
+const pqId = computed(() => {
+  const p = route.query.pqId
+  return p ? Number(p) : null
+})
+const fromSetId = computed(() => {
+  const s = route.query.setId
+  return s ? String(s) : null
+})
+
+function buildContextQuery(): Record<string, string> | undefined {
+  const query: Record<string, string> = {}
+  if (fromSetId.value) {
+    query.setId = fromSetId.value
+    if (route.query.itemId) query.itemId = String(route.query.itemId)
+  }
+  if (practiceCode.value) {
+    query.practiceCode = practiceCode.value
+    if (pqId.value) query.pqId = String(pqId.value)
+  }
+  return Object.keys(query).length ? query : undefined
+}
+
+function goBackToDetail() {
+  router.push({ path: `/database/${id.value}`, query: buildContextQuery() })
+}
+
 const question = ref<DbQuestion | null>(null)
 const loading = ref(true)
 const error = ref('')
+const practiceLockNotice = ref('')
 
 const typeLabels: Record<DbQuestionType, string> = {
   SELECT: 'SELECT 查询',
@@ -78,9 +110,15 @@ async function submit() {
   submitting.value = true
   submitError.value = ''
   try {
-    const s = await databaseApi.submit(id.value, sql.value)
-    // 提交成功后转跳至独立的评测结果页
-    router.push(`/database/${id.value}/result/${s.submissionId}`)
+    const bindPractice = Boolean(practiceCode.value && pqId.value && !practiceLockNotice.value)
+    const s = await databaseApi.submit(
+      id.value,
+      sql.value,
+      bindPractice
+        ? { practiceCode: practiceCode.value!, practiceQuestionId: pqId.value! }
+        : undefined,
+    )
+    router.push({ path: `/database/${id.value}/result/${s.submissionId}`, query: buildContextQuery() })
   } catch (e) {
     submitError.value = e instanceof Error ? e.message : '提交失败'
     toastError(submitError.value)
@@ -99,8 +137,22 @@ function onKeydown(e: KeyboardEvent) {
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
   try {
-    question.value = await databaseApi.detail(id.value)
+    question.value = await databaseApi.detail(id.value, practiceCode.value || undefined)
     restoreDraft()
+    if (practiceCode.value) {
+      practiceApi
+        .detail(practiceCode.value)
+        .then((pd) => {
+          if (pd.canManage && !pd.myJoined) {
+            practiceLockNotice.value = '当前处于教师预览视角，新提交仅作题面调试，不会计入学生课练成绩表。'
+          } else if (pd.status === 'ENDED' || pd.mySubmitted) {
+            practiceLockNotice.value = '当前课练已封卷锁定，新提交仅作日常练习，不再计入课练成绩。'
+          }
+        })
+        .catch(() => {
+          /* 忽略课练锁定状态预检异常 */
+        })
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : '加载题目失败'
   } finally {
@@ -124,15 +176,28 @@ onBeforeUnmount(() => {
     <div v-else-if="error" class="state-card card">
       <div class="error-title">加载失败</div>
       <p class="error-msg">{{ error }}</p>
-      <button class="btn btn-outline" @click="router.push(`/database/${id}`)">返回题目描述</button>
+      <button class="btn btn-outline" @click="goBackToDetail">返回题目描述</button>
     </div>
 
     <!-- 提交主工作区 -->
     <template v-else-if="question">
+      <div v-if="practiceLockNotice" class="practice-lock-banner card">
+        <span class="lock-dot"></span>
+        <span>{{ practiceLockNotice }}</span>
+        <button
+          v-if="practiceCode"
+          type="button"
+          class="btn btn-ghost btn-sm"
+          @click="router.push(`/practice/${practiceCode}`)"
+        >
+          返回随堂课练 (#{{ practiceCode }})
+        </button>
+      </div>
+
       <!-- 顶栏导航卡片 -->
       <header class="submit-header card">
         <div class="header-left">
-          <button class="btn-back" @click="router.push(`/database/${id}`)">
+          <button class="btn-back" @click="goBackToDetail">
             <svg class="back-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="19" y1="12" x2="5" y2="12" />
               <polyline points="12 19 5 12 12 5" />
@@ -219,7 +284,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="footer-btns">
-            <button class="btn btn-outline" @click="router.push(`/database/${id}`)">
+            <button class="btn btn-outline" @click="goBackToDetail">
               取消
             </button>
             <button
@@ -250,6 +315,28 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.practice-lock-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border: 1px solid #f59f00;
+  background: #fff9db;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 0;
+}
+.practice-lock-banner .btn {
+  margin-left: auto;
+}
+.lock-dot {
+  width: 7px;
+  height: 7px;
+  background: #e67700;
+  flex-shrink: 0;
 }
 
 /* 状态加载卡片 */
@@ -529,4 +616,3 @@ onBeforeUnmount(() => {
   animation: spin 0.8s linear infinite;
 }
 </style>
-

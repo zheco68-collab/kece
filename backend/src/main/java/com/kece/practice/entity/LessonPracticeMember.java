@@ -18,7 +18,9 @@ public class LessonPracticeMember {
     private Long userId;
     private Integer totalScore;
     private Integer solvedCount;
+    private Long penaltyTime; // 累计罚时(秒)
     private LocalDateTime joinedAt;
     private Integer submitted; // 1 已交卷, 0 进行中
     private LocalDateTime submittedAt;
+    private LocalDateTime lastActiveAt; // 最后答题或心跳时间
 }

@@ -20,5 +20,6 @@ public class LessonPracticeQuestion {
     private String title;
     private Integer score;
     private Integer sortOrder;
+    private String snapshotJson; // 题目核心元数据快照
     private LocalDateTime createdAt;
 }

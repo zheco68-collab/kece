@@ -100,7 +100,7 @@ async function loadData() {
     // 若有对应题目 id，拉取题目标题信息
     if (questionId.value > 0) {
       try {
-        question.value = await questionApi.detail(questionId.value)
+        question.value = await questionApi.detail(questionId.value, practiceCode.value || undefined)
       } catch {
         /* 忽略题面拉取失败 */
       }
@@ -112,30 +112,57 @@ async function loadData() {
   }
 }
 
-function reEdit() {
-  if (questionId.value > 0) {
-    const query = fromSetId.value
-      ? { setId: fromSetId.value, itemId: String(route.query.itemId || '') }
-      : undefined
-    router.push({ path: `/questions/${questionId.value}/submit`, query })
-  } else {
-    router.push(fromSetId.value ? `/problem-sets/${fromSetId.value}` : '/questions')
-  }
-}
-
 const fromSetId = computed(() => {
   const s = route.query.setId
   return s ? String(s) : null
 })
 
-function backToQuestion() {
+const practiceCode = computed(() => {
+  const c = route.query.practiceCode
+  return c ? String(c).toUpperCase() : null
+})
+
+const pqId = computed(() => {
+  const p = route.query.pqId
+  return p ? String(p) : null
+})
+
+function buildContextQuery(): Record<string, string> | undefined {
+  const query: Record<string, string> = {}
+  if (fromSetId.value) {
+    query.setId = fromSetId.value
+    if (route.query.itemId) query.itemId = String(route.query.itemId)
+  }
+  if (practiceCode.value) {
+    query.practiceCode = practiceCode.value
+    if (pqId.value) query.pqId = pqId.value
+  }
+  return Object.keys(query).length ? query : undefined
+}
+
+function reEdit() {
   if (questionId.value > 0) {
-    const query = fromSetId.value
-      ? { setId: fromSetId.value, itemId: String(route.query.itemId || '') }
-      : undefined
-    router.push({ path: `/questions/${questionId.value}`, query })
+    router.push({ path: `/questions/${questionId.value}/submit`, query: buildContextQuery() })
+  } else if (practiceCode.value) {
+    router.push(`/practice/${practiceCode.value}`)
   } else {
     router.push(fromSetId.value ? `/problem-sets/${fromSetId.value}` : '/questions')
+  }
+}
+
+function backToQuestion() {
+  if (questionId.value > 0) {
+    router.push({ path: `/questions/${questionId.value}`, query: buildContextQuery() })
+  } else if (practiceCode.value) {
+    router.push(`/practice/${practiceCode.value}`)
+  } else {
+    router.push(fromSetId.value ? `/problem-sets/${fromSetId.value}` : '/questions')
+  }
+}
+
+function backToPractice() {
+  if (practiceCode.value) {
+    router.push(`/practice/${practiceCode.value}`)
   }
 }
 
@@ -284,10 +311,13 @@ onBeforeUnmount(() => {
       <!-- 底部操作导航条 -->
       <footer class="result-actions-bar card">
         <div class="actions-left">
+          <button v-if="practiceCode" class="btn btn-primary" @click="backToPractice">
+            ← 返回随堂课练 (#{{ practiceCode }})
+          </button>
           <button class="btn btn-primary" @click="backToQuestion">
             返回题目描述
           </button>
-          <RouterLink to="/submissions" class="btn btn-primary">
+          <RouterLink v-if="!practiceCode" to="/submissions" class="btn btn-primary">
             查看所有历史提交
           </RouterLink>
         </div>

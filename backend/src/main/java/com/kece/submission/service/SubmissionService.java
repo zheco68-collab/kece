@@ -11,6 +11,7 @@ import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
 import com.kece.common.security.AuthUser;
 import com.kece.common.security.Role;
+import com.kece.practice.service.LessonPracticeService;
 import com.kece.problemset.service.ProblemSetService;
 import com.kece.question.entity.Question;
 import com.kece.question.entity.TestCase;
@@ -35,6 +36,8 @@ import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,7 +64,10 @@ public class SubmissionService {
     private final UserDailyAcService userDailyAcService;
     private final ProblemSetService problemSetService;
 
-    /** 提交代码：入库、压队列、写 Redis 初始状态，返回任务 ID 与 PENDING。 */
+    @Autowired(required = false)
+    private ObjectProvider<LessonPracticeService> practiceServiceProvider;
+
+    /** 提交代码：入库、原子关联随堂课练（若带上下文）、压队列、写 Redis 初始状态，返回任务 ID 与 PENDING。 */
     @Transactional
     public SubmissionVO submit(SubmitRequest request) {
         Long userId = AuthContextHolder.currentUserId();
@@ -73,8 +79,18 @@ public class SubmissionService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的语言: " + request.getLanguage());
         }
         Question question = questionMapper.findById(request.getQuestionId());
-        if (question == null || question.getStatus() == null || question.getStatus() != 1) {
+        if (question == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "题目不存在或未公开");
+        }
+        if (question.getStatus() == null || question.getStatus() != 1) {
+            AuthUser authUser = AuthContextHolder.get();
+            boolean privileged =
+                    authUser != null && isPrivilegedForQuestion(authUser, question.getId());
+            if (!privileged
+                    && !canAccessViaPractice(
+                            request.getPracticeCode(), userId, request.getQuestionId())) {
+                throw new BusinessException(ResultCode.NOT_FOUND, "题目不存在或未公开");
+            }
         }
         if (!supportsLanguage(question, language)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "该题目不支持此语言");
@@ -93,6 +109,14 @@ public class SubmissionService {
         submission.setStatus(SubmissionStatus.PENDING.name());
         submissionMapper.insert(submission);
 
+        // 在推入 Redis 判题队列之前同一事务内原子绑定课练记录，彻底消灭快判竞态与断网丢单
+        bindPracticeSubmissionIfPresent(
+                request.getPracticeCode(),
+                userId,
+                request.getPracticeQuestionId(),
+                request.getQuestionId(),
+                submission.getId());
+
         List<TestCase> testCases = testCaseMapper.findByQuestionId(request.getQuestionId());
         String taskJson = writeJson(buildTask(submission, question, testCases, code));
 
@@ -110,6 +134,35 @@ public class SubmissionService {
         redis.opsForList().rightPush(QUEUE_KEY, taskJson);
 
         return pending;
+    }
+
+    private boolean canAccessViaPractice(String practiceCode, Long userId, Long questionId) {
+        if (practiceCode == null || practiceCode.isBlank() || practiceServiceProvider == null) {
+            return false;
+        }
+        LessonPracticeService practiceService = practiceServiceProvider.getIfAvailable();
+        return practiceService != null
+                && practiceService.canUserAccessQuestionViaPractice(
+                        practiceCode, userId, "ALGO", questionId);
+    }
+
+    private void bindPracticeSubmissionIfPresent(
+            String practiceCode,
+            Long userId,
+            Long practiceQuestionId,
+            Long questionId,
+            Long submissionId) {
+        if (practiceCode == null
+                || practiceCode.isBlank()
+                || practiceQuestionId == null
+                || practiceServiceProvider == null) {
+            return;
+        }
+        LessonPracticeService practiceService = practiceServiceProvider.getIfAvailable();
+        if (practiceService != null) {
+            practiceService.bindPracticalSubmissionOnCreate(
+                    practiceCode, userId, practiceQuestionId, questionId, submissionId, "ALGO");
+        }
     }
 
     /** 提交列表：默认本人提交，可指定 targetUserId 查看该用户提交（非本人自动脱敏代码原文），按 id 倒序分页。 */

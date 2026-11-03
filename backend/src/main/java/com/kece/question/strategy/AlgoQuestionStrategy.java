@@ -205,7 +205,7 @@ public class AlgoQuestionStrategy implements QuestionTypeStrategy {
 
     @Override
     public String getRedisStatusKey(Long submissionId) {
-        return "submission:status:" + submissionId;
+        return "sub:status:" + submissionId;
     }
 
     @Override

@@ -54,8 +54,10 @@ public class QuestionController {
 
     @Operation(summary = "题目详情")
     @GetMapping("/{id}")
-    public ApiResponse<QuestionVO> detail(@PathVariable Long id) {
-        return ApiResponse.success(questionService.detail(id));
+    public ApiResponse<QuestionVO> detail(
+            @PathVariable Long id,
+            @RequestParam(required = false) String practiceCode) {
+        return ApiResponse.success(questionService.detail(id, practiceCode));
     }
 
     @Operation(summary = "创建题目")

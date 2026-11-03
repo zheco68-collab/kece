@@ -17,6 +17,7 @@ import com.kece.database.entity.DbTestCase;
 import com.kece.database.mapper.DbQuestionMapper;
 import com.kece.database.mapper.DbSubmissionMapper;
 import com.kece.database.mapper.DbTestCaseMapper;
+import com.kece.practice.service.LessonPracticeService;
 import com.kece.problemset.service.ProblemSetService;
 import com.kece.submission.dto.ProgressVO;
 import com.kece.submission.dto.SubmissionResultVO;
@@ -32,6 +33,8 @@ import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,9 +60,19 @@ public class DbSubmissionService {
     private final UserDailyAcService userDailyAcService;
     private final ProblemSetService problemSetService;
 
-    /** 提交 SQL：入库、压队列、写 Redis 初始状态，返回任务 ID 与 PENDING。 */
+    @Autowired(required = false)
+    private ObjectProvider<LessonPracticeService> practiceServiceProvider;
+
+    /** 兼容旧签名的提交方法。 */
     @Transactional
     public SubmissionVO submit(Long questionId, String sql) {
+        return submit(questionId, sql, null, null);
+    }
+
+    /** 提交 SQL：入库、原子关联随堂课练（若带上下文）、压队列、写 Redis 初始状态，返回任务 ID 与 PENDING。 */
+    @Transactional
+    public SubmissionVO submit(
+            Long questionId, String sql, String practiceCode, Long practiceQuestionId) {
         Long userId = AuthContextHolder.currentUserId();
         if (userId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
@@ -69,8 +82,16 @@ public class DbSubmissionService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "SQL 不能为空");
         }
         DbQuestion question = questionMapper.findById(questionId);
-        if (question == null || question.getStatus() == null || question.getStatus() != 1) {
+        if (question == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "题目不存在或未公开");
+        }
+        if (question.getStatus() == null || question.getStatus() != 1) {
+            AuthUser authUser = AuthContextHolder.get();
+            boolean privileged =
+                    authUser != null && isPrivilegedForQuestion(authUser, question.getId());
+            if (!privileged && !canAccessViaPractice(practiceCode, userId, questionId)) {
+                throw new BusinessException(ResultCode.NOT_FOUND, "题目不存在或未公开");
+            }
         }
 
         DbSubmission submission = new DbSubmission();
@@ -80,6 +101,10 @@ public class DbSubmissionService {
         submission.setSqlContent(trimmed);
         submission.setStatus(SubmissionStatus.PENDING.name());
         submissionMapper.insert(submission);
+
+        // 在推入 Redis 判题队列之前同一事务内原子绑定课练记录
+        bindPracticeSubmissionIfPresent(
+                practiceCode, userId, practiceQuestionId, questionId, submission.getId());
 
         List<DbTestCase> testCases = testCaseMapper.findByQuestionId(questionId);
         String taskJson = writeJson(buildTask(submission, question, testCases, trimmed));
@@ -98,6 +123,35 @@ public class DbSubmissionService {
         redis.opsForList().rightPush(QUEUE_KEY, taskJson);
 
         return pending;
+    }
+
+    private boolean canAccessViaPractice(String practiceCode, Long userId, Long questionId) {
+        if (practiceCode == null || practiceCode.isBlank() || practiceServiceProvider == null) {
+            return false;
+        }
+        LessonPracticeService practiceService = practiceServiceProvider.getIfAvailable();
+        return practiceService != null
+                && practiceService.canUserAccessQuestionViaPractice(
+                        practiceCode, userId, "DB", questionId);
+    }
+
+    private void bindPracticeSubmissionIfPresent(
+            String practiceCode,
+            Long userId,
+            Long practiceQuestionId,
+            Long questionId,
+            Long submissionId) {
+        if (practiceCode == null
+                || practiceCode.isBlank()
+                || practiceQuestionId == null
+                || practiceServiceProvider == null) {
+            return;
+        }
+        LessonPracticeService practiceService = practiceServiceProvider.getIfAvailable();
+        if (practiceService != null) {
+            practiceService.bindPracticalSubmissionOnCreate(
+                    practiceCode, userId, practiceQuestionId, questionId, submissionId, "DB");
+        }
     }
 
     /** 数据库提交记录列表：默认本人提交，可指定 targetUserId 查看该用户提交（非本人自动脱敏 SQL 原文），按 id 倒序分页。 */
