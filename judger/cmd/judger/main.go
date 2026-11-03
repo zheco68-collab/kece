@@ -99,10 +99,18 @@ func workerLoop(ctx context.Context, cfg config.Config, j *judge.Judge, q *queue
 
 		_ = q.SetLease(ctx, task.SubmissionID)
 		stop := renewLease(ctx, q, task.SubmissionID, cfg.LeaseTTL/2)
-		j.Process(ctx, task)
+		err = j.Process(ctx, task)
 		close(stop)
+		if err != nil {
+			// Keep the claim. The reaper retries after the lease expires.
+			log.Printf("[worker-%d] publish result for %d: %v", workerID, task.SubmissionID, err)
+			continue
+		}
+		if err := q.RemoveProcessing(ctx, taskJSON); err != nil {
+			log.Printf("[worker-%d] acknowledge task %d: %v", workerID, task.SubmissionID, err)
+			continue
+		}
 		_ = q.ClearLease(ctx, task.SubmissionID)
-		_ = q.RemoveProcessing(ctx, taskJSON)
 	}
 }
 
@@ -131,10 +139,18 @@ func sqlWorkerLoop(ctx context.Context, cfg config.Config, j *judge.Judge, sqlQ 
 
 		_ = sqlQ.SetLease(ctx, task.SubmissionID)
 		stop := renewLease(ctx, sqlQ, task.SubmissionID, cfg.LeaseTTL/2)
-		j.ProcessSQL(ctx, sqlQ, task)
+		err = j.ProcessSQL(ctx, sqlQ, task)
 		close(stop)
+		if err != nil {
+			// Keep the claim. The reaper retries after the lease expires.
+			log.Printf("[worker-%d] publish result for %d: %v", workerID, task.SubmissionID, err)
+			continue
+		}
+		if err := sqlQ.RemoveProcessing(ctx, taskJSON); err != nil {
+			log.Printf("[worker-%d] acknowledge task %d: %v", workerID, task.SubmissionID, err)
+			continue
+		}
 		_ = sqlQ.ClearLease(ctx, task.SubmissionID)
-		_ = sqlQ.RemoveProcessing(ctx, taskJSON)
 	}
 }
 

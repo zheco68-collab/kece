@@ -2,7 +2,9 @@ package judge
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,33 +29,22 @@ type sqlExecutor interface {
 }
 
 // ProcessSQL 处理一次数据库评测：逐用例建库、seed、运行参考与用户 SQL、比对结果集并回写终态。
-func (j *Judge) ProcessSQL(ctx context.Context, sqlQ *queue.Queue, task model.Task) {
+func (j *Judge) ProcessSQL(ctx context.Context, sqlQ *queue.Queue, task model.Task) error {
 	sqlText := extractSQL(task)
 	if sqlText == "" {
-		j.finishSQLSystemError(ctx, sqlQ, task.SubmissionID)
-		return
+		return j.finishSQLSystemError(ctx, sqlQ, task.SubmissionID)
 	}
-	adminPool, userPool, err := j.getSQLPools()
+	adminPool, err := j.getSQLAdminPool()
 	if err != nil {
-		log.Printf("sqljudge: getSQLPools failed: %v", err)
-		j.finishSQLSystemError(ctx, sqlQ, task.SubmissionID)
-		return
+		log.Printf("sqljudge: getSQLAdminPool failed: %v", err)
+		return j.finishSQLSystemError(ctx, sqlQ, task.SubmissionID)
 	}
 	adminConn, err := adminPool.Conn(ctx)
 	if err != nil {
 		log.Printf("sqljudge: acquire adminConn failed: %v", err)
-		j.finishSQLSystemError(ctx, sqlQ, task.SubmissionID)
-		return
+		return j.finishSQLSystemError(ctx, sqlQ, task.SubmissionID)
 	}
 	defer adminConn.Close()
-
-	userConn, err := userPool.Conn(ctx)
-	if err != nil {
-		log.Printf("sqljudge: acquire userConn failed: %v", err)
-		j.finishSQLSystemError(ctx, sqlQ, task.SubmissionID)
-		return
-	}
-	defer userConn.Close()
 
 	j.publishSQL(ctx, sqlQ, task.SubmissionID, statusJudging, len(task.TestCases), 0)
 
@@ -62,11 +53,10 @@ func (j *Judge) ProcessSQL(ctx context.Context, sqlQ *queue.Queue, task model.Ta
 	start := time.Now()
 	for i, tc := range task.TestCases {
 		caseStart := time.Now()
-		cr, err := j.runSQLCase(ctx, adminConn, userConn, task, tc, sqlText)
+		cr, err := j.runSQLCase(ctx, adminConn, task, tc, sqlText)
 		if err != nil {
 			log.Printf("sqljudge: runSQLCase failed on case %d: %v", i+1, err)
-			j.finishSQLSystemError(ctx, sqlQ, task.SubmissionID)
-			return
+			return j.finishSQLSystemError(ctx, sqlQ, task.SubmissionID)
 		}
 		// 与代码题一致：逐用例耗时（含建库/建表/灌数据），供前端测试点状态方块展示。
 		cr.TimeMs = intPtr(int(time.Since(caseStart).Milliseconds()))
@@ -81,14 +71,14 @@ func (j *Judge) ProcessSQL(ctx context.Context, sqlQ *queue.Queue, task model.Ta
 		TimeUsedMs:      intPtr(int(time.Since(start).Milliseconds())),
 		TestCasesReport: report,
 	}
-	j.finishSQLTerminal(ctx, sqlQ, task.SubmissionID, overall, result)
+	return j.finishSQLTerminal(ctx, sqlQ, task.SubmissionID, overall, result)
 }
 
 // runSQLCase 运行单个测试点：建库→DDL/seed→计算期望→运行用户 SQL→计算实际→比对。
 // 返回错误表示判题机自身或教师脚本出错（整题 SYSTEM_ERROR），用户 SQL 错误仅体现在 CaseResult。
 func (j *Judge) runSQLCase(
 	ctx context.Context,
-	adminConn, userConn sqlExecutor,
+	adminConn sqlExecutor,
 	task model.Task,
 	tc model.TestCase,
 	sqlText string,
@@ -101,16 +91,27 @@ func (j *Judge) runSQLCase(
 	caseCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	dbName := fmt.Sprintf("judge_%d_%d", task.SubmissionID, tc.CaseID)
-	if err := createDatabase(caseCtx, adminConn, dbName); err != nil {
-		return model.CaseResult{}, fmt.Errorf("创建临时库失败: %w", err)
+	identity, err := newSQLCaseIdentity()
+	if err != nil {
+		return model.CaseResult{}, err
 	}
-	// 清理用独立上下文，避免用例超时后残留临时库。
+	dbName := identity.database
+	// Schedule cleanup before creation: a timeout can lose the reply to a successful DDL.
 	defer func() {
 		cleanupCtx, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancelCleanup()
-		_ = dropDatabase(cleanupCtx, adminConn, dbName)
+		// An expired case can invalidate its dedicated admin connection. Use the
+		// pool to obtain a live connection for cleanup.
+		pool, err := j.getSQLAdminPool()
+		if err == nil {
+			if err := dropDatabase(cleanupCtx, pool, dbName); err != nil {
+				log.Printf("sqljudge: cleanup database %s: %v", dbName, err)
+			}
+		}
 	}()
+	if err := createDatabase(caseCtx, adminConn, dbName); err != nil {
+		return model.CaseResult{}, fmt.Errorf("创建临时库失败: %w", err)
+	}
 
 	if err := execScript(caseCtx, adminConn, dbName, task.SchemaSql); err != nil {
 		return model.CaseResult{}, fmt.Errorf("建表失败: %w", err)
@@ -124,8 +125,35 @@ func (j *Judge) runSQLCase(
 		return model.CaseResult{}, fmt.Errorf("计算期望结果失败: %w", err)
 	}
 
+	dml := strings.TrimSpace(task.VerifySql) != ""
+	if dml {
+		if err := resetDatabase(caseCtx, adminConn, dbName, task.SchemaSql, tc.SeedSql); err != nil {
+			return model.CaseResult{}, fmt.Errorf("重置临时库失败: %w", err)
+		}
+	}
+	defer func() {
+		cleanupCtx, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancelCleanup()
+		pool, err := j.getSQLAdminPool()
+		if err == nil {
+			if _, err := pool.ExecContext(cleanupCtx, "DROP USER IF EXISTS "+identity.account()); err != nil {
+				log.Printf("sqljudge: cleanup account %s: %v", identity.user, err)
+			}
+		}
+	}()
+	userDB, err := openSQLCaseUser(caseCtx, adminConn, j.cfg, identity, dml)
+	if err != nil {
+		return model.CaseResult{}, fmt.Errorf("建立隔离作答连接失败: %w", err)
+	}
+	defer userDB.Close()
+	userConn, err := userDB.Conn(caseCtx)
+	if err != nil {
+		return model.CaseResult{}, fmt.Errorf("获取隔离作答连接失败: %w", err)
+	}
+	defer userConn.Close()
+
 	cr := model.CaseResult{CaseID: tc.CaseID}
-	actual, userErr := actualResultSet(caseCtx, adminConn, userConn, dbName, task, tc.SeedSql, sqlText)
+	actual, userErr := actualResultSet(caseCtx, adminConn, userConn, dbName, task, sqlText)
 	if userErr != nil {
 		if errors.Is(userErr, context.DeadlineExceeded) || caseCtx.Err() != nil {
 			cr.Status = sandbox.StatusTimeLimitExceeded
@@ -137,10 +165,12 @@ func (j *Judge) runSQLCase(
 		return cr, nil
 	}
 
-	if ok, diff := compare.EqualResultSets(expected, actual, task.OrderSensitive); ok {
+	ok, _ := compare.EqualResultSetsContext(caseCtx, expected, actual, task.OrderSensitive)
+	if caseCtx.Err() != nil {
+		cr.Status = sandbox.StatusTimeLimitExceeded
+	} else if ok {
 		cr.Status = sandbox.StatusAccepted
 	} else {
-		_ = diff
 		cr.Status = sandbox.StatusWrongAnswer
 		cr.ExpectedOutput = strPtr(truncateResultSet(expected))
 		cr.ActualOutput = strPtr(truncateResultSet(actual))
@@ -159,18 +189,15 @@ func expectedResultSet(ctx context.Context, db sqlExecutor, dbName string, task 
 	return queryResultSet(ctx, db, dbName, task.ReferenceSql)
 }
 
-// actualResultSet 计算实际结果集：DML 题先重置再跑用户 SQL 再跑校验 SQL；SELECT 题直接跑用户 SQL。
+// actualResultSet 在已准备好的库中运行用户 SQL；DML 题再用校验 SQL 读取结果。
 func actualResultSet(
 	ctx context.Context,
 	adminConn, userConn sqlExecutor,
 	dbName string,
 	task model.Task,
-	seedSql, sqlText string,
+	sqlText string,
 ) (compare.ResultSet, error) {
 	if strings.TrimSpace(task.VerifySql) != "" {
-		if err := resetDatabase(ctx, adminConn, dbName, task.SchemaSql, seedSql); err != nil {
-			return compare.ResultSet{}, err
-		}
 		if err := execUserSQL(ctx, userConn, dbName, sqlText); err != nil {
 			return compare.ResultSet{}, err
 		}
@@ -247,77 +274,88 @@ func queryResultSet(ctx context.Context, db sqlExecutor, dbName, query string) (
 	return compare.Capture(rows)
 }
 
-// getSQLPools 获取或惰性初始化常驻的判题 MySQL 连接池（admin 多语句池与 user 单语句池）。
-func (j *Judge) getSQLPools() (*sql.DB, *sql.DB, error) {
+// getSQLAdminPool 只为判题机自身和教师脚本建立管理连接池。
+func (j *Judge) getSQLAdminPool() (*sql.DB, error) {
 	j.sqlMu.Lock()
 	defer j.sqlMu.Unlock()
-	if j.adminPool != nil && j.userPool != nil {
-		if err := j.adminPool.Ping(); err == nil {
-			if err := j.userPool.Ping(); err == nil {
-				return j.adminPool, j.userPool, nil
-			}
-		}
-		_ = j.adminPool.Close()
-		_ = j.userPool.Close()
-		j.adminPool = nil
-		j.userPool = nil
+	if j.adminPool != nil {
+		return j.adminPool, nil
 	}
-	admin, user, err := openSQLConnections(j.cfg)
+	cfg := mysqlConfig(j.cfg)
+	cfg.User = j.cfg.JudgeMysqlUser
+	cfg.Passwd = j.cfg.JudgeMysqlPassword
+	cfg.MultiStatements = true
+	db, err := sql.Open("mysql", cfg.FormatDSN())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	j.adminPool = admin
-	j.userPool = user
-	return admin, user, nil
+	maxOpen := max(4, j.cfg.WorkerConcurrency+2)
+	db.SetMaxOpenConns(maxOpen)
+	db.SetMaxIdleConns(maxOpen)
+	db.SetConnMaxLifetime(10 * time.Minute)
+	j.adminPool = db
+	return db, nil
 }
 
-// openSQLConnections 建立判题 MySQL 的 admin（多语句）与 user（单语句）两个连接池。
-func openSQLConnections(cfg config.Config) (*sql.DB, *sql.DB, error) {
+type sqlCaseIdentity struct {
+	database string
+	user     string
+	password string
+}
+
+func newSQLCaseIdentity() (sqlCaseIdentity, error) {
+	var random [36]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return sqlCaseIdentity{}, err
+	}
+	suffix := hex.EncodeToString(random[:12])
+	return sqlCaseIdentity{
+		// A GRANT database name must not contain SQL wildcard characters.
+		database: "kecejudge" + suffix,
+		user:     "kc" + suffix,
+		password: "Kc9!" + hex.EncodeToString(random[12:]),
+	}, nil
+}
+
+func (id sqlCaseIdentity) account() string { return "'" + id.user + "'@'%'" }
+
+func (id sqlCaseIdentity) grant(dml bool) string {
+	privileges := "SELECT"
+	if dml {
+		privileges += ", INSERT, UPDATE, DELETE"
+	}
+	return "GRANT " + privileges + " ON `" + id.database + "`.* TO " + id.account()
+}
+
+func mysqlConfig(cfg config.Config) *mysql.Config {
 	base := mysql.NewConfig()
-	base.User = cfg.JudgeMysqlUser
-	base.Passwd = cfg.JudgeMysqlPassword
 	base.Net = "tcp"
 	base.Addr = cfg.JudgeMysqlHost + ":" + cfg.JudgeMysqlPort
 	base.Timeout = 5 * time.Second
 	base.Params = map[string]string{"charset": "utf8mb4"}
+	return base
+}
 
-	maxOpen := cfg.WorkerConcurrency + 2
-	if maxOpen < 4 {
-		maxOpen = 4
+func openSQLCaseUser(ctx context.Context, admin sqlExecutor, cfg config.Config, id sqlCaseIdentity, dml bool) (*sql.DB, error) {
+	// All interpolated values here are generated by newSQLCaseIdentity.
+	// Do not include MySQL's error for CREATE USER in logs: it may contain the password.
+	if _, err := admin.ExecContext(ctx, "CREATE USER "+id.account()+" IDENTIFIED BY '"+id.password+"'"); err != nil {
+		return nil, errors.New("创建临时作答账号失败")
 	}
-
-	// admin 连接允许多条语句，用于 DDL/seed/reference/verify 脚本。
-	base.MultiStatements = true
-	admin, err := sql.Open("mysql", base.FormatDSN())
+	if _, err := admin.ExecContext(ctx, id.grant(dml)); err != nil {
+		return nil, fmt.Errorf("授予临时作答权限失败: %w", err)
+	}
+	user := mysqlConfig(cfg)
+	user.User = id.user
+	user.Passwd = id.password
+	user.DBName = id.database
+	db, err := sql.Open("mysql", user.FormatDSN())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	admin.SetMaxOpenConns(maxOpen)
-	admin.SetMaxIdleConns(maxOpen)
-	admin.SetConnMaxLifetime(10 * time.Minute)
-
-	// user 连接强制单条语句，用户提交多条语句会被驱动拒绝。
-	base.MultiStatements = false
-	user, err := sql.Open("mysql", base.FormatDSN())
-	if err != nil {
-		_ = admin.Close()
-		return nil, nil, err
-	}
-	user.SetMaxOpenConns(maxOpen)
-	user.SetMaxIdleConns(maxOpen)
-	user.SetConnMaxLifetime(10 * time.Minute)
-
-	if err := admin.Ping(); err != nil {
-		_ = admin.Close()
-		_ = user.Close()
-		return nil, nil, err
-	}
-	if err := user.Ping(); err != nil {
-		_ = admin.Close()
-		_ = user.Close()
-		return nil, nil, err
-	}
-	return admin, user, nil
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(0)
+	return db, nil
 }
 
 func extractSQL(task model.Task) string {
@@ -335,6 +373,9 @@ func extractSQL(task model.Task) string {
 func truncateResultSet(rs compare.ResultSet) string {
 	if len(rs.Rows) > maxResultRows {
 		rs.Rows = rs.Rows[:maxResultRows]
+		if len(rs.Nulls) > maxResultRows {
+			rs.Nulls = rs.Nulls[:maxResultRows]
+		}
 	}
 	data, err := json.Marshal(rs)
 	if err != nil {
@@ -360,15 +401,14 @@ func (j *Judge) publishSQL(ctx context.Context, sqlQ *queue.Queue, submissionID 
 	j.writeSQLStatus(ctx, sqlQ, submissionID, vo)
 }
 
-func (j *Judge) finishSQLSystemError(ctx context.Context, sqlQ *queue.Queue, submissionID int64) {
+func (j *Judge) finishSQLSystemError(ctx context.Context, sqlQ *queue.Queue, submissionID int64) error {
 	result := model.Result{Score: intPtr(0), TestCasesReport: []model.CaseResult{}}
-	j.finishSQLTerminal(ctx, sqlQ, submissionID, sandbox.StatusSystemError, result)
+	return j.finishSQLTerminal(ctx, sqlQ, submissionID, sandbox.StatusSystemError, result)
 }
 
-func (j *Judge) finishSQLTerminal(ctx context.Context, sqlQ *queue.Queue, submissionID int64, status string, result model.Result) {
+func (j *Judge) finishSQLTerminal(ctx context.Context, sqlQ *queue.Queue, submissionID int64, status string, result model.Result) error {
 	vo := model.SubmissionVO{SubmissionID: submissionID, Status: status, Result: &result}
-	j.writeSQLStatus(ctx, sqlQ, submissionID, vo)
-	_ = sqlQ.PushResult(ctx, submissionID)
+	return publishTerminal(ctx, sqlQ, vo)
 }
 
 func (j *Judge) writeSQLStatus(ctx context.Context, sqlQ *queue.Queue, submissionID int64, vo model.SubmissionVO) {

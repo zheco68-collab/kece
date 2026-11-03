@@ -6,7 +6,7 @@
 [![Backend](https://img.shields.io/badge/Backend-Spring%20Boot%203.2%20%7C%20Java%2017-111111?style=flat-square)](https://spring.io/projects/spring-boot)
 [![Judger](https://img.shields.io/badge/Judger-Go%201.22+%20%7C%20Docker%20Cgroups%20v2-111111?style=flat-square)](https://go.dev/)
 [![Database](https://img.shields.io/badge/Database-MySQL%208.0%20(Flyway%20V20)-111111?style=flat-square)](https://www.mysql.com/)
-[![Cache & MQ](https://img.shields.io/badge/Cache%20%26%20MQ-Redis%207.0%20%7C%20BRPOP%20Listener-111111?style=flat-square)](https://redis.io/)
+[![Cache & MQ](https://img.shields.io/badge/Cache%20%26%20MQ-Redis%207.0%20%7C%20Reliable%20Result%20Queue-111111?style=flat-square)](https://redis.io/)
 [![Design System](https://img.shields.io/badge/UI%20System-0--Radius%20Industrial-1d4ed8?style=flat-square)](https://kece.zheco68.asia/)
 
 > **KECE（课测）** 是面向高校计算机教学、程序设计竞赛与全真技术机考的一体化技能评测系统。  
@@ -40,7 +40,7 @@
 | 模块标识 | 评测工作台 | 核心技术底座 | 关键功能与业务机制 |
 | :---: | :--- | :--- | :--- |
 | `ALGO` | **算法编程 OJ** | Linux Cgroups v2 + Docker | • 支持 C/C++、Java 17、Python 3 与 ArkTS 在线编译；<br>• 多级算法标签（动态规划、图论、最短路等）联动折叠筛选；<br>• 毫秒级 CPU 时间片与内存峰值硬限制，全覆盖 AC/WA/TLE/MLE/RE/CE 状态机。 |
-| `SQL` | **数据库 SQL OJ** | MySQL 8.0 独立临时库 (:3307) | • 单次评测动态创建 `judge_{subId}_{caseId}` 独立库，对拍后即刻 DROP 销毁；<br>• 内置 DbSchemaViewer 表结构内省树，支持 SELECT 结果集比对与 DML 变更校验；<br>• 支持 1e-6 浮点精度容差、字段类型宽容度与有序/无序对拍。 |
+| `SQL` | **数据库 SQL OJ** | MySQL 8.0 独立临时库 (:3307) | • 单次评测动态创建独立库及仅限该库的临时作答账号，对拍后清理；<br>• 内置 DbSchemaViewer 表结构内省树，支持 SELECT 结果集比对与 DML 变更校验；<br>• 按列类型比较：文本和整数保留精确值，浮点及小数按容差比较，支持有序/无序对拍。 |
 | `SET` | **分类进阶题集** | 预聚合表 + 读时自愈 (Read-Repair) | • 结构化树状章节编排，题集分类筛选与通关进度环；<br>• 智能推荐断点续刷题目，跨模式自动比对全局提交历史并实时点亮章节状态。 |
 | `QUIZ` | **标准客观题库** | Markdown + KaTeX 数学排版 | • 涵盖单选、多选（漏选得一半分、错选得零分）与填空题（精确/大小写忽略/正则匹配）；<br>• 原生支持代码块语法高亮与 LaTeX 公式渲染，交卷即刻出分并呈现详细解析。 |
 | `LAB` | **随堂课练实训** | 混合题型编排 + 实时督学 | • 面向高校课堂教学，支持算法题、SQL 题与客观题混排编排；<br>• 6 位安全准入口令锁定，教师端提供实时答题进度雷达看板与历史归档。 |
@@ -124,9 +124,9 @@
 > [!TIP]
 > 系统实施了全链路性能加固，从网络传输、异步事件驱动、数据索引到多级缓存全面调优，确保在高并发交卷洪峰下保持平稳毫秒级响应。
 
-> 1. **评测流转零轮询（BRPOP 异步驱动）**
+> 1. **评测结果可重试**
 >    - 彻底摒弃 `@Scheduled(fixedDelay = 2000)` 定时轮询机制；
->    - 自研 `JudgeResultBlockingListener`，采用独立守护线程池以 `BRPOP` 阻塞监听 Redis 结果队列。判题机完成推入的 **0.1ms 内被即刻唤醒**，端到端延迟从 **2200ms 降至 <80ms**。
+>    - 后端独立处理算法和 SQL 结果：从 Redis 原子认领，业务写入成功后确认，失败可在租约到期后重新处理。前端仍通过状态缓存查询进度。
 >
 > 2. **数据库覆盖索引（Covering Index）**
 >    - 在 Flyway `V20__performance_indexes.sql` 中为提交表建立核心复合覆盖索引：
@@ -293,6 +293,12 @@ npm run dev
 
 ---
 
+### 升级评测链路
+
+- 先更新所有 Java 后端实例，再更新 Go 评测机。新版后端兼容旧的纯 ID 结果消息；旧版后端无法读取新版评测机发送的结果消息。
+- 后端确认写入成功后才移除 Redis 结果认领。未确认的认领可在 2 分钟后重新处理；达到 30 次仍失败的消息移入对应的 judge:results:failed 或 judge:sql:results:failed 列表，排查故障后可将消息重新放入原结果列表。Compose 已开启 Redis AOF；独立部署也应启用持久化。
+- JUDGE_MYSQL_USER 仅用于连接专用评测实例，需能创建、删除临时库和临时账号，并向临时账号授予库级权限。用户 SQL 使用临时账号，SELECT 题只读；DML 题额外允许在本用例库内插入、更新和删除。
+
 ## 工程目录结构
 
 ### 模块全景与工程划分
@@ -302,7 +308,7 @@ npm run dev
 | **`frontend/`** | `src/views/` | Vue 3.5 + TS 5.9 | 答题工作台、实时诊断抽屉、全真机考、课练督学、开发者主页与管理后台 |
 | | `src/components/` | Vite 8 + CSS Vars | 0-Radius 直角工业风组件（`ClusterConsole`, `DbSchemaViewer`, `HeatmapCalendar`） |
 | | `src/api/` & `stores/` | Axios + Pinia 3 | 模块化 REST API 通信、JWT 自动静默续签与全局答题草稿缓存 |
-| **`backend/`** | `submission/` | Spring Boot 3.2.5 | 提交任务构建调度与常驻守护线程 `JudgeResultBlockingListener`（BRPOP 结果收集） |
+| **`backend/`** | `submission/` | Spring Boot 3.2.5 | 提交任务构建调度与常驻守护线程 `JudgeResultBlockingListener`（可重试的结果收集） |
 | | `database/` | MyBatis 3 + MySQL | SQL OJ 题库管理、测试点元数据内省与独立库对拍生命周期管理 |
 | | `question/` & `rank/` | Redis 7 + HikariCP | 算法题库标签检索、测试用例管理、天梯榜防雪崩缓存（120s TTL + Jitter） |
 | | `exam/` & `practice/` | Java 17 (LTS) | 考场快照组卷、防作弊切屏监测、ACM 罚时 / OI 快照加权评分、随堂课练准入 |

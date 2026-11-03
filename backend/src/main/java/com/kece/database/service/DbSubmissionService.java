@@ -46,7 +46,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class DbSubmissionService {
 
     private static final String QUEUE_KEY = "judge:sql:queue";
-    private static final String RESULTS_KEY = "judge:sql:results";
     private static final String STATUS_KEY_PREFIX = "dbsub:status:";
     private static final String OWNER_KEY_PREFIX = "dbsub:owner:";
     private static final long STATUS_TTL_SECONDS = 3600;
@@ -356,41 +355,38 @@ public class DbSubmissionService {
         return ids == null || ids.isEmpty() ? Set.of() : new HashSet<>(ids);
     }
 
-    /** 定时回写：将判题机写入 Redis 的终态结果落库 MySQL（幂等）。 */
-    public void collectResults() {
-        try {
-            while (true) {
-                String submissionIdStr = redis.opsForList().leftPop(RESULTS_KEY);
-                if (submissionIdStr == null) {
-                    break;
-                }
-                try {
-                    persistResult(Long.valueOf(submissionIdStr));
-                } catch (Exception e) {
-                    log.warn("回写数据库评测结果失败 submissionId={}: {}", submissionIdStr, e.getMessage());
-                }
-            }
-        } catch (Exception e) {
-            log.debug("回写任务扫描跳过: {}", e.getMessage());
+    @Transactional
+    public void persistResult(Long submissionId, String payload) {
+        DbSubmission sub = submissionMapper.findByIdForUpdate(submissionId);
+        if (sub == null) {
+            // The result can arrive before the submit transaction commits.
+            throw new IllegalStateException("提交尚未可见：" + submissionId);
         }
-    }
-
-    public void persistResult(Long submissionId) {
         String cached = redis.opsForValue().get(statusKey(submissionId));
-        if (cached == null) {
+        if (payload != null && cached != null && !payload.equals(cached)) {
+            // A newer judgment has already replaced this attempt's status.
             return;
         }
-        SubmissionVO vo = readJson(cached, SubmissionVO.class);
+        if (cached == null
+                && sub.getStatus() != null
+                && SubmissionStatus.from(sub.getStatus()).isTerminal()) {
+            // A retry after the UI cache expired must not overwrite an already finalized attempt.
+            return;
+        }
+        String body = payload != null ? payload : cached;
+        if (body == null) {
+            // Only legacy messages depend on a cache entry that can expire.
+            return;
+        }
+        SubmissionVO vo = readJson(body, SubmissionVO.class);
         if (vo == null
                 || vo.getStatus() == null
                 || !SubmissionStatus.from(vo.getStatus()).isTerminal()) {
-            return;
+            throw new IllegalStateException("尚无有效评测终态：" + submissionId);
         }
         SubmissionResultVO result = vo.getResult();
-        DbSubmission sub = submissionMapper.findById(submissionId);
         boolean newlyAccepted =
-                sub != null
-                        && !"ACCEPTED".equals(sub.getStatus())
+                !"ACCEPTED".equals(sub.getStatus())
                         && SubmissionStatus.ACCEPTED.name().equals(vo.getStatus());
 
         submissionMapper.updateResult(

@@ -14,6 +14,8 @@ public interface SubmissionMapper {
 
     Submission findById(Long id);
 
+    Submission findByIdForUpdate(Long id);
+
     List<SubmissionListVO> findPage(
             @Param("userId") Long userId,
             @Param("questionId") Long questionId,

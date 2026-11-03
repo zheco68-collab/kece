@@ -14,6 +14,8 @@ public interface DbSubmissionMapper {
 
     DbSubmission findById(Long id);
 
+    DbSubmission findByIdForUpdate(Long id);
+
     List<DbSubmissionListVO> findPage(
             @Param("userId") Long userId,
             @Param("questionId") Long questionId,

@@ -1,6 +1,7 @@
 package com.kece.submission;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -10,8 +11,8 @@ import com.kece.AbstractIntegrationTest;
 import com.kece.submission.dto.SubmissionResultVO;
 import com.kece.submission.dto.SubmissionVO;
 import com.kece.submission.entity.Submission;
+import com.kece.submission.listener.JudgeResultBlockingListener;
 import com.kece.submission.mapper.SubmissionMapper;
-import com.kece.submission.service.SubmissionService;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,11 +28,11 @@ class SubmissionIntegrationTest extends AbstractIntegrationTest {
     private static final String STATUS_KEY = "sub:status:";
     private static final String RESULTS_KEY = "judge:results";
 
-    @Autowired private SubmissionService submissionService;
-
     @Autowired private SubmissionMapper submissionMapper;
 
     @Autowired private StringRedisTemplate redis;
+
+    @Autowired private JudgeResultBlockingListener resultListener;
 
     @Autowired private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
@@ -141,7 +142,10 @@ class SubmissionIntegrationTest extends AbstractIntegrationTest {
                         .build();
         redis.opsForValue()
                 .set(STATUS_KEY + submissionId, objectMapper.writeValueAsString(terminal));
-        redis.opsForList().rightPush(RESULTS_KEY, String.valueOf(submissionId));
+        redis.opsForList()
+                .rightPush(
+                        RESULTS_KEY,
+                        submissionId + "\n" + objectMapper.writeValueAsString(terminal));
 
         // 轮询应返回终态
         MvcResult done =
@@ -154,10 +158,53 @@ class SubmissionIntegrationTest extends AbstractIntegrationTest {
         assertThat(doneData.path("status").asText()).isEqualTo("ACCEPTED");
         assertThat(doneData.path("result").path("score").asInt()).isEqualTo(100);
 
-        // 触发回写，MySQL 应持久化终态
-        submissionService.collectResults();
-        Submission persisted = submissionMapper.findById(submissionId);
+        // 后台监听器异步将结果持久化到 MySQL。
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        Submission persisted;
+        do {
+            persisted = submissionMapper.findById(submissionId);
+            if ("ACCEPTED".equals(persisted.getStatus())) {
+                break;
+            }
+            Thread.sleep(25);
+        } while (System.nanoTime() < deadline);
         assertThat(persisted.getStatus()).isEqualTo("ACCEPTED");
         assertThat(persisted.getResultJson()).isNotBlank();
+    }
+
+    @Test
+    void redisRetainsFailedClaimAndRedeliversAfterLeaseExpiry() {
+        String key = "test:judge:results:" + UUID.randomUUID();
+        String pending = key + ":pending";
+        String payload = "123\n{}";
+        try {
+            redis.opsForList().rightPush(key, payload);
+            assertThatThrownBy(
+                            () ->
+                                    resultListener.processNext(
+                                            key,
+                                            (id, result) -> {
+                                                throw new IllegalStateException(
+                                                        "transient persistence error");
+                                            }))
+                    .isInstanceOf(IllegalStateException.class);
+
+            assertThat(redis.opsForList().size(key)).isZero();
+            var claims = redis.opsForZSet().range(pending, 0, -1);
+            assertThat(claims).hasSize(1);
+            redis.opsForZSet().add(pending, claims.iterator().next(), 0);
+
+            assertThat(
+                            resultListener.processNext(
+                                    key,
+                                    (id, result) -> {
+                                        assertThat(id).isEqualTo(123L);
+                                        assertThat(result).isEqualTo("{}");
+                                    }))
+                    .isTrue();
+            assertThat(redis.opsForZSet().size(pending)).isZero();
+        } finally {
+            redis.delete(List.of(key, pending, key + ":failed"));
+        }
     }
 }

@@ -34,7 +34,7 @@ def deploy(dist_dir="frontend/dist", host=DEFAULT_HOST, port=DEFAULT_PORT,
     dist_dir = os.path.abspath(dist_dir)
     if not os.path.isdir(dist_dir):
         print(f"[ERROR] 目标构建目录不存在: {dist_dir}，请先执行 npm run build。")
-        sys.exit(1)
+        return 1
 
     print("=" * 60)
     print(" KECE OJ 前端静态资源发布")
@@ -76,15 +76,24 @@ def deploy(dist_dir="frontend/dist", host=DEFAULT_HOST, port=DEFAULT_PORT,
     )
     # 使用 sudo 执行
     sudo_cmd = f"echo '{password}' | sudo -S bash -c \"{cmd}\""
-    stdin, stdout, stderr = ssh.exec_command(sudo_cmd)
-    out = stdout.read().decode('utf-8')
-    err = stderr.read().decode('utf-8')
+    try:
+        _, stdout, _ = ssh.exec_command(sudo_cmd)
+        # Drain both streams before waiting for the exit status (large output can fill the channel).
+        stdout.channel.set_combine_stderr(True)
+        output = stdout.read().decode('utf-8', errors='replace').strip()
+        status = stdout.channel.recv_exit_status()
+    finally:
+        ssh.close()
+        if os.path.exists(tmp_tar):
+            os.remove(tmp_tar)
 
-    ssh.close()
-    if os.path.exists(tmp_tar):
-        os.remove(tmp_tar)
-
+    if status != 0:
+        print(f"[ERROR] 远端发布命令失败（退出码 {status}）", file=sys.stderr)
+        if output:
+            print(output, file=sys.stderr)
+        return status if status > 0 else 1
     print(" [OK] 前端静态资源发布成功！")
+    return 0
 
 def main():
     parser = argparse.ArgumentParser(description="KECE OJ 前端生产构建同步与发布工具")
@@ -96,8 +105,8 @@ def main():
     parser.add_argument("--target", default=DEFAULT_TARGET_DIR, help="Web 根目录路径")
     args = parser.parse_args()
 
-    deploy(args.dist, args.host, args.port, args.user, args.password, args.target)
+    return deploy(args.dist, args.host, args.port, args.user, args.password, args.target)
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
 

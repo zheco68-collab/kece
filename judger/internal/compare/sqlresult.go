@@ -1,10 +1,11 @@
 package compare
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"math"
-	"sort"
+	"math/big"
 	"strconv"
 	"strings"
 )
@@ -19,10 +20,11 @@ type Column struct {
 type ResultSet struct {
 	Columns []Column   `json:"columns"`
 	Rows    [][]string `json:"rows"`
+	Nulls   [][]bool   `json:"nulls,omitempty"`
 }
 
 // Capture 从 *sql.Rows 读取全部数据，构造标准结果集。
-// NULL 统一序列化为字符串 "NULL"（v1 已知限制：无法区分字面量 "NULL"）。
+// 保留 NULL 标记，与用于展示的文本分开。
 func Capture(rows *sql.Rows) (ResultSet, error) {
 	names, err := rows.Columns()
 	if err != nil {
@@ -47,10 +49,13 @@ func Capture(rows *sql.Rows) (ResultSet, error) {
 			return ResultSet{}, err
 		}
 		row := make([]string, len(cols))
+		nulls := make([]bool, len(cols))
 		for i, v := range raw {
 			row[i] = cellString(v)
+			nulls[i] = v == nil
 		}
 		result.Rows = append(result.Rows, row)
+		result.Nulls = append(result.Nulls, nulls)
 	}
 	if err := rows.Err(); err != nil {
 		return ResultSet{}, err
@@ -75,6 +80,14 @@ func cellString(v any) string {
 // EqualResultSets 比对期望与实际结果集：结构（列数/列名/列型）+ 行数 + 数据（数值宽容差）+ 行序。
 // 返回是否一致及首个差异的可读描述（一致时 diff 为空）。
 func EqualResultSets(expected, actual ResultSet, orderSensitive bool) (bool, string) {
+	return EqualResultSetsContext(context.Background(), expected, actual, orderSensitive)
+}
+
+// EqualResultSetsContext checks the case deadline during potentially large comparisons.
+func EqualResultSetsContext(ctx context.Context, expected, actual ResultSet, orderSensitive bool) (bool, string) {
+	if ctx.Err() != nil {
+		return false, "结果比对超时"
+	}
 	if len(expected.Columns) != len(actual.Columns) {
 		return false, fmt.Sprintf("列数不一致：期望 %d 列，实际 %d 列", len(expected.Columns), len(actual.Columns))
 	}
@@ -90,50 +103,184 @@ func EqualResultSets(expected, actual ResultSet, orderSensitive bool) (bool, str
 		return false, fmt.Sprintf("行数不一致：期望 %d 行，实际 %d 行", len(expected.Rows), len(actual.Rows))
 	}
 
-	expRows := expected.Rows
-	actRows := actual.Rows
-	if !orderSensitive {
-		expRows = sortedCopy(expRows)
-		actRows = sortedCopy(actRows)
+	for _, rows := range [][][]string{expected.Rows, actual.Rows} {
+		for _, row := range rows {
+			if len(row) != len(expected.Columns) {
+				return false, "结果行列数与列定义不一致"
+			}
+		}
 	}
-	for r := range expRows {
-		if diff := compareRow(expRows[r], actRows[r]); diff != "" {
-			return false, fmt.Sprintf("第 %d 行：%s", r+1, diff)
+	if orderSensitive {
+		for r := range expected.Rows {
+			if ctx.Err() != nil || !equalRow(expected, r, actual, r) {
+				return false, fmt.Sprintf("第 %d 行不一致", r+1)
+			}
+		}
+		return true, ""
+	}
+
+	// 先按必须精确相等的列分组。没有近似列时，比较每组的行数即可保留重复行语义。
+	actualGroups := make(map[string][]int)
+	for i := range actual.Rows {
+		if ctx.Err() != nil {
+			return false, "结果比对超时"
+		}
+		key := exactKey(actual, i)
+		actualGroups[key] = append(actualGroups[key], i)
+	}
+	expectedGroups := make(map[string][]int)
+	for i := range expected.Rows {
+		if ctx.Err() != nil {
+			return false, "结果比对超时"
+		}
+		key := exactKey(expected, i)
+		expectedGroups[key] = append(expectedGroups[key], i)
+	}
+	hasTolerance := false
+	for _, col := range expected.Columns {
+		hasTolerance = hasTolerance || approximate(col.Type)
+	}
+	for key, exp := range expectedGroups {
+		act := actualGroups[key]
+		if len(exp) != len(act) {
+			return false, fmt.Sprintf("第 %d 行的匹配行数不一致", exp[0]+1)
+		}
+		if hasTolerance && !matchRows(ctx, expected, actual, exp, act) {
+			return false, fmt.Sprintf("以第 %d 行开头的分组无法逐行匹配", exp[0]+1)
 		}
 	}
 	return true, ""
 }
 
-// compareRow 逐格比对一行，返回首个差异描述（无差异返回空串）。
-func compareRow(expected, actual []string) string {
-	for i := range expected {
-		if i >= len(actual) {
-			return fmt.Sprintf("第 %d 列缺失", i+1)
-		}
-		if !cellEqual(expected[i], actual[i]) {
-			return fmt.Sprintf("第 %d 列：期望 %q，实际 %q", i+1, expected[i], actual[i])
+// matchRows 使用增广路径匹配。容差相等不具传递性，不能通过字典排序或贪心配对。
+func matchRows(ctx context.Context, expected, actual ResultSet, exp, act []int) bool {
+	// The typical output is exactly equal. Avoid quadratic matching in that case.
+	exact := make(map[string]int, len(exp))
+	for _, e := range exp {
+		exact[rowKey(expected, e, true)]++
+	}
+	allExact := true
+	for _, a := range act {
+		key := rowKey(actual, a, true)
+		exact[key]--
+		if exact[key] < 0 {
+			allExact = false
+			break
 		}
 	}
-	return ""
+	if allExact {
+		return true
+	}
+
+	matched := make([]int, len(act))
+	seen := make([]int, len(act))
+	var augment func(int, int) bool
+	augment = func(row, visit int) bool {
+		for i, a := range act {
+			if ctx.Err() != nil {
+				return false
+			}
+			if matched[i] == 0 && seen[i] != visit && equalRow(expected, row, actual, a) {
+				matched[i] = row + 1
+				return true
+			}
+		}
+		for i, a := range act {
+			if ctx.Err() != nil {
+				return false
+			}
+			if seen[i] == visit || !equalRow(expected, row, actual, a) {
+				continue
+			}
+			seen[i] = visit
+			if augment(matched[i]-1, visit) {
+				matched[i] = row + 1
+				return true
+			}
+		}
+		return false
+	}
+	for i, row := range exp {
+		if !augment(row, i+1) {
+			return false
+		}
+	}
+	return true
 }
 
-// cellEqual 单格比对：数值宽容差，其余去除首尾空白后严格相等。
-func cellEqual(a, b string) bool {
+func (rs ResultSet) isNull(row, col int) bool {
+	return row < len(rs.Nulls) && col < len(rs.Nulls[row]) && rs.Nulls[row][col]
+}
+
+func exactKey(rs ResultSet, row int) string { return rowKey(rs, row, false) }
+
+func rowKey(rs ResultSet, row int, includeApproximate bool) string {
+	// Length prefixes keep null, text, and arbitrary binary strings distinct.
+	var key strings.Builder
+	for i, col := range rs.Columns {
+		if rs.isNull(row, i) {
+			key.WriteByte('-')
+			continue
+		}
+		v := ""
+		if includeApproximate || !approximate(col.Type) {
+			v = strings.TrimSpace(rs.Rows[row][i])
+		}
+		key.WriteString(strconv.Itoa(len(v)))
+		key.WriteByte(':')
+		key.WriteString(v)
+	}
+	return key.String()
+}
+
+func equalRow(expected ResultSet, e int, actual ResultSet, a int) bool {
+	for i, col := range expected.Columns {
+		en, an := expected.isNull(e, i), actual.isNull(a, i)
+		if en != an || (!en && !cellEqual(expected.Rows[e][i], actual.Rows[a][i], col.Type)) {
+			return false
+		}
+	}
+	return true
+}
+
+func approximate(columnType string) bool {
+	switch normalizeType(columnType) {
+	case "FLOAT", "DOUBLE", "REAL", "DECIMAL", "NUMERIC":
+		return true
+	default:
+		return false
+	}
+}
+
+func cellEqual(a, b, columnType string) bool {
+	a, b = strings.TrimSpace(a), strings.TrimSpace(b)
 	if a == b {
 		return true
 	}
-	if fa, ok := parseFloat(a); ok {
-		if fb, ok2 := parseFloat(b); ok2 {
-			scale := math.Max(1, math.Abs(fb))
-			return math.Abs(fa-fb) <= 1e-9*scale
-		}
+	if !approximate(columnType) {
+		return false
 	}
-	return strings.TrimSpace(a) == strings.TrimSpace(b)
-}
-
-func parseFloat(s string) (float64, bool) {
-	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-	return f, err == nil
+	switch normalizeType(columnType) {
+	case "DECIMAL", "NUMERIC":
+		// 保留十进制精度，避免 float64 把不同值舍入成同一个数。
+		x, ok := new(big.Rat).SetString(a)
+		y, ok2 := new(big.Rat).SetString(b)
+		if !ok || !ok2 {
+			return false
+		}
+		scale := new(big.Rat).Abs(y)
+		if scale.Cmp(big.NewRat(1, 1)) < 0 {
+			scale.SetInt64(1)
+		}
+		return new(big.Rat).Abs(new(big.Rat).Sub(x, y)).Cmp(scale.Quo(scale, big.NewRat(1_000_000_000, 1))) <= 0
+	default:
+		x, err := strconv.ParseFloat(a, 64)
+		y, err2 := strconv.ParseFloat(b, 64)
+		if err != nil || err2 != nil || math.IsInf(x, 0) || math.IsInf(y, 0) {
+			return false
+		}
+		return math.Abs(x-y) <= 1e-9*math.Max(1, math.Abs(y))
+	}
 }
 
 // normalizeType 宽松归一化列型：大写、去长度/精度修饰，并将常见等价类型族归并。
@@ -150,15 +297,4 @@ func normalizeType(t string) string {
 		return "TINYINT"
 	}
 	return upper
-}
-
-func sortedCopy(rows [][]string) [][]string {
-	out := make([][]string, len(rows))
-	copy(out, rows)
-	sort.Slice(out, func(i, j int) bool { return rowKey(out[i]) < rowKey(out[j]) })
-	return out
-}
-
-func rowKey(row []string) string {
-	return strings.Join(row, "\x00")
 }

@@ -12,7 +12,7 @@ public class SubmitRequest {
     @NotNull(message = "题目ID不能为空")
     private Long questionId;
 
-    /** 比赛/考试ID（选填）。 */
+    /** 仅用于拒绝误用普通提交接口的旧客户端；不得由客户端设置考试关联。 */
     private Long contestId;
 
     /** 随堂课练房间口令（选填，传入时在同一事务内原子绑定课练提交）。 */

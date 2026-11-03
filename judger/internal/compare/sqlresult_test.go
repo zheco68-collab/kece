@@ -86,10 +86,38 @@ func TestEqualResultSets(t *testing.T) {
 			want:           true,
 		},
 		{
-			name:     "NULL 与字面量 NULL 视为相同",
-			expected: rs([]Column{colName}, []string{"NULL"}),
-			actual:   rs([]Column{colName}, []string{"NULL"}),
+			name: "SQL NULL 与字面量 NULL 不相等",
+			expected: ResultSet{
+				Columns: []Column{colName},
+				Rows:    [][]string{{"NULL"}},
+				Nulls:   [][]bool{{true}},
+			},
+			actual: rs([]Column{colName}, []string{"NULL"}),
+			want:   false,
+		},
+		{
+			name:     "保留文本中的前导零",
+			expected: rs([]Column{colName}, []string{"001"}),
+			actual:   rs([]Column{colName}, []string{"1"}),
+			want:     false,
+		},
+		{
+			name:     "BIGINT 不使用相对容差",
+			expected: rs([]Column{{Name: "id", Type: "BIGINT"}}, []string{"1000000000"}),
+			actual:   rs([]Column{{Name: "id", Type: "BIGINT"}}, []string{"1000000001"}),
+			want:     false,
+		},
+		{
+			name:     "无序浮点容差不依赖字典排序",
+			expected: rs([]Column{{Name: "value", Type: "DOUBLE"}}, []string{"9.999999999"}, []string{"10.5"}),
+			actual:   rs([]Column{{Name: "value", Type: "DOUBLE"}}, []string{"10.5"}, []string{"10"}),
 			want:     true,
+		},
+		{
+			name:     "无序容差配对保留重复行数量",
+			expected: rs([]Column{{Name: "value", Type: "DOUBLE"}}, []string{"10"}, []string{"10"}),
+			actual:   rs([]Column{{Name: "value", Type: "DOUBLE"}}, []string{"10"}, []string{"20"}),
+			want:     false,
 		},
 		{
 			name:     "空结果集相等",
