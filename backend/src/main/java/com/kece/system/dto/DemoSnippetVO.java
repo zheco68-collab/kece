@@ -2,10 +2,7 @@ package com.kece.system.dto;
 
 import java.io.Serializable;
 
-/**
- * 首页技术演示 Java 算法代码片段。
- * 来源于 GitHub: https://github.com/zheco68-collab/Templat_summary
- */
+/** 首页技术演示 Java 算法代码片段。 来源于 GitHub: https://github.com/zheco68-collab/Templat_summary */
 public class DemoSnippetVO implements Serializable {
     private static final long serialVersionUID = 1L;
 
@@ -24,10 +21,10 @@ public class DemoSnippetVO implements Serializable {
     /** 最近一次刷新时间戳 (毫秒) */
     private long updatedAt;
 
-    public DemoSnippetVO() {
-    }
+    public DemoSnippetVO() {}
 
-    public DemoSnippetVO(String filename, String langBadge, String code, String sourcePath, long updatedAt) {
+    public DemoSnippetVO(
+            String filename, String langBadge, String code, String sourcePath, long updatedAt) {
         this.filename = filename;
         this.langBadge = langBadge;
         this.code = code;

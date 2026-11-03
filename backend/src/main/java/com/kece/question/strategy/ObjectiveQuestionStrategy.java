@@ -14,9 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-/**
- * 客观题（OBJECTIVE）多态策略实现：支持单选、多选、填空、判断等题型的题面装配与元数据解析。
- */
+/** 客观题（OBJECTIVE）多态策略实现：支持单选、多选、填空、判断等题型的题面装配与元数据解析。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor

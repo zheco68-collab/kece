@@ -7,9 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * 发布与编辑公告请求体（含 JSR-303 字段校验）。
- */
+/** 发布与编辑公告请求体（含 JSR-303 字段校验）。 */
 @Data
 @Builder
 @NoArgsConstructor

@@ -17,9 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-/**
- * 题目类型策略工厂与多态策略单元测试。
- */
+/** 题目类型策略工厂与多态策略单元测试。 */
 class QuestionStrategyFactoryTest {
 
     private QuestionStrategyFactory factory;
@@ -38,12 +36,16 @@ class QuestionStrategyFactoryTest {
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
         ObjectMapper objectMapper = new ObjectMapper();
 
-        algoStrategy = new AlgoQuestionStrategy(questionMapper, submissionMapper, redis, objectMapper);
-        dbStrategy = new DbQuestionStrategy(dbQuestionMapper, dbSubmissionMapper, redis, objectMapper);
+        algoStrategy =
+                new AlgoQuestionStrategy(questionMapper, submissionMapper, redis, objectMapper);
+        dbStrategy =
+                new DbQuestionStrategy(dbQuestionMapper, dbSubmissionMapper, redis, objectMapper);
         objectiveStrategy = new ObjectiveQuestionStrategy(objectiveQuestionMapper, objectMapper);
         frontendStrategy = new FrontendQuestionStrategy(redis, objectMapper);
 
-        factory = new QuestionStrategyFactory(List.of(algoStrategy, dbStrategy, objectiveStrategy, frontendStrategy));
+        factory =
+                new QuestionStrategyFactory(
+                        List.of(algoStrategy, dbStrategy, objectiveStrategy, frontendStrategy));
     }
 
     @Test

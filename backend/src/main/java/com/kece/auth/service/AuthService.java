@@ -67,7 +67,12 @@ public class AuthService {
                     attempts++;
                 }
                 if (userMapper.findByUsername(candidate) != null) {
-                    candidate = "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+                    candidate =
+                            "user_"
+                                    + UUID.randomUUID()
+                                            .toString()
+                                            .replace("-", "")
+                                            .substring(0, 10);
                 }
             }
             username = candidate;

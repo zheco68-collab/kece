@@ -85,13 +85,19 @@ public class ExamController {
             @RequestParam(defaultValue = "word") String format,
             @RequestParam(required = false) Long studentId,
             @RequestParam(required = false) java.util.List<Long> studentIds,
-            jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+            jakarta.servlet.http.HttpServletResponse response)
+            throws java.io.IOException {
         if ("pdf".equalsIgnoreCase(format)) {
             String html = examExportService.getPrintableHtml(id, studentId);
             response.setContentType("text/html;charset=UTF-8");
             response.getWriter().write(html);
-        } else if ("zip".equalsIgnoreCase(format) || "batch".equalsIgnoreCase(format) || "batch-word".equalsIgnoreCase(format)) {
-            java.util.List<Long> targets = studentIds != null ? studentIds : (studentId != null ? java.util.List.of(studentId) : null);
+        } else if ("zip".equalsIgnoreCase(format)
+                || "batch".equalsIgnoreCase(format)
+                || "batch-word".equalsIgnoreCase(format)) {
+            java.util.List<Long> targets =
+                    studentIds != null
+                            ? studentIds
+                            : (studentId != null ? java.util.List.of(studentId) : null);
             examExportService.exportBatchZip(id, targets, response);
         } else {
             examExportService.exportWord(id, studentId, response);
@@ -104,7 +110,8 @@ public class ExamController {
     public void exportBatch(
             @PathVariable Long id,
             @RequestParam(required = false) java.util.List<Long> studentIds,
-            jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+            jakarta.servlet.http.HttpServletResponse response)
+            throws java.io.IOException {
         examExportService.exportBatchZip(id, studentIds, response);
     }
 

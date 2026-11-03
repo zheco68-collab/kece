@@ -27,10 +27,8 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * 公告业务服务实现类。
- * 整合 Redis 缓存：看板列表走 notice:board:page:{page}:{size}，600s TTL + Jitter 防雪崩；
- * 管理端写操作（发布、编辑、置顶切换、上下架、删除）事务提交后原子清空 notice:board:* 缓存；
- * 查详情时原子自增 view_count。
+ * 公告业务服务实现类。 整合 Redis 缓存：看板列表走 notice:board:page:{page}:{size}，600s TTL + Jitter 防雪崩；
+ * 管理端写操作（发布、编辑、置顶切换、上下架、删除）事务提交后原子清空 notice:board:* 缓存； 查详情时原子自增 view_count。
  */
 @Slf4j
 @Service
@@ -58,14 +56,11 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         }
 
         // 2. 缓存未命中：查询数据库（利用 idx_board_sort 索引）
-        List<AnnouncementBoardItemVO> list = announcementMapper.findBoardPage(safe.offset(), safe.size());
+        List<AnnouncementBoardItemVO> list =
+                announcementMapper.findBoardPage(safe.offset(), safe.size());
         long total = announcementMapper.countBoard();
-        PageResult<AnnouncementBoardItemVO> result = new PageResult<>(
-                list != null ? list : List.of(),
-                total,
-                safe.page(),
-                safe.size()
-        );
+        PageResult<AnnouncementBoardItemVO> result =
+                new PageResult<>(list != null ? list : List.of(), total, safe.page(), safe.size());
 
         // 3. 异步/安全回填缓存（600s + Jitter 防雪崩）
         putBoardToCache(cacheKey, result);
@@ -87,7 +82,8 @@ public class AnnouncementServiceImpl implements AnnouncementService {
 
         // 原子自增浏览次数
         announcementMapper.incrementViewCount(id);
-        int currentViews = announcement.getViewCount() != null ? announcement.getViewCount() + 1 : 1;
+        int currentViews =
+                announcement.getViewCount() != null ? announcement.getViewCount() + 1 : 1;
         announcement.setViewCount(currentViews);
 
         // 自增浏览量后清空前台看板列表缓存，确保看板列表实时刷新最新阅读量
@@ -115,14 +111,15 @@ public class AnnouncementServiceImpl implements AnnouncementService {
     @Transactional(readOnly = true)
     public PageResult<AnnouncementDetailVO> listAdmin(String status, int page, int size) {
         PageParam safe = PageParam.of(page, size);
-        String filterStatus = (status != null && !status.isBlank()) ? status.trim().toUpperCase() : null;
+        String filterStatus =
+                (status != null && !status.isBlank()) ? status.trim().toUpperCase() : null;
 
-        List<Announcement> list = announcementMapper.findAdminPage(filterStatus, safe.offset(), safe.size());
+        List<Announcement> list =
+                announcementMapper.findAdminPage(filterStatus, safe.offset(), safe.size());
         long total = announcementMapper.countAdmin(filterStatus);
 
-        List<AnnouncementDetailVO> voList = (list != null)
-                ? list.stream().map(this::toDetailVO).toList()
-                : List.of();
+        List<AnnouncementDetailVO> voList =
+                (list != null) ? list.stream().map(this::toDetailVO).toList() : List.of();
 
         return new PageResult<>(voList, total, safe.page(), safe.size());
     }
@@ -145,7 +142,9 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         String authorName = request.getAuthorName();
         if (authorName == null || authorName.isBlank()) {
             AuthUser currentUser = AuthContextHolder.get();
-            if (currentUser != null && currentUser.getUsername() != null && !currentUser.getUsername().isBlank()) {
+            if (currentUser != null
+                    && currentUser.getUsername() != null
+                    && !currentUser.getUsername().isBlank()) {
                 authorName = currentUser.getUsername();
             } else {
                 authorName = "admin";
@@ -161,21 +160,23 @@ public class AnnouncementServiceImpl implements AnnouncementService {
 
         Integer isPinned = (request.getIsPinned() != null && request.getIsPinned() == 1) ? 1 : 0;
         Integer priority = request.getPriority() != null ? request.getPriority() : 0;
-        String status = (request.getStatus() != null && !request.getStatus().isBlank())
-                ? request.getStatus().trim().toUpperCase()
-                : "PUBLISHED";
+        String status =
+                (request.getStatus() != null && !request.getStatus().isBlank())
+                        ? request.getStatus().trim().toUpperCase()
+                        : "PUBLISHED";
 
-        Announcement announcement = Announcement.builder()
-                .title(title)
-                .summary(summary)
-                .content(content)
-                .authorName(authorName)
-                .isPinned(isPinned)
-                .priority(priority)
-                .status(status)
-                .viewCount(0)
-                .createdBy(createdBy)
-                .build();
+        Announcement announcement =
+                Announcement.builder()
+                        .title(title)
+                        .summary(summary)
+                        .content(content)
+                        .authorName(authorName)
+                        .isPinned(isPinned)
+                        .priority(priority)
+                        .status(status)
+                        .viewCount(0)
+                        .createdBy(createdBy)
+                        .build();
 
         announcementMapper.insert(announcement);
 
@@ -318,8 +319,11 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         try {
             String json = redis.opsForValue().get(key);
             if (json != null && !json.isBlank()) {
-                JavaType type = objectMapper.getTypeFactory().constructParametricType(
-                        PageResult.class, AnnouncementBoardItemVO.class);
+                JavaType type =
+                        objectMapper
+                                .getTypeFactory()
+                                .constructParametricType(
+                                        PageResult.class, AnnouncementBoardItemVO.class);
                 return objectMapper.readValue(json, type);
             }
         } catch (Exception e) {
@@ -339,9 +343,7 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         }
     }
 
-    /**
-     * 原子清空 notice:board:* 命名空间下的所有缓存。
-     */
+    /** 原子清空 notice:board:* 命名空间下的所有缓存。 */
     public void evictBoardCache() {
         try {
             Set<String> keys = redis.keys(BOARD_CACHE_KEY_PREFIX + "*");
@@ -354,25 +356,22 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         }
     }
 
-    /**
-     * 在事务成功提交后触发缓存失效；无活跃事务时立即执行。
-     */
+    /** 在事务成功提交后触发缓存失效；无活跃事务时立即执行。 */
     private void evictBoardCacheAfterCommit() {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    evictBoardCache();
-                }
-            });
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            evictBoardCache();
+                        }
+                    });
         } else {
             evictBoardCache();
         }
     }
 
-    /**
-     * 从 Markdown 正文中提取纯文本前 100 字符作为导读摘要。
-     */
+    /** 从 Markdown 正文中提取纯文本前 100 字符作为导读摘要。 */
     public static String extractSummary(String content) {
         if (content == null || content.isBlank()) {
             return "";

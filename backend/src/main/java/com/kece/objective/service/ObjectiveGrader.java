@@ -71,14 +71,29 @@ public class ObjectiveGrader {
     private String normalizeJudge(String value) {
         if (value == null) return "";
         String s = value.trim();
-        if (s.equals("对") || s.equals("正确") || s.equalsIgnoreCase("TRUE") || s.equalsIgnoreCase("T")
-                || s.equalsIgnoreCase("A") || s.equals("1") || s.equalsIgnoreCase("YES") || s.equalsIgnoreCase("Y")
-                || s.equals("✓") || s.equals("√")) {
+        if (s.equals("对")
+                || s.equals("正确")
+                || s.equalsIgnoreCase("TRUE")
+                || s.equalsIgnoreCase("T")
+                || s.equalsIgnoreCase("A")
+                || s.equals("1")
+                || s.equalsIgnoreCase("YES")
+                || s.equalsIgnoreCase("Y")
+                || s.equals("✓")
+                || s.equals("√")) {
             return "对";
         }
-        if (s.equals("错") || s.equals("错误") || s.equalsIgnoreCase("FALSE") || s.equalsIgnoreCase("F")
-                || s.equalsIgnoreCase("B") || s.equals("0") || s.equalsIgnoreCase("NO") || s.equalsIgnoreCase("N")
-                || s.equals("✕") || s.equals("×") || s.equalsIgnoreCase("X")) {
+        if (s.equals("错")
+                || s.equals("错误")
+                || s.equalsIgnoreCase("FALSE")
+                || s.equalsIgnoreCase("F")
+                || s.equalsIgnoreCase("B")
+                || s.equals("0")
+                || s.equalsIgnoreCase("NO")
+                || s.equalsIgnoreCase("N")
+                || s.equals("✕")
+                || s.equals("×")
+                || s.equalsIgnoreCase("X")) {
             return "错";
         }
         return s;
@@ -102,7 +117,10 @@ public class ObjectiveGrader {
     private boolean matchFill(String correct, String submitted, String matchType) {
         String expected = correct == null ? "" : correct.trim();
         String actual = submitted == null ? "" : submitted.trim();
-        String safeType = (matchType == null || matchType.isBlank()) ? "EXACT" : matchType.trim().toUpperCase();
+        String safeType =
+                (matchType == null || matchType.isBlank())
+                        ? "EXACT"
+                        : matchType.trim().toUpperCase();
         return switch (safeType) {
             case "IGNORE_CASE" -> expected.equalsIgnoreCase(actual);
             case "REGEX" -> regexMatches(expected, actual);

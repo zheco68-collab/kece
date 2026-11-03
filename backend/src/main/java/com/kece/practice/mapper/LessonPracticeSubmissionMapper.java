@@ -49,8 +49,7 @@ public interface LessonPracticeSubmissionMapper {
         ORDER BY id DESC LIMIT 1
     """)
     LessonPracticeSubmission findBySubmissionIdAndType(
-            @Param("submissionId") Long submissionId,
-            @Param("questionType") String questionType);
+            @Param("submissionId") Long submissionId, @Param("questionType") String questionType);
 
     @Select(
             """

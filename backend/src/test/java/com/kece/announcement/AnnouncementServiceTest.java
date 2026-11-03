@@ -67,16 +67,17 @@ class AnnouncementServiceTest {
     @Test
     @DisplayName("前台看板列表：缓存命中时直接返回缓存数据，不查询数据库")
     void listBoard_cacheHit() throws Exception {
-        AnnouncementBoardItemVO item = AnnouncementBoardItemVO.builder()
-                .id(1L)
-                .title("机考通知")
-                .summary("机考摘要")
-                .authorName("admin")
-                .isPinned(1)
-                .priority(100)
-                .viewCount(10)
-                .createdAt(LocalDateTime.now())
-                .build();
+        AnnouncementBoardItemVO item =
+                AnnouncementBoardItemVO.builder()
+                        .id(1L)
+                        .title("机考通知")
+                        .summary("机考摘要")
+                        .authorName("admin")
+                        .isPinned(1)
+                        .priority(100)
+                        .viewCount(10)
+                        .createdAt(LocalDateTime.now())
+                        .build();
         PageResult<AnnouncementBoardItemVO> cachedPage = new PageResult<>(List.of(item), 1L, 1, 10);
         String json = objectMapper.writeValueAsString(cachedPage);
 
@@ -95,16 +96,17 @@ class AnnouncementServiceTest {
     void listBoard_cacheMiss() {
         when(valueOps.get(anyString())).thenReturn(null);
 
-        AnnouncementBoardItemVO item = AnnouncementBoardItemVO.builder()
-                .id(2L)
-                .title("维护公告")
-                .summary("系统升级摘要")
-                .authorName("admin")
-                .isPinned(0)
-                .priority(5)
-                .viewCount(3)
-                .createdAt(LocalDateTime.now())
-                .build();
+        AnnouncementBoardItemVO item =
+                AnnouncementBoardItemVO.builder()
+                        .id(2L)
+                        .title("维护公告")
+                        .summary("系统升级摘要")
+                        .authorName("admin")
+                        .isPinned(0)
+                        .priority(5)
+                        .viewCount(3)
+                        .createdAt(LocalDateTime.now())
+                        .build();
         when(mapper.findBoardPage(0, 10)).thenReturn(List.of(item));
         when(mapper.countBoard()).thenReturn(1L);
 
@@ -122,19 +124,20 @@ class AnnouncementServiceTest {
     @Test
     @DisplayName("公告详情：阅读量原子自增并返回详情")
     void getDetail_success() {
-        Announcement announcement = Announcement.builder()
-                .id(10L)
-                .title("考场纪律须知")
-                .summary("导读摘要")
-                .content("# 正文内容")
-                .authorName("admin")
-                .isPinned(1)
-                .priority(50)
-                .status("PUBLISHED")
-                .viewCount(100)
-                .createdBy(1L)
-                .createdAt(LocalDateTime.now())
-                .build();
+        Announcement announcement =
+                Announcement.builder()
+                        .id(10L)
+                        .title("考场纪律须知")
+                        .summary("导读摘要")
+                        .content("# 正文内容")
+                        .authorName("admin")
+                        .isPinned(1)
+                        .priority(50)
+                        .status("PUBLISHED")
+                        .viewCount(100)
+                        .createdBy(1L)
+                        .createdAt(LocalDateTime.now())
+                        .build();
         when(mapper.findById(10L)).thenReturn(announcement);
 
         AnnouncementDetailVO vo = service.getDetail(10L);
@@ -148,11 +151,7 @@ class AnnouncementServiceTest {
     @Test
     @DisplayName("公告详情：草稿或已下架公告前台访问抛出 4004 异常")
     void getDetail_notPublished_throwsNotFound() {
-        Announcement draft = Announcement.builder()
-                .id(11L)
-                .title("未发布公告")
-                .status("DRAFT")
-                .build();
+        Announcement draft = Announcement.builder().id(11L).title("未发布公告").status("DRAFT").build();
         when(mapper.findById(11L)).thenReturn(draft);
 
         assertThatThrownBy(() -> service.getDetail(11L))
@@ -167,19 +166,21 @@ class AnnouncementServiceTest {
     void create_autoSummaryAndCacheEviction() {
         AuthContextHolder.set(new AuthUser(2L, "teacher_zhang", Set.of(Role.TEACHER.name())));
 
-        String longMarkdown = "## 重要通知\n" +
-                "欢迎参加 **KECE 全真机考**！请大家在考试前登录系统检查个人信息与网络连接。\n" +
-                "```python\nprint('hello world')\n```\n" +
-                "本次考试包含算法题、客观题以及 SQL 数据库上机测试。请严格遵守考场纪律，禁止任何形式的作弊行为。\n" +
-                "如遇设备故障请立刻举手示意监考教师处理。祝大家考试顺利并取得优异成绩！更多详情请参考相关操作手册。";
+        String longMarkdown =
+                "## 重要通知\n"
+                        + "欢迎参加 **KECE 全真机考**！请大家在考试前登录系统检查个人信息与网络连接。\n"
+                        + "```python\nprint('hello world')\n```\n"
+                        + "本次考试包含算法题、客观题以及 SQL 数据库上机测试。请严格遵守考场纪律，禁止任何形式的作弊行为。\n"
+                        + "如遇设备故障请立刻举手示意监考教师处理。祝大家考试顺利并取得优异成绩！更多详情请参考相关操作手册。";
 
-        AnnouncementRequest req = AnnouncementRequest.builder()
-                .title("全真机考考前通知")
-                .content(longMarkdown)
-                .isPinned(1)
-                .priority(80)
-                .status("PUBLISHED")
-                .build();
+        AnnouncementRequest req =
+                AnnouncementRequest.builder()
+                        .title("全真机考考前通知")
+                        .content(longMarkdown)
+                        .isPinned(1)
+                        .priority(80)
+                        .status("PUBLISHED")
+                        .build();
 
         when(redis.keys("notice:board:*")).thenReturn(Set.of("notice:board:page:1:10"));
 
@@ -201,12 +202,8 @@ class AnnouncementServiceTest {
     @Test
     @DisplayName("置顶切换：未传 isPinned 时自动反转置顶状态")
     void updatePinned_toggle() {
-        Announcement existing = Announcement.builder()
-                .id(5L)
-                .title("测试公告")
-                .isPinned(1)
-                .status("PUBLISHED")
-                .build();
+        Announcement existing =
+                Announcement.builder().id(5L).title("测试公告").isPinned(1).status("PUBLISHED").build();
         when(mapper.findById(5L)).thenReturn(existing);
         when(redis.keys("notice:board:*")).thenReturn(Set.of("notice:board:page:1:10"));
 
@@ -220,11 +217,8 @@ class AnnouncementServiceTest {
     @Test
     @DisplayName("状态修改与下架：同步清理看板缓存")
     void updateStatus_evictCache() {
-        Announcement existing = Announcement.builder()
-                .id(6L)
-                .title("待下架公告")
-                .status("PUBLISHED")
-                .build();
+        Announcement existing =
+                Announcement.builder().id(6L).title("待下架公告").status("PUBLISHED").build();
         when(mapper.findById(6L)).thenReturn(existing);
         when(redis.keys("notice:board:*")).thenReturn(Set.of("notice:board:page:1:10"));
 
@@ -238,11 +232,8 @@ class AnnouncementServiceTest {
     @Test
     @DisplayName("删除公告：存在则删除并清理看板缓存")
     void delete_success() {
-        Announcement existing = Announcement.builder()
-                .id(7L)
-                .title("废弃公告")
-                .status("ARCHIVED")
-                .build();
+        Announcement existing =
+                Announcement.builder().id(7L).title("废弃公告").status("ARCHIVED").build();
         when(mapper.findById(7L)).thenReturn(existing);
         when(redis.keys("notice:board:*")).thenReturn(Set.of("notice:board:page:1:10"));
 
@@ -255,7 +246,8 @@ class AnnouncementServiceTest {
     @Test
     @DisplayName("纯文本摘要提取：精确过滤特殊符号与代码块")
     void extractSummary_markdownFiltering() {
-        String md = "### 标题\n- 列表项1\n- 列表项2\n```sql\nSELECT 1;\n```\n[点击链接](https://kece.cn) **加粗文字**";
+        String md =
+                "### 标题\n- 列表项1\n- 列表项2\n```sql\nSELECT 1;\n```\n[点击链接](https://kece.cn) **加粗文字**";
         String summary = AnnouncementServiceImpl.extractSummary(md);
 
         assertThat(summary).doesNotContain("###");

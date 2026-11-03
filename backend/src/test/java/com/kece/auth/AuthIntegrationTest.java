@@ -75,7 +75,14 @@ class AuthIntegrationTest extends AbstractIntegrationTest {
     @Test
     void registerDuplicateUsername_shouldReturnParamError() throws Exception {
         String username = uniqueUsername();
-        Map<String, String> body = Map.of("username", username, "password", "pass123456");
+        Map<String, String> body =
+                Map.of(
+                        "username",
+                        username,
+                        "email",
+                        username + "@example.com",
+                        "password",
+                        "pass123456");
         mockMvc.perform(
                         post("/auth/register")
                                 .contentType(MediaType.APPLICATION_JSON)
@@ -103,6 +110,8 @@ class AuthIntegrationTest extends AbstractIntegrationTest {
                                                 Map.of(
                                                         "username",
                                                         username,
+                                                        "email",
+                                                        username + "@example.com",
                                                         "password",
                                                         "pass123456"))))
                 .andExpect(status().isOk());

@@ -23,10 +23,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 管理后台公告管理接口控制器。
- * 权限要求：ADMIN 或 TEACHER。
- */
+/** 管理后台公告管理接口控制器。 权限要求：ADMIN 或 TEACHER。 */
 @Tag(name = "管理后台-公告管理", description = "公告发布、编辑、置顶、状态管理与删除")
 @RestController
 @RequestMapping("/admin/announcements")
@@ -53,15 +50,15 @@ public class AdminAnnouncementController {
 
     @Operation(summary = "发布新公告")
     @PostMapping
-    public ApiResponse<AnnouncementDetailVO> create(@Valid @RequestBody AnnouncementRequest request) {
+    public ApiResponse<AnnouncementDetailVO> create(
+            @Valid @RequestBody AnnouncementRequest request) {
         return ApiResponse.success(announcementService.create(request));
     }
 
     @Operation(summary = "编辑公告")
     @PutMapping("/{id}")
     public ApiResponse<AnnouncementDetailVO> update(
-            @PathVariable Long id,
-            @Valid @RequestBody AnnouncementRequest request) {
+            @PathVariable Long id, @Valid @RequestBody AnnouncementRequest request) {
         return ApiResponse.success(announcementService.update(id, request));
     }
 
@@ -71,9 +68,10 @@ public class AdminAnnouncementController {
             @PathVariable Long id,
             @RequestBody(required = false) AnnouncementPinnedRequest request,
             @RequestParam(required = false) Integer isPinned) {
-        Integer target = (request != null && request.getIsPinned() != null)
-                ? request.getIsPinned()
-                : isPinned;
+        Integer target =
+                (request != null && request.getIsPinned() != null)
+                        ? request.getIsPinned()
+                        : isPinned;
         return ApiResponse.success(announcementService.updatePinned(id, target));
     }
 
@@ -83,9 +81,10 @@ public class AdminAnnouncementController {
             @PathVariable Long id,
             @RequestBody(required = false) AnnouncementStatusRequest request,
             @RequestParam(required = false) String status) {
-        String targetStatus = (request != null && request.getStatus() != null && !request.getStatus().isBlank())
-                ? request.getStatus()
-                : status;
+        String targetStatus =
+                (request != null && request.getStatus() != null && !request.getStatus().isBlank())
+                        ? request.getStatus()
+                        : status;
         return ApiResponse.success(announcementService.updateStatus(id, targetStatus));
     }
 

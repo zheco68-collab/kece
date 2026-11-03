@@ -47,14 +47,14 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO `test_case` (question_id, input_path, output_path, input_size, output_size, case_num, score_weight, input, expected_output, is_sample)
-        VALUES (#{questionId}, #{inputPath}, #{outputPath}, #{inputSize}, #{outputSize}, #{caseNum}, #{scoreWeight}, #{input}, #{expectedOutput}, #{isSample})
+        VALUES (#{questionId}, #{inputPath}, #{outputPath}, COALESCE(#{inputSize}, 0), COALESCE(#{outputSize}, 0), COALESCE(#{caseNum}, 1), COALESCE(#{scoreWeight}, 10), #{input}, #{expectedOutput}, #{isSample})
     </insert>
 
     <insert id="batchInsert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO `test_case` (question_id, input_path, output_path, input_size, output_size, case_num, score_weight, input, expected_output, is_sample)
         VALUES
         <foreach collection="list" item="item" separator=",">
-            (#{item.questionId}, #{item.inputPath}, #{item.outputPath}, #{item.inputSize}, #{item.outputSize}, #{item.caseNum}, #{item.scoreWeight}, #{item.input}, #{item.expectedOutput}, #{item.isSample})
+            (#{item.questionId}, #{item.inputPath}, #{item.outputPath}, COALESCE(#{item.inputSize}, 0), COALESCE(#{item.outputSize}, 0), COALESCE(#{item.caseNum}, 1), COALESCE(#{item.scoreWeight}, 10), #{item.input}, #{item.expectedOutput}, #{item.isSample})
         </foreach>
     </insert>
 

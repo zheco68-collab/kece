@@ -139,6 +139,7 @@ public class QuestionService {
             String tag,
             Integer status,
             Long createdBy,
+            Long questionId,
             int page,
             int size) {
         PageParam p = PageParam.of(page, size);
@@ -147,6 +148,7 @@ public class QuestionService {
         if (user == null || !user.hasRole(Role.ADMIN)) {
             targetCreatedBy = AuthContextHolder.currentUserId();
         }
+        List<Long> includeIds = questionId == null ? null : List.of(questionId);
         List<Question> questions =
                 questionMapper.findPage(
                         keyword,
@@ -154,15 +156,20 @@ public class QuestionService {
                         tag,
                         status,
                         targetCreatedBy,
-                        null,
+                        includeIds,
                         null,
                         p.offset(),
                         p.size());
         long total =
                 questionMapper.count(
-                        keyword, difficulty, tag, status, targetCreatedBy, null, null);
+                        keyword, difficulty, tag, status, targetCreatedBy, includeIds, null);
         return new PageResult<>(
                 questions.stream().map(this::toListVO).toList(), total, p.page(), p.size());
+    }
+
+    public PageResult<QuestionVO> listAdmin(
+            String keyword, String difficulty, Integer status, Long createdBy, int page, int size) {
+        return listAdmin(keyword, difficulty, status, createdBy, null, page, size);
     }
 
     public PageResult<QuestionVO> listAdmin(
@@ -170,9 +177,10 @@ public class QuestionService {
             String difficulty,
             Integer status,
             Long createdBy,
+            Long questionId,
             int page,
             int size) {
-        return listAdmin(keyword, difficulty, null, status, createdBy, page, size);
+        return listAdmin(keyword, difficulty, null, status, createdBy, questionId, page, size);
     }
 
     public QuestionVO detail(Long id) {
@@ -699,8 +707,7 @@ public class QuestionService {
         try {
             String json = redis.opsForValue().get(key);
             if (json != null && !json.isBlank()) {
-                return objectMapper.readValue(
-                        json, new TypeReference<PageResult<QuestionVO>>() {});
+                return objectMapper.readValue(json, new TypeReference<PageResult<QuestionVO>>() {});
             }
         } catch (Exception e) {
             log.warn("读取题目列表缓存失败 key={}: {}", key, e.getMessage());

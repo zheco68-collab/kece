@@ -20,6 +20,7 @@ public class PracticeObjectiveResultVO {
 
     /** 当前学生在整场课练中的最新总得分与总攻克数。 */
     private Integer myTotalScore;
+
     private Integer mySolvedCount;
 
     private List<ItemResult> items;

@@ -19,9 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
-/**
- * 算法编程题（ALGO）多态策略实现：支持 C++、Java、Python、ArkTS 等沙箱多用例评测。
- */
+/** 算法编程题（ALGO）多态策略实现：支持 C++、Java、Python、ArkTS 等沙箱多用例评测。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -87,9 +85,7 @@ public class AlgoQuestionStrategy implements QuestionTypeStrategy {
         Question aq = questionMapper.findById(questionId);
         List<String> langs =
                 aq != null && aq.getLanguages() != null
-                        ? Arrays.stream(aq.getLanguages().split(","))
-                                .map(String::trim)
-                                .toList()
+                        ? Arrays.stream(aq.getLanguages().split(",")).map(String::trim).toList()
                         : List.of("cpp", "java", "python");
 
         return Optional.of(
@@ -101,7 +97,8 @@ public class AlgoQuestionStrategy implements QuestionTypeStrategy {
                         .score(score)
                         .sortOrder(sortOrder)
                         .difficulty(aq != null ? aq.getDifficulty() : "MEDIUM")
-                        .timeLimitMs(aq != null && aq.getTimeLimit() != null ? aq.getTimeLimit() : 1000)
+                        .timeLimitMs(
+                                aq != null && aq.getTimeLimit() != null ? aq.getTimeLimit() : 1000)
                         .memoryLimitKb(
                                 aq != null && aq.getMemoryLimit() != null
                                         ? aq.getMemoryLimit() * 1024
@@ -162,7 +159,10 @@ public class AlgoQuestionStrategy implements QuestionTypeStrategy {
                 }
             }
         } catch (Exception e) {
-            log.debug("Read redis status exception submissionId={}: {}", submissionId, e.getMessage());
+            log.debug(
+                    "Read redis status exception submissionId={}: {}",
+                    submissionId,
+                    e.getMessage());
         }
 
         // 2. 从 MySQL 读取
@@ -182,7 +182,10 @@ public class AlgoQuestionStrategy implements QuestionTypeStrategy {
                 return new JudgeResultDTO(s.getStatus(), score);
             }
         } catch (Exception e) {
-            log.debug("Read DB submission exception submissionId={}: {}", submissionId, e.getMessage());
+            log.debug(
+                    "Read DB submission exception submissionId={}: {}",
+                    submissionId,
+                    e.getMessage());
         }
 
         return null;

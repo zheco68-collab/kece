@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps<{
   page: number
@@ -12,6 +12,15 @@ const emit = defineEmits<{
 }>()
 
 const pageCount = computed(() => Math.max(1, Math.ceil(props.total / Math.max(1, props.size))))
+const jumpPage = ref('')
+const validJumpPage = computed(() => {
+  if (!/^[1-9]\d*$/.test(jumpPage.value)) return null
+  const target = Number(jumpPage.value)
+  return Number.isSafeInteger(target) && target <= pageCount.value ? target : null
+})
+
+watch(() => props.page, () => { jumpPage.value = '' })
+watch(pageCount, () => { jumpPage.value = '' })
 
 /** 页码序列，null 表示省略号：超过 7 页时只保留首页、末页、当前页及其左右一页。 */
 const pages = computed<Array<number | null>>(() => {
@@ -33,6 +42,12 @@ const pages = computed<Array<number | null>>(() => {
 function go(p: number | null) {
   if (p === null || p < 1 || p > pageCount.value || p === props.page) return
   emit('update:page', p)
+}
+
+function jump() {
+  if (validJumpPage.value === null) return
+  go(validJumpPage.value)
+  jumpPage.value = ''
 }
 </script>
 
@@ -58,6 +73,18 @@ function go(p: number | null) {
         下一页
       </button>
     </div>
+    <form v-if="pageCount > 1" class="page-jump" @submit.prevent="jump">
+      <span class="page-total">共 {{ pageCount }} 页</span>
+      <input
+        v-model="jumpPage"
+        class="input jump-input"
+        type="text"
+        inputmode="numeric"
+        aria-label="跳转页码"
+        placeholder="页码"
+      />
+      <button class="btn btn-ghost btn-sm" type="submit" :disabled="validJumpPage === null">跳转</button>
+    </form>
   </div>
 </template>
 
@@ -79,6 +106,15 @@ function go(p: number | null) {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+.page-jump {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.jump-input {
+  width: 64px;
+  text-align: center;
 }
 .page-num {
   min-width: 38px;

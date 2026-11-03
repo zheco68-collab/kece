@@ -25,8 +25,8 @@
         <!-- 覆盖 Spring Boot 3.2.5 父 POM 锁定的 lombok 1.18.30（仅支持到 JDK 21）：
              1.18.42 支持 JDK 24/25，使本机（JDK 24/25）与 CI（JDK 17/21）均可编译。 -->
         <lombok.version>1.18.42</lombok.version>
-        <!-- Testcontainers 1.19.7 与 Docker 29.x 的 API 不兼容，升级到 1.20.x -->
-        <testcontainers.version>1.20.4</testcontainers.version>
+        <!-- Testcontainers 1.21.4 修复 Docker 29.x 的 API 兼容问题 -->
+        <testcontainers.version>1.21.4</testcontainers.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>

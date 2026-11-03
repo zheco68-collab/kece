@@ -43,14 +43,14 @@ public class DbQuestionController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "false") boolean all) {
-        return ApiResponse.success(questionService.list(type, keyword, userStatus, page, size, all));
+        return ApiResponse.success(
+                questionService.list(type, keyword, userStatus, page, size, all));
     }
 
     @Operation(summary = "数据库题目详情")
     @GetMapping("/{id}")
     public ApiResponse<DbQuestionVO> detail(
-            @PathVariable Long id,
-            @RequestParam(required = false) String practiceCode) {
+            @PathVariable Long id, @RequestParam(required = false) String practiceCode) {
         return ApiResponse.success(questionService.detail(id, practiceCode));
     }
 

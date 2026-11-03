@@ -55,4 +55,3 @@ public class StudentAuditDetailVO {
         private LocalDateTime submittedAt;
     }
 }
-

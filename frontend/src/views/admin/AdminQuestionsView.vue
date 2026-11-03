@@ -30,6 +30,7 @@ const { confirm } = useConfirm()
 const toast = useToast()
 
 const keyword = ref('')
+const questionIdInput = ref('')
 const difficultyFilter = ref<DifficultyFilter>('')
 const statusFilter = ref<StatusFilter>('')
 const createdByInput = ref('')
@@ -40,6 +41,7 @@ const rows = ref<QuestionRow[]>([])
 const total = ref(0)
 const loading = ref(false)
 const loadError = ref('')
+let requestSequence = 0
 
 const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   EASY: '简单',
@@ -70,12 +72,22 @@ const columns = [
 ]
 
 async function load() {
+  const sequence = ++requestSequence
   loading.value = true
   loadError.value = ''
   try {
+    const questionIdRaw = questionIdInput.value.trim()
+    const questionId = questionIdRaw === '' ? undefined : Number(questionIdRaw)
+    if (questionIdRaw !== '' && (!/^[1-9]\d*$/.test(questionIdRaw) || !Number.isSafeInteger(questionId))) {
+      rows.value = []
+      total.value = 0
+      loadError.value = '请输入有效的题目 ID'
+      return
+    }
     const createdByRaw = createdByInput.value.trim()
     const createdByNum = createdByRaw === '' ? NaN : Number(createdByRaw)
     const res = await adminApi.listQuestions({
+      id: questionId,
       keyword: keyword.value.trim() || undefined,
       difficulty: difficultyFilter.value || undefined,
       status: statusFilter.value === '' ? undefined : Number(statusFilter.value),
@@ -83,17 +95,22 @@ async function load() {
       page: page.value,
       size,
     })
-    rows.value = res.list
-    total.value = res.total
+    if (sequence === requestSequence) {
+      rows.value = res.list
+      total.value = res.total
+    }
   } catch (e) {
-    loadError.value = e instanceof ApiError ? e.message : '请求失败，请稍后重试'
+    if (sequence === requestSequence) {
+      loadError.value = e instanceof ApiError ? e.message : '请求失败，请稍后重试'
+    }
   } finally {
-    loading.value = false
+    if (sequence === requestSequence) loading.value = false
   }
 }
 
 /** 筛选变化时回到第一页再加载；已在第一页则手动触发。 */
 function resetAndLoad() {
+  if (filterTimer !== null) clearTimeout(filterTimer)
   if (page.value === 1) {
     load()
   } else {
@@ -104,7 +121,7 @@ function resetAndLoad() {
 // 关键词与创建人输入防抖 300ms，避免每次击键都发请求；下拉筛选变化直接触发。
 let filterTimer: ReturnType<typeof setTimeout> | null = null
 
-watch([keyword, createdByInput], () => {
+watch([keyword, questionIdInput, createdByInput], () => {
   if (filterTimer !== null) clearTimeout(filterTimer)
   filterTimer = setTimeout(resetAndLoad, 300)
 })
@@ -155,7 +172,15 @@ onBeforeUnmount(() => {
     <h1 class="page-title">编程题管理</h1>
 
     <div class="filter-bar card">
-      <input v-model="keyword" class="input keyword-input" type="search" placeholder="标题关键词" />
+      <input v-model="keyword" class="input keyword-input" type="search" aria-label="标题关键词" placeholder="标题关键词" />
+      <input
+        v-model="questionIdInput"
+        class="input question-id-input"
+        type="search"
+        inputmode="numeric"
+        aria-label="题目 ID"
+        placeholder="题目 ID"
+      />
       <label class="filter">
         <span class="filter-label">难度</span>
         <select v-model="difficultyFilter" class="input">
@@ -238,6 +263,9 @@ onBeforeUnmount(() => {
 }
 .keyword-input {
   max-width: 280px;
+}
+.question-id-input {
+  width: 110px;
 }
 .filter {
   display: flex;

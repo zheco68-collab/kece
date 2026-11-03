@@ -43,7 +43,8 @@ public class QuestionController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "false") boolean all) {
-        return ApiResponse.success(questionService.list(keyword, difficulty, tag, userStatus, page, size, all));
+        return ApiResponse.success(
+                questionService.list(keyword, difficulty, tag, userStatus, page, size, all));
     }
 
     @Operation(summary = "获取所有已使用的算法标签")
@@ -55,8 +56,7 @@ public class QuestionController {
     @Operation(summary = "题目详情")
     @GetMapping("/{id}")
     public ApiResponse<QuestionVO> detail(
-            @PathVariable Long id,
-            @RequestParam(required = false) String practiceCode) {
+            @PathVariable Long id, @RequestParam(required = false) String practiceCode) {
         return ApiResponse.success(questionService.detail(id, practiceCode));
     }
 
@@ -86,7 +86,8 @@ public class QuestionController {
     @Operation(summary = "题目测试用例轻量统计汇总（出题人/管理员）")
     @RequireRole({Role.TEACHER, Role.ADMIN})
     @GetMapping("/{id}/test-cases/summary")
-    public ApiResponse<com.kece.question.dto.TestCaseSummaryVO> getTestCaseSummary(@PathVariable Long id) {
+    public ApiResponse<com.kece.question.dto.TestCaseSummaryVO> getTestCaseSummary(
+            @PathVariable Long id) {
         return ApiResponse.success(questionService.getTestCaseSummary(id));
     }
 
@@ -117,9 +118,7 @@ public class QuestionController {
     @RequireRole({Role.TEACHER, Role.ADMIN})
     @PutMapping("/{id}/test-cases/{testCaseId}/sample")
     public ApiResponse<Void> toggleTestCaseSample(
-            @PathVariable Long id,
-            @PathVariable Long testCaseId,
-            @RequestParam boolean isSample) {
+            @PathVariable Long id, @PathVariable Long testCaseId, @RequestParam boolean isSample) {
         questionService.toggleTestCaseSample(id, testCaseId, isSample);
         return ApiResponse.success();
     }
@@ -128,8 +127,7 @@ public class QuestionController {
     @RequireRole({Role.TEACHER, Role.ADMIN})
     @PutMapping("/{id}/test-cases/sample-ids")
     public ApiResponse<Void> setSampleCaseIds(
-            @PathVariable Long id,
-            @RequestBody List<Long> sampleCaseIds) {
+            @PathVariable Long id, @RequestBody List<Long> sampleCaseIds) {
         questionService.setSampleCaseIds(id, sampleCaseIds);
         return ApiResponse.success();
     }
@@ -144,22 +142,29 @@ public class QuestionController {
 
     @Operation(summary = "批量导入测试点（Zip 压缩包）")
     @RequireRole({Role.TEACHER, Role.ADMIN})
-    @PostMapping(value = "/{id}/test-cases/import-zip", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(
+            value = "/{id}/test-cases/import-zip",
+            consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<List<TestCaseVO>> importZip(
             @PathVariable Long id,
             @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
             @RequestParam(value = "replace", defaultValue = "false") boolean replace,
             @RequestParam(value = "firstAsSample", defaultValue = "true") boolean firstAsSample) {
-        return ApiResponse.success(questionService.importTestCasesZip(id, file, replace, firstAsSample));
+        return ApiResponse.success(
+                questionService.importTestCasesZip(id, file, replace, firstAsSample));
     }
 
     @Operation(summary = "导出题目测试集为 Zip 压缩包")
     @RequireRole({Role.TEACHER, Role.ADMIN})
     @GetMapping("/{id}/test-cases/export-zip")
-    public void exportZip(@PathVariable Long id, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+    public void exportZip(@PathVariable Long id, jakarta.servlet.http.HttpServletResponse response)
+            throws java.io.IOException {
         response.setContentType("application/zip");
-        response.setHeader(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"testcases_q" + id + ".zip\"");
-        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(response.getOutputStream())) {
+        response.setHeader(
+                org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"testcases_q" + id + ".zip\"");
+        try (java.util.zip.ZipOutputStream zos =
+                new java.util.zip.ZipOutputStream(response.getOutputStream())) {
             questionService.exportTestCasesZip(id, zos);
             zos.finish();
         }
@@ -168,13 +173,17 @@ public class QuestionController {
     @Operation(summary = "下载单个测试点输入文件")
     @RequireRole({Role.TEACHER, Role.ADMIN})
     @GetMapping("/test-cases/{testCaseId}/input")
-    public org.springframework.http.ResponseEntity<org.springframework.core.io.Resource> downloadInput(@PathVariable Long testCaseId) {
-        org.springframework.core.io.Resource resource = questionService.getTestCaseInputResource(testCaseId);
+    public org.springframework.http.ResponseEntity<org.springframework.core.io.Resource>
+            downloadInput(@PathVariable Long testCaseId) {
+        org.springframework.core.io.Resource resource =
+                questionService.getTestCaseInputResource(testCaseId);
         if (resource == null || !resource.exists()) {
             return org.springframework.http.ResponseEntity.notFound().build();
         }
         return org.springframework.http.ResponseEntity.ok()
-                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + testCaseId + ".in\"")
+                .header(
+                        org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + testCaseId + ".in\"")
                 .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
                 .body(resource);
     }
@@ -182,13 +191,17 @@ public class QuestionController {
     @Operation(summary = "下载单个测试点输出文件")
     @RequireRole({Role.TEACHER, Role.ADMIN})
     @GetMapping("/test-cases/{testCaseId}/output")
-    public org.springframework.http.ResponseEntity<org.springframework.core.io.Resource> downloadOutput(@PathVariable Long testCaseId) {
-        org.springframework.core.io.Resource resource = questionService.getTestCaseOutputResource(testCaseId);
+    public org.springframework.http.ResponseEntity<org.springframework.core.io.Resource>
+            downloadOutput(@PathVariable Long testCaseId) {
+        org.springframework.core.io.Resource resource =
+                questionService.getTestCaseOutputResource(testCaseId);
         if (resource == null || !resource.exists()) {
             return org.springframework.http.ResponseEntity.notFound().build();
         }
         return org.springframework.http.ResponseEntity.ok()
-                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + testCaseId + ".out\"")
+                .header(
+                        org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + testCaseId + ".out\"")
                 .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
                 .body(resource);
     }

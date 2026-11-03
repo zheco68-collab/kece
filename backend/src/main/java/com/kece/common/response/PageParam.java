@@ -1,8 +1,7 @@
 package com.kece.common.response;
 
 /**
- * 统一分页参数与安全边界计算工具。
- * 约束页码 >= 1，单页大小在 1 到 100 之间，自动计算 offset。
+ * 统一分页参数与安全边界计算工具。 约束页码 >= 1，单页大小在 1 到 100 之间，自动计算 offset。
  *
  * @param page 安全页码
  * @param size 安全单页大小

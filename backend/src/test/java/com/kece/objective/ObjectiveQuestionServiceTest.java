@@ -1,8 +1,6 @@
 package com.kece.objective;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
@@ -28,17 +26,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class ObjectiveQuestionServiceTest {
 
-    @Mock
-    private ObjectiveQuestionMapper mapper;
+    @Mock private ObjectiveQuestionMapper mapper;
 
-    @Mock
-    private ObjectiveSubmissionMapper submissionMapper;
+    @Mock private ObjectiveSubmissionMapper submissionMapper;
 
-    @Mock
-    private ObjectiveGrader grader;
+    @Mock private ObjectiveGrader grader;
 
-    @Mock
-    private UserMapper userMapper;
+    @Mock private UserMapper userMapper;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -46,7 +40,9 @@ class ObjectiveQuestionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ObjectiveQuestionService(mapper, submissionMapper, grader, objectMapper, userMapper);
+        service =
+                new ObjectiveQuestionService(
+                        mapper, submissionMapper, grader, objectMapper, userMapper);
     }
 
     @Test

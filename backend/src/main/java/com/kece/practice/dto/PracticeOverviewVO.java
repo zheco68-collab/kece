@@ -64,8 +64,10 @@ public class PracticeOverviewVO {
         private Long practiceQuestionId;
         private Long questionId;
         private String questionType;
+
         /** 细分题型或难度：如 SINGLE/MULTIPLE/JUDGE/FILL、SELECT/DML、EASY/MEDIUM/HARD。 */
         private String subType;
+
         private String title;
         private Integer fullScore;
         private Integer submitCount;

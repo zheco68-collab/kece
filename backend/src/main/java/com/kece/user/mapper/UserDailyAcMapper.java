@@ -18,8 +18,7 @@ public interface UserDailyAcMapper {
 
     /** 查询用户从某天开始的所有打卡记录。 */
     List<UserDailyAc> findByUserAndStartDate(
-            @Param("userId") Long userId,
-            @Param("startDate") LocalDate startDate);
+            @Param("userId") Long userId, @Param("startDate") LocalDate startDate);
 
     /** 全量覆盖某天记录（用于数据修复或初始化）。 */
     int upsert(UserDailyAc record);

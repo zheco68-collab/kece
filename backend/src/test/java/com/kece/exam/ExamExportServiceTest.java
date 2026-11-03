@@ -18,7 +18,9 @@ class ExamExportServiceTest {
     @Test
     void testExportPrintableHtml_withSeparatedQuestionTypes() {
         ExamAdminService examAdminService = mock(ExamAdminService.class);
-        ExamExportService exportService = new ExamExportService(examAdminService, new com.fasterxml.jackson.databind.ObjectMapper());
+        ExamExportService exportService =
+                new ExamExportService(
+                        examAdminService, new com.fasterxml.jackson.databind.ObjectMapper());
 
         ExamVO exam = new ExamVO();
         exam.setId(1L);
@@ -113,8 +115,10 @@ class ExamExportServiceTest {
 
     @Test
     void testCleanAndFormatMarkdown() {
-        ExamExportService exportService = new ExamExportService(null, new com.fasterxml.jackson.databind.ObjectMapper());
-        String md = "## 题目描述\n\n编写一条 UPDATE 语句，将**研发部（dept = 'RD'）**所有员工的薪资上调 10%。\n\n## 输入格式\n一行，两个整数 `a` 和 `b`（ $-10^9 \\le a, b \\le 10^9$ ）。";
+        ExamExportService exportService =
+                new ExamExportService(null, new com.fasterxml.jackson.databind.ObjectMapper());
+        String md =
+                "## 题目描述\n\n编写一条 UPDATE 语句，将**研发部（dept = 'RD'）**所有员工的薪资上调 10%。\n\n## 输入格式\n一行，两个整数 `a` 和 `b`（ $-10^9 \\le a, b \\le 10^9$ ）。";
         String html = exportService.cleanAndFormatMarkdown(md);
 
         assertThat(html).contains("【题目描述】");
@@ -128,8 +132,10 @@ class ExamExportServiceTest {
 
     @Test
     void testFormatStudentCodeAnswer_fromJsonToFile() {
-        ExamExportService exportService = new ExamExportService(null, new com.fasterxml.jackson.databind.ObjectMapper());
-        String json = "{\"Main.java\":\"import java.util.*;\\n\\npublic class Main {\\n    public static void main(String[] args) {\\n        Scanner sc = new Scanner(System.in);\\n    }\\n}\"}";
+        ExamExportService exportService =
+                new ExamExportService(null, new com.fasterxml.jackson.databind.ObjectMapper());
+        String json =
+                "{\"Main.java\":\"import java.util.*;\\n\\npublic class Main {\\n    public static void main(String[] args) {\\n        Scanner sc = new Scanner(System.in);\\n    }\\n}\"}";
         String html = exportService.formatStudentAnswerHtml(json, "ALGO");
 
         assertThat(html).contains("// 文件: Main.java");
@@ -141,7 +147,9 @@ class ExamExportServiceTest {
     @Test
     void testExportBatchZip() throws Exception {
         ExamAdminService examAdminService = mock(ExamAdminService.class);
-        ExamExportService exportService = new ExamExportService(examAdminService, new com.fasterxml.jackson.databind.ObjectMapper());
+        ExamExportService exportService =
+                new ExamExportService(
+                        examAdminService, new com.fasterxml.jackson.databind.ObjectMapper());
 
         ExamVO exam = new ExamVO();
         exam.setId(1L);
@@ -150,25 +158,27 @@ class ExamExportServiceTest {
         exam.setSchoolName("湖北科技职业学院");
         exam.setSemester("2025-2026学年度第一学期期末考试");
 
-        com.kece.exam.dto.ExamStudentSubmissionRowVO row = com.kece.exam.dto.ExamStudentSubmissionRowVO.builder()
-                .userId(100L)
-                .username("zhangsan")
-                .realName("张三")
-                .studentNo("2023001")
-                .college("软件工程学院")
-                .major("软件技术")
-                .className("2301班")
-                .totalScore(85)
-                .fullScore(100)
-                .submitted(true)
-                .build();
+        com.kece.exam.dto.ExamStudentSubmissionRowVO row =
+                com.kece.exam.dto.ExamStudentSubmissionRowVO.builder()
+                        .userId(100L)
+                        .username("zhangsan")
+                        .realName("张三")
+                        .studentNo("2023001")
+                        .college("软件工程学院")
+                        .major("软件技术")
+                        .className("2301班")
+                        .totalScore(85)
+                        .fullScore(100)
+                        .submitted(true)
+                        .build();
 
-        com.kece.exam.dto.ExamAdminOverviewVO overview = com.kece.exam.dto.ExamAdminOverviewVO.builder()
-                .exam(exam)
-                .students(List.of(row))
-                .totalStudents(1)
-                .submittedCount(1)
-                .build();
+        com.kece.exam.dto.ExamAdminOverviewVO overview =
+                com.kece.exam.dto.ExamAdminOverviewVO.builder()
+                        .exam(exam)
+                        .students(List.of(row))
+                        .totalStudents(1)
+                        .submittedCount(1)
+                        .build();
 
         when(examAdminService.getAdminOverview(1L)).thenReturn(overview);
 
@@ -187,18 +197,29 @@ class ExamExportServiceTest {
         studentPaper.setQuestions(List.of());
         when(examAdminService.getStudentPaper(1L, 100L)).thenReturn(studentPaper);
 
-        jakarta.servlet.http.HttpServletResponse response = mock(jakarta.servlet.http.HttpServletResponse.class);
+        jakarta.servlet.http.HttpServletResponse response =
+                mock(jakarta.servlet.http.HttpServletResponse.class);
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-        jakarta.servlet.ServletOutputStream sos = new jakarta.servlet.ServletOutputStream() {
-            @Override
-            public boolean isReady() { return true; }
-            @Override
-            public void setWriteListener(jakarta.servlet.WriteListener writeListener) {}
-            @Override
-            public void write(int b) { baos.write(b); }
-            @Override
-            public void write(byte[] b, int off, int len) { baos.write(b, off, len); }
-        };
+        jakarta.servlet.ServletOutputStream sos =
+                new jakarta.servlet.ServletOutputStream() {
+                    @Override
+                    public boolean isReady() {
+                        return true;
+                    }
+
+                    @Override
+                    public void setWriteListener(jakarta.servlet.WriteListener writeListener) {}
+
+                    @Override
+                    public void write(int b) {
+                        baos.write(b);
+                    }
+
+                    @Override
+                    public void write(byte[] b, int off, int len) {
+                        baos.write(b, off, len);
+                    }
+                };
         when(response.getOutputStream()).thenReturn(sos);
 
         exportService.exportBatchZip(1L, null, response);
@@ -207,7 +228,8 @@ class ExamExportServiceTest {
         assertThat(zipBytes.length).isGreaterThan(0);
 
         java.util.List<String> entryNames = new java.util.ArrayList<>();
-        try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zipBytes))) {
+        try (java.util.zip.ZipInputStream zis =
+                new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zipBytes))) {
             java.util.zip.ZipEntry ze;
             while ((ze = zis.getNextEntry()) != null) {
                 entryNames.add(ze.getName());

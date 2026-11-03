@@ -12,8 +12,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * 前端交互实操题（FRONTEND）多态策略骨架：为接入 HTML/CSS/JS/Vue/React 组件化前端实操、DOM断言及无头沙箱评测预留的标准多态策略实现。
- * 后续引入独立前端题库表（如 frontend_question）时，只需在此策略中补充 Mapper 关联，业务层无感知平滑扩展。
+ * 前端交互实操题（FRONTEND）多态策略骨架：为接入 HTML/CSS/JS/Vue/React 组件化前端实操、DOM断言及无头沙箱评测预留的标准多态策略实现。 后续引入独立前端题库表（如
+ * frontend_question）时，只需在此策略中补充 Mapper 关联，业务层无感知平滑扩展。
  */
 @Slf4j
 @Component
@@ -103,7 +103,10 @@ public class FrontendQuestionStrategy implements QuestionTypeStrategy {
                 return new JudgeResultDTO(status, score);
             }
         } catch (Exception e) {
-            log.debug("Read frontend redis status exception submissionId={}: {}", submissionId, e.getMessage());
+            log.debug(
+                    "Read frontend redis status exception submissionId={}: {}",
+                    submissionId,
+                    e.getMessage());
         }
         return null;
     }

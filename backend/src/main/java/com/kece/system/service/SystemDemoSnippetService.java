@@ -31,16 +31,14 @@ import org.springframework.stereotype.Service;
 
 /**
  * 首页技术演示 Java 算法代码片段获取与高可用容灾服务。
- * <p>
- * 数据来源：https://github.com/zheco68-collab/Templat_summary (纯 Java 算法/数据结构模板库)
- * 刷新周期：1) 系统启动完成时异步加载； 2) 每天北京时间 00:00:00 (Asia/Shanghai) 自动拉取。
- * <p>
- * 高可靠与低延迟保障机制：
- * 1. 读写彻底解耦：前端请求直接读取内存变量 (耗时 < 1ms)，永远不阻塞在外部网络；
- * 2. 严格 1500ms 超时熔断：外部 HTTP 交互全流程限时，超时立即中断；
- * 3. 本地磁盘持久化快照：拉取成功自动落盘 demo_java_snippet.json，断网重启秒级从快照恢复；
- * 4. 内置经典种子保底：全新环境无网络启动时兜底输出经典 Java 17 二分算法，绝不抛错；
- * 5. 国内高速通道镜像容灾：支持 ghproxy/gitmirror 加速，避开国内直连 raw.githubusercontent.com 的 DNS 污染。
+ *
+ * <p>数据来源：https://github.com/zheco68-collab/Templat_summary (纯 Java 算法/数据结构模板库) 刷新周期：1)
+ * 系统启动完成时异步加载； 2) 每天北京时间 00:00:00 (Asia/Shanghai) 自动拉取。
+ *
+ * <p>高可靠与低延迟保障机制： 1. 读写彻底解耦：前端请求直接读取内存变量 (耗时 < 1ms)，永远不阻塞在外部网络； 2. 严格 1500ms 超时熔断：外部 HTTP
+ * 交互全流程限时，超时立即中断； 3. 本地磁盘持久化快照：拉取成功自动落盘 demo_java_snippet.json，断网重启秒级从快照恢复； 4.
+ * 内置经典种子保底：全新环境无网络启动时兜底输出经典 Java 17 二分算法，绝不抛错； 5. 国内高速通道镜像容灾：支持 ghproxy/gitmirror 加速，避开国内直连
+ * raw.githubusercontent.com 的 DNS 污染。
  */
 @Service
 public class SystemDemoSnippetService {
@@ -51,14 +49,16 @@ public class SystemDemoSnippetService {
             "https://api.github.com/repos/zheco68-collab/Templat_summary/git/trees/main?recursive=1";
 
     /** 多通道 Raw 下载源（首选国内高可用加速通道，备选官方源） */
-    private static final String[] RAW_MIRROR_BASES = new String[] {
-            "https://ghproxy.net/https://raw.githubusercontent.com/zheco68-collab/Templat_summary/main/",
-            "https://raw.gitmirror.com/zheco68-collab/Templat_summary/main/",
-            "https://raw.githubusercontent.com/zheco68-collab/Templat_summary/main/"
-    };
+    private static final String[] RAW_MIRROR_BASES =
+            new String[] {
+                "https://ghproxy.net/https://raw.githubusercontent.com/zheco68-collab/Templat_summary/main/",
+                "https://raw.gitmirror.com/zheco68-collab/Templat_summary/main/",
+                "https://raw.githubusercontent.com/zheco68-collab/Templat_summary/main/"
+            };
 
     /** 硬编码保底种子代码（Java 17 经典算法，零依赖） */
-    private static final String DEFAULT_SEED_CODE = """
+    private static final String DEFAULT_SEED_CODE =
+            """
             // ==========================================
             // 算法模板 · 二分查找与边界判定 (Java 17)
             // 评测环境: Linux Cgroups v2 沙箱 · 严格受控
@@ -91,15 +91,15 @@ public class SystemDemoSnippetService {
             """;
 
     /** 预置文件路径种子（当 GitHub Tree API 偶发超时或被限流时备用） */
-    private static final List<String> SEED_PATHS = List.of(
-            "数据结构/二叉树/二叉树深度.java",
-            "数据结构/二叉树/二叉树最大宽度.java",
-            "数据结构/二叉树/二叉树的层序遍历.java",
-            "数据结构/二叉树/AVL树模板.java",
-            "算法/数学/快速幂.java",
-            "算法/双指针/滑动窗口_元素翻转_替换模板.java",
-            "算法/图论/最短路/dijkstra.java"
-    );
+    private static final List<String> SEED_PATHS =
+            List.of(
+                    "数据结构/二叉树/二叉树深度.java",
+                    "数据结构/二叉树/二叉树最大宽度.java",
+                    "数据结构/二叉树/二叉树的层序遍历.java",
+                    "数据结构/二叉树/AVL树模板.java",
+                    "算法/数学/快速幂.java",
+                    "算法/双指针/滑动窗口_元素翻转_替换模板.java",
+                    "算法/图论/最短路/dijkstra.java");
 
     private final ObjectMapper objectMapper;
 
@@ -117,21 +117,20 @@ public class SystemDemoSnippetService {
     }
 
     /**
-     * 系统启动初始化：
-     * 1. 立即加载默认种子，保证接口 0ms 启动可用；
-     * 2. 尝试从本地磁盘持久化快照恢复；
-     * 3. 异步尝试联网抓取 GitHub 最新代码（不阻塞 Spring 容器启动主线程）。
+     * 系统启动初始化： 1. 立即加载默认种子，保证接口 0ms 启动可用； 2. 尝试从本地磁盘持久化快照恢复； 3. 异步尝试联网抓取 GitHub 最新代码（不阻塞 Spring
+     * 容器启动主线程）。
      */
     @PostConstruct
     public void init() {
         // 1. 初始化内置种子
-        DemoSnippetVO initialVO = DemoSnippetVO.builder()
-                .filename("Solution.java")
-                .langBadge("Java 17")
-                .code(DEFAULT_SEED_CODE.trim())
-                .sourcePath("内置经典模板")
-                .updatedAt(System.currentTimeMillis())
-                .build();
+        DemoSnippetVO initialVO =
+                DemoSnippetVO.builder()
+                        .filename("Solution.java")
+                        .langBadge("Java 17")
+                        .code(DEFAULT_SEED_CODE.trim())
+                        .sourcePath("内置经典模板")
+                        .updatedAt(System.currentTimeMillis())
+                        .build();
         currentSnippet.set(initialVO);
 
         // 2. 尝试从本地磁盘快照恢复
@@ -141,19 +140,15 @@ public class SystemDemoSnippetService {
         CompletableFuture.runAsync(this::refreshSnippetFromGitHub);
     }
 
-    /**
-     * 每天北京时间晚上 12 点整 (00:00:00) 自动触发拉取。
-     * 必须指定 zone = "Asia/Shanghai"，防止宿主机因 UTC 时区产生 8 小时偏差。
-     */
+    /** 每天北京时间晚上 12 点整 (00:00:00) 自动触发拉取。 必须指定 zone = "Asia/Shanghai"，防止宿主机因 UTC 时区产生 8 小时偏差。 */
     @Scheduled(cron = "0 0 0 * * ?", zone = "Asia/Shanghai")
     public void scheduledMidnightRefresh() {
-        log.info("Triggered scheduled midnight refresh for Java demo snippet (Asia/Shanghai 00:00:00)...");
+        log.info(
+                "Triggered scheduled midnight refresh for Java demo snippet (Asia/Shanghai 00:00:00)...");
         CompletableFuture.runAsync(this::refreshSnippetFromGitHub);
     }
 
-    /**
-     * 对外提供极速内存读取（耗时 < 1ms），任何未登录前台用户均可无感知秒级获取。
-     */
+    /** 对外提供极速内存读取（耗时 < 1ms），任何未登录前台用户均可无感知秒级获取。 */
     public DemoSnippetVO getCurrentSnippet() {
         DemoSnippetVO vo = currentSnippet.get();
         if (vo == null) {
@@ -168,19 +163,17 @@ public class SystemDemoSnippetService {
         return vo;
     }
 
-    /**
-     * 从 GitHub 异步抓取随机 Java 算法模板代码。
-     * 全流程严格执行 1500ms 超时限制与多级降级。
-     */
+    /** 从 GitHub 异步抓取随机 Java 算法模板代码。 全流程严格执行 1500ms 超时限制与多级降级。 */
     public synchronized void refreshSnippetFromGitHub() {
         long startTime = System.currentTimeMillis();
         log.info("Starting to fetch random Java algorithm snippet from GitHub: Templat_summary...");
 
         // 构建原生轻量 HttpClient，设置 1000ms 握手超时
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofMillis(1000))
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
+        HttpClient client =
+                HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofMillis(1000))
+                        .followRedirects(HttpClient.Redirect.NORMAL)
+                        .build();
 
         try {
             // 步骤 1：获取仓库文件树列表（单步限制 1500ms，失败自动回退本地树快照或 SEED_PATHS）
@@ -207,51 +200,61 @@ public class SystemDemoSnippetService {
             }
 
             // 提取简要文件名，例如 "数据结构/二叉树/二叉树深度.java" -> "二叉树深度.java"
-            String simpleFilename = chosenNode.path.contains("/")
-                    ? chosenNode.path.substring(chosenNode.path.lastIndexOf('/') + 1)
-                    : chosenNode.path;
+            String simpleFilename =
+                    chosenNode.path.contains("/")
+                            ? chosenNode.path.substring(chosenNode.path.lastIndexOf('/') + 1)
+                            : chosenNode.path;
             if (!simpleFilename.endsWith(".java")) {
                 simpleFilename += ".java";
             }
 
-            DemoSnippetVO freshVO = DemoSnippetVO.builder()
-                    .filename(simpleFilename)
-                    .langBadge("Java 17")
-                    .code(javaCode.trim())
-                    .sourcePath(chosenNode.path)
-                    .updatedAt(System.currentTimeMillis())
-                    .build();
+            DemoSnippetVO freshVO =
+                    DemoSnippetVO.builder()
+                            .filename(simpleFilename)
+                            .langBadge("Java 17")
+                            .code(javaCode.trim())
+                            .sourcePath(chosenNode.path)
+                            .updatedAt(System.currentTimeMillis())
+                            .build();
 
             // 步骤 4：原子替换内存常驻变量
             currentSnippet.set(freshVO);
-            log.info("Successfully updated memory Java demo snippet: {} (length: {} chars, took: {} ms)",
-                    freshVO.getFilename(), freshVO.getCode().length(), System.currentTimeMillis() - startTime);
+            log.info(
+                    "Successfully updated memory Java demo snippet: {} (length: {} chars, took: {} ms)",
+                    freshVO.getFilename(),
+                    freshVO.getCode().length(),
+                    System.currentTimeMillis() - startTime);
 
             // 步骤 5：持久化快照到本地磁盘
             saveSnapshotToDisk(freshVO);
 
         } catch (HttpTimeoutException e) {
-            log.warn("GitHub demo snippet request timed out (>1500ms): {}. Gracefully keeping existing snippet.", e.getMessage());
+            log.warn(
+                    "GitHub demo snippet request timed out (>1500ms): {}. Gracefully keeping existing snippet.",
+                    e.getMessage());
         } catch (Exception e) {
-            log.warn("Failed to fetch demo snippet from GitHub: {}. Gracefully keeping existing snippet.", e.getMessage());
+            log.warn(
+                    "Failed to fetch demo snippet from GitHub: {}. Gracefully keeping existing snippet.",
+                    e.getMessage());
         }
     }
 
-    /**
-     * 获取仓库全部 .java 文件列表
-     */
+    /** 获取仓库全部 .java 文件列表 */
     private List<FileNode> fetchJavaFileList(HttpClient client) {
         List<FileNode> result = new ArrayList<>();
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(GITHUB_REPO_TREE_URL))
-                    .timeout(Duration.ofMillis(1500))
-                    .header("User-Agent", "KECE-Backend-SnippetFetcher/1.0")
-                    .header("Accept", "application/vnd.github.v3+json")
-                    .GET()
-                    .build();
+            HttpRequest request =
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(GITHUB_REPO_TREE_URL))
+                            .timeout(Duration.ofMillis(1500))
+                            .header("User-Agent", "KECE-Backend-SnippetFetcher/1.0")
+                            .header("Accept", "application/vnd.github.v3+json")
+                            .GET()
+                            .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            HttpResponse<String> response =
+                    client.send(
+                            request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() == 200) {
                 JsonNode root = objectMapper.readTree(response.body());
                 JsonNode treeNode = root.get("tree");
@@ -277,30 +280,35 @@ public class SystemDemoSnippetService {
         return result;
     }
 
-    /**
-     * 获取单个 Java 文件的源码内容（优先通过国内高速镜像与 GitHub Blob API）
-     */
+    /** 获取单个 Java 文件的源码内容（优先通过国内高速镜像与 GitHub Blob API） */
     private String fetchFileContent(HttpClient client, FileNode node, long timeoutMs) {
         // 通道 1：依次尝试 Raw 镜像与官方源
         String[] segments = node.path.split("/");
         StringBuilder encodedPath = new StringBuilder();
         for (int i = 0; i < segments.length; i++) {
             if (i > 0) encodedPath.append("/");
-            encodedPath.append(URLEncoder.encode(segments[i], StandardCharsets.UTF_8).replace("+", "%20"));
+            encodedPath.append(
+                    URLEncoder.encode(segments[i], StandardCharsets.UTF_8).replace("+", "%20"));
         }
 
         for (String base : RAW_MIRROR_BASES) {
             try {
                 String rawUrl = base + encodedPath;
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(rawUrl))
-                        .timeout(Duration.ofMillis(timeoutMs))
-                        .header("User-Agent", "KECE-Backend-SnippetFetcher/1.0")
-                        .GET()
-                        .build();
+                HttpRequest request =
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(rawUrl))
+                                .timeout(Duration.ofMillis(timeoutMs))
+                                .header("User-Agent", "KECE-Backend-SnippetFetcher/1.0")
+                                .GET()
+                                .build();
 
-                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-                if (response.statusCode() == 200 && response.body() != null && response.body().length() > 20) {
+                HttpResponse<String> response =
+                        client.send(
+                                request,
+                                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                if (response.statusCode() == 200
+                        && response.body() != null
+                        && response.body().length() > 20) {
                     return response.body();
                 }
             } catch (Exception e) {
@@ -311,15 +319,19 @@ public class SystemDemoSnippetService {
         // 通道 2：通过 GitHub Blob API Base64 解析
         if (node.blobUrl != null && !node.blobUrl.isBlank()) {
             try {
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(node.blobUrl))
-                        .timeout(Duration.ofMillis(timeoutMs))
-                        .header("User-Agent", "KECE-Backend-SnippetFetcher/1.0")
-                        .header("Accept", "application/vnd.github.v3+json")
-                        .GET()
-                        .build();
+                HttpRequest request =
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(node.blobUrl))
+                                .timeout(Duration.ofMillis(timeoutMs))
+                                .header("User-Agent", "KECE-Backend-SnippetFetcher/1.0")
+                                .header("Accept", "application/vnd.github.v3+json")
+                                .GET()
+                                .build();
 
-                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                HttpResponse<String> response =
+                        client.send(
+                                request,
+                                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
                 if (response.statusCode() == 200) {
                     JsonNode root = objectMapper.readTree(response.body());
                     if (root.has("content")) {
@@ -336,18 +348,20 @@ public class SystemDemoSnippetService {
         return null;
     }
 
-    /**
-     * 从本地磁盘快照恢复
-     */
+    /** 从本地磁盘快照恢复 */
     private void loadSnapshotFromDisk() {
         try {
             Path filePath = Paths.get(cacheDir, CACHE_FILE_NAME).toAbsolutePath().normalize();
             if (Files.exists(filePath)) {
                 String json = Files.readString(filePath, StandardCharsets.UTF_8);
                 DemoSnippetVO cachedVO = objectMapper.readValue(json, DemoSnippetVO.class);
-                if (cachedVO != null && cachedVO.getCode() != null && !cachedVO.getCode().isBlank()) {
+                if (cachedVO != null
+                        && cachedVO.getCode() != null
+                        && !cachedVO.getCode().isBlank()) {
                     currentSnippet.set(cachedVO);
-                    log.info("Successfully restored Java demo snippet from local disk snapshot: {}", cachedVO.getFilename());
+                    log.info(
+                            "Successfully restored Java demo snippet from local disk snapshot: {}",
+                            cachedVO.getFilename());
                 }
             }
         } catch (Exception e) {
@@ -355,17 +369,19 @@ public class SystemDemoSnippetService {
         }
     }
 
-    /**
-     * 将最新抓取成功的代码持久化快照到本地磁盘
-     */
+    /** 将最新抓取成功的代码持久化快照到本地磁盘 */
     private void saveSnapshotToDisk(DemoSnippetVO vo) {
         try {
             Path dirPath = Paths.get(cacheDir).toAbsolutePath().normalize();
             Files.createDirectories(dirPath);
             Path filePath = dirPath.resolve(CACHE_FILE_NAME);
             String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(vo);
-            Files.writeString(filePath, json, StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.writeString(
+                    filePath,
+                    json,
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING);
             log.info("Persisted demo snippet snapshot to disk at: {}", filePath);
         } catch (Exception e) {
             log.warn("Failed to persist demo snippet snapshot to disk: {}", e.getMessage());
@@ -378,8 +394,12 @@ public class SystemDemoSnippetService {
             Files.createDirectories(dirPath);
             Path filePath = dirPath.resolve(CACHE_TREE_FILE_NAME);
             String json = objectMapper.writeValueAsString(tree);
-            Files.writeString(filePath, json, StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.writeString(
+                    filePath,
+                    json,
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING);
         } catch (Exception ignored) {
         }
     }
@@ -389,7 +409,8 @@ public class SystemDemoSnippetService {
         try {
             Path filePath = Paths.get(cacheDir, CACHE_TREE_FILE_NAME).toAbsolutePath().normalize();
             if (Files.exists(filePath)) {
-                JsonNode root = objectMapper.readTree(Files.readString(filePath, StandardCharsets.UTF_8));
+                JsonNode root =
+                        objectMapper.readTree(Files.readString(filePath, StandardCharsets.UTF_8));
                 if (root != null && root.isArray()) {
                     for (JsonNode item : root) {
                         String p = item.has("path") ? item.get("path").asText() : "";

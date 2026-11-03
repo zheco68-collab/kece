@@ -6,9 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * 平台系统公告实体。
- */
+/** 平台系统公告实体。 */
 @Data
 @Builder
 @NoArgsConstructor

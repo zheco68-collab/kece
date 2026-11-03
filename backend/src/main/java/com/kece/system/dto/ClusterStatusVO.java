@@ -16,7 +16,7 @@ public class ClusterStatusVO {
     private int onlineNodes;
     private int busyNodes;
     private int idleNodes;
-    private int offlineNodes;
+    private int offlineNodes;
     private int pendingTasks;
     private List<JudgerNodeVO> nodes;
     private long timestamp;

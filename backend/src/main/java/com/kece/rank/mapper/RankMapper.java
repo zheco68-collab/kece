@@ -12,9 +12,7 @@ public interface RankMapper {
     // ---- 编程算法榜 (ALGO) ----
 
     List<RankUserVO> findAlgoRankings(
-            @Param("keyword") String keyword,
-            @Param("offset") int offset,
-            @Param("size") int size);
+            @Param("keyword") String keyword, @Param("offset") int offset, @Param("size") int size);
 
     long countAlgoRankings(@Param("keyword") String keyword);
 
@@ -23,9 +21,7 @@ public interface RankMapper {
     // ---- 数据库 SQL 榜 (SQL) ----
 
     List<RankUserVO> findSqlRankings(
-            @Param("keyword") String keyword,
-            @Param("offset") int offset,
-            @Param("size") int size);
+            @Param("keyword") String keyword, @Param("offset") int offset, @Param("size") int size);
 
     long countSqlRankings(@Param("keyword") String keyword);
 
@@ -34,9 +30,7 @@ public interface RankMapper {
     // ---- 客观题积分榜 (OBJECTIVE) ----
 
     List<RankUserVO> findObjectiveRankings(
-            @Param("keyword") String keyword,
-            @Param("offset") int offset,
-            @Param("size") int size);
+            @Param("keyword") String keyword, @Param("offset") int offset, @Param("size") int size);
 
     long countObjectiveRankings(@Param("keyword") String keyword);
 

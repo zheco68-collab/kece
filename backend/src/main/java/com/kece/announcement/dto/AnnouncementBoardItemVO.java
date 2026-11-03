@@ -6,10 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * 公告看板轻量列表项视图模型。
- * 用于前台看板卡片/列表渲染，不包含大量 Markdown 正文，减少网络传输负载。
- */
+/** 公告看板轻量列表项视图模型。 用于前台看板卡片/列表渲染，不包含大量 Markdown 正文，减少网络传输负载。 */
 @Data
 @Builder
 @NoArgsConstructor

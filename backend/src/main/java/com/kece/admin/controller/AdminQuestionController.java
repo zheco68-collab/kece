@@ -31,13 +31,14 @@ public class AdminQuestionController {
     @GetMapping("/questions")
     public ApiResponse<PageResult<QuestionVO>> listQuestions(
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long id,
             @RequestParam(required = false) String difficulty,
             @RequestParam(required = false) Integer status,
             @RequestParam(required = false) Long createdBy,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         return ApiResponse.success(
-                questionService.listAdmin(keyword, difficulty, status, createdBy, page, size));
+                questionService.listAdmin(keyword, difficulty, status, createdBy, id, page, size));
     }
 
     @Operation(summary = "数据库题列表（分页/筛选）")

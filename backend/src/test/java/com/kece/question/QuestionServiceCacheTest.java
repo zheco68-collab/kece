@@ -92,10 +92,10 @@ class QuestionServiceCacheTest {
         q.setDifficulty("EASY");
         q.setStatus(1);
 
-        when(questionMapper.findPage(any(), any(), any(), eq(1), any(), any(), any(), anyInt(), anyInt()))
+        when(questionMapper.findPage(
+                        any(), any(), any(), eq(1), any(), any(), any(), anyInt(), anyInt()))
                 .thenReturn(List.of(q));
-        when(questionMapper.count(any(), any(), any(), eq(1), any(), any(), any()))
-                .thenReturn(1L);
+        when(questionMapper.count(any(), any(), any(), eq(1), any(), any(), any())).thenReturn(1L);
 
         PageResult<QuestionVO> result = questionService.list(null, null, null, null, 1, 20, false);
 
@@ -103,7 +103,8 @@ class QuestionServiceCacheTest {
         assertThat(result.getList()).hasSize(1);
         assertThat(result.getList().get(0).getTitle()).isEqualTo("测试题目");
 
-        verify(questionMapper).findPage(any(), any(), any(), eq(1), any(), any(), any(), anyInt(), anyInt());
+        verify(questionMapper)
+                .findPage(any(), any(), any(), eq(1), any(), any(), any(), anyInt(), anyInt());
         verify(valueOps).set(eq("question:cache:list:1:20:::"), anyString(), any(Duration.class));
         verify(setOps).add("question:cache:list_keys", "question:cache:list:1:20:::");
     }
@@ -112,7 +113,12 @@ class QuestionServiceCacheTest {
     void list_onCacheHit_shouldReturnCachedResultDirectly() throws Exception {
         PageResult<QuestionVO> cachedPage =
                 new PageResult<>(
-                        List.of(QuestionVO.builder().id(99L).title("缓存题目").difficulty("HARD").build()),
+                        List.of(
+                                QuestionVO.builder()
+                                        .id(99L)
+                                        .title("缓存题目")
+                                        .difficulty("HARD")
+                                        .build()),
                         1L,
                         1,
                         20);
@@ -127,7 +133,25 @@ class QuestionServiceCacheTest {
         assertThat(result.getList().get(0).getTitle()).isEqualTo("缓存题目");
 
         // DB 必须未被访问
-        verify(questionMapper, never()).findPage(any(), any(), any(), any(), any(), any(), any(), anyInt(), anyInt());
+        verify(questionMapper, never())
+                .findPage(any(), any(), any(), any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void listAdmin_byQuestionId_shouldKeepTeacherOwnershipFilter() {
+        AuthContextHolder.set(new AuthUser(7L, "teacher", Set.of(Role.TEACHER.name())));
+        when(questionMapper.findPage(
+                        any(), any(), any(), any(), eq(7L), eq(List.of(42L)), any(), eq(0), eq(20)))
+                .thenReturn(List.of());
+        when(questionMapper.count(any(), any(), any(), any(), eq(7L), eq(List.of(42L)), any()))
+                .thenReturn(0L);
+
+        PageResult<QuestionVO> result =
+                questionService.listAdmin(null, null, null, 99L, 42L, 1, 20);
+
+        assertThat(result.getTotal()).isZero();
+        verify(questionMapper).findPage(null, null, null, null, 7L, List.of(42L), null, 0, 20);
+        verify(questionMapper).count(null, null, null, null, 7L, List.of(42L), null);
     }
 
     @Test
@@ -166,7 +190,8 @@ class QuestionServiceCacheTest {
         q.setCreatedBy(1L);
         when(questionMapper.findById(55L)).thenReturn(q);
         when(submissionMapper.existsByQuestionId(55L)).thenReturn(false);
-        when(setOps.members("question:cache:list_keys")).thenReturn(Set.of("question:cache:list:1:20:::"));
+        when(setOps.members("question:cache:list_keys"))
+                .thenReturn(Set.of("question:cache:list:1:20:::"));
 
         questionService.delete(55L);
 

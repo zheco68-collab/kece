@@ -18,9 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
-/**
- * 数据库SQL题（DB）多态策略实现：支持 MySQL/PostgreSQL 数据定义（DDL）、查询（SELECT）与数据操纵（DML）沙箱评测。
- */
+/** 数据库SQL题（DB）多态策略实现：支持 MySQL/PostgreSQL 数据定义（DDL）、查询（SELECT）与数据操纵（DML）沙箱评测。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -150,7 +148,10 @@ public class DbQuestionStrategy implements QuestionTypeStrategy {
                 }
             }
         } catch (Exception e) {
-            log.debug("Read redis status exception submissionId={}: {}", submissionId, e.getMessage());
+            log.debug(
+                    "Read redis status exception submissionId={}: {}",
+                    submissionId,
+                    e.getMessage());
         }
 
         // 2. 从 MySQL 读取
@@ -170,7 +171,10 @@ public class DbQuestionStrategy implements QuestionTypeStrategy {
                 return new JudgeResultDTO(ds.getStatus(), score);
             }
         } catch (Exception e) {
-            log.debug("Read DB submission exception submissionId={}: {}", submissionId, e.getMessage());
+            log.debug(
+                    "Read DB submission exception submissionId={}: {}",
+                    submissionId,
+                    e.getMessage());
         }
 
         return null;

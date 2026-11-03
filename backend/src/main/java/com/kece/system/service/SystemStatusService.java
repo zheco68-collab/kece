@@ -182,7 +182,6 @@ public class SystemStatusService {
                         .busyNodes(busyCount)
                         .idleNodes(idleCount)
                         .offlineNodes(offlineCount)
-
                         .pendingTasks(pendingTasks)
                         .nodes(nodes)
                         .timestamp(now)

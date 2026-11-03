@@ -14,10 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 前台通知公告看板接口控制器。
- * 公开访问，无分类与模糊搜索，走二级高可用缓存架构。
- */
+/** 前台通知公告看板接口控制器。 公开访问，无分类与模糊搜索，走二级高可用缓存架构。 */
 @Tag(name = "前台-通知看板", description = "系统通知公告展示与详情正文阅读")
 @RestController
 @RequestMapping("/announcements")

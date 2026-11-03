@@ -85,4 +85,3 @@ public class PracticeScoreboardVO {
         private Long elapsedMinutes; // 首次AC或最新通过耗时(分钟)
     }
 }
-

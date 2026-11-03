@@ -46,6 +46,8 @@ class ObjectiveQuestionIntegrationTest extends AbstractIntegrationTest {
                                                 Map.of(
                                                         "username",
                                                         username,
+                                                        "email",
+                                                        username + "@example.com",
                                                         "password",
                                                         "pass123456"))))
                 .andExpect(status().isOk());

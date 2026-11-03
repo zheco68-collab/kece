@@ -18,6 +18,7 @@ export interface AdminUserListParams {
 }
 
 export interface AdminQuestionListParams {
+  id?: number;
   keyword?: string;
   difficulty?: string;
   status?: number;

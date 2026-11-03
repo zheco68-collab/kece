@@ -65,7 +65,8 @@ public class ExamSessionController {
     @RequireRole
     @PostMapping("/{id}/student-info")
     public ApiResponse<com.kece.exam.dto.ExamStudentInfoVO> saveStudentInfo(
-            @PathVariable Long id, @Valid @RequestBody com.kece.exam.dto.ExamStudentInfoRequest request) {
+            @PathVariable Long id,
+            @Valid @RequestBody com.kece.exam.dto.ExamStudentInfoRequest request) {
         return ApiResponse.success(examService.saveStudentInfo(id, request));
     }
 

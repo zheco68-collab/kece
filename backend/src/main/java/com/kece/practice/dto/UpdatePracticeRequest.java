@@ -26,4 +26,3 @@ public class UpdatePracticeRequest {
     /** 可选更新的题目列表；若为空则保留原题集不变。 */
     private List<PracticeQuestionItem> questions;
 }
-

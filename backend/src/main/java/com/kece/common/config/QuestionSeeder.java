@@ -76,11 +76,11 @@ public class QuestionSeeder {
         for (Case c : seed.cases()) {
             TestCase testCase = new TestCase();
             testCase.setQuestionId(question.getId());
+            testCase.setCaseNum(++order);
             testCase.setInput(c.input());
             testCase.setExpectedOutput(c.expectedOutput());
             testCase.setIsSample(c.sample() ? 1 : 0);
             testCaseMapper.insert(testCase);
-            order++;
         }
         return 1;
     }

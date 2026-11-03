@@ -5,9 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * 题目元信息（统一不同存储实体的标题、创建者与默认分值等元数据）。
- */
+/** 题目元信息（统一不同存储实体的标题、创建者与默认分值等元数据）。 */
 @Data
 @Builder
 @NoArgsConstructor

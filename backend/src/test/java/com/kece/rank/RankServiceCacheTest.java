@@ -65,16 +65,17 @@ class RankServiceCacheTest {
         String expectedKey = "rank:cache:page:ALGO:1:50";
         when(valueOps.get(expectedKey)).thenReturn(null);
 
-        RankUserVO user1 = RankUserVO.builder()
-                .rank(1)
-                .userId(101L)
-                .username("alice")
-                .solvedCount(100)
-                .totalSubmissions(120)
-                .acSubmissions(100)
-                .acceptRate(83.3)
-                .lastAcceptedAt(LocalDateTime.now())
-                .build();
+        RankUserVO user1 =
+                RankUserVO.builder()
+                        .rank(1)
+                        .userId(101L)
+                        .username("alice")
+                        .solvedCount(100)
+                        .totalSubmissions(120)
+                        .acSubmissions(100)
+                        .acceptRate(83.3)
+                        .lastAcceptedAt(LocalDateTime.now())
+                        .build();
 
         when(rankMapper.findAlgoRankings(null, 0, 50)).thenReturn(List.of(user1));
         when(rankMapper.countAlgoRankings(null)).thenReturn(1L);
@@ -102,20 +103,22 @@ class RankServiceCacheTest {
     @DisplayName("未登录状态下缓存命中时，应短路跳过所有 Mapper 查询直接返回缓存数据")
     void getRankings_onCacheHit_withoutLogin_shouldShortCircuitMapper() throws Exception {
         String cacheKey = "rank:cache:page:ALGO:1:50";
-        RankPageVO cachedVO = RankPageVO.builder()
-                .type("ALGO")
-                .typeLabel("算法编程天梯榜")
-                .total(42L)
-                .page(1)
-                .size(50)
-                .list(List.of(
-                        RankUserVO.builder()
-                                .rank(1)
-                                .userId(201L)
-                                .username("bob")
-                                .solvedCount(88)
-                                .build()))
-                .build();
+        RankPageVO cachedVO =
+                RankPageVO.builder()
+                        .type("ALGO")
+                        .typeLabel("算法编程天梯榜")
+                        .total(42L)
+                        .page(1)
+                        .size(50)
+                        .list(
+                                List.of(
+                                        RankUserVO.builder()
+                                                .rank(1)
+                                                .userId(201L)
+                                                .username("bob")
+                                                .solvedCount(88)
+                                                .build()))
+                        .build();
         String json = objectMapper.writeValueAsString(cachedVO);
         when(valueOps.get(cacheKey)).thenReturn(json);
 
@@ -138,24 +141,31 @@ class RankServiceCacheTest {
         AuthContextHolder.set(new AuthUser(currentUserId, "charlie", Set.of(Role.USER.name())));
 
         String cacheKey = "rank:cache:page:SQL:1:50";
-        RankPageVO cachedVO = RankPageVO.builder()
-                .type("SQL")
-                .typeLabel("SQL 数据库对拍榜")
-                .total(100L)
-                .page(1)
-                .size(50)
-                .list(List.of(
-                        RankUserVO.builder().rank(1).userId(1L).username("top1").build()))
-                .build();
+        RankPageVO cachedVO =
+                RankPageVO.builder()
+                        .type("SQL")
+                        .typeLabel("SQL 数据库对拍榜")
+                        .total(100L)
+                        .page(1)
+                        .size(50)
+                        .list(
+                                List.of(
+                                        RankUserVO.builder()
+                                                .rank(1)
+                                                .userId(1L)
+                                                .username("top1")
+                                                .build()))
+                        .build();
         String json = objectMapper.writeValueAsString(cachedVO);
         when(valueOps.get(cacheKey)).thenReturn(json);
 
-        RankUserVO myRank = RankUserVO.builder()
-                .rank(18)
-                .userId(currentUserId)
-                .username("charlie")
-                .solvedCount(35)
-                .build();
+        RankUserVO myRank =
+                RankUserVO.builder()
+                        .rank(18)
+                        .userId(currentUserId)
+                        .username("charlie")
+                        .solvedCount(35)
+                        .build();
         when(rankMapper.findUserSqlRank(currentUserId)).thenReturn(myRank);
 
         RankPageVO result = rankService.getRankings("SQL", 1, 50, null);

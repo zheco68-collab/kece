@@ -209,7 +209,9 @@ public class LessonPracticeService {
         int duration =
                 req.getDurationMinutes() != null
                         ? Math.max(0, req.getDurationMinutes())
-                        : (practice.getDurationMinutes() != null ? practice.getDurationMinutes() : 0);
+                        : (practice.getDurationMinutes() != null
+                                ? practice.getDurationMinutes()
+                                : 0);
         LocalDateTime baseStart =
                 practice.getStartTime() != null ? practice.getStartTime() : LocalDateTime.now();
         LocalDateTime newEndTime = duration > 0 ? baseStart.plusMinutes(duration) : null;
@@ -320,7 +322,8 @@ public class LessonPracticeService {
         return getSummaryVO(practice, teacherId);
     }
 
-    private void rescaleQuestionSubmissions(Long practiceQuestionId, int oldFullScore, int newFullScore) {
+    private void rescaleQuestionSubmissions(
+            Long practiceQuestionId, int oldFullScore, int newFullScore) {
         List<LessonPracticeSubmission> subs =
                 submissionMapper.listByPracticeQuestionId(practiceQuestionId);
         for (LessonPracticeSubmission sub : subs) {
@@ -366,8 +369,7 @@ public class LessonPracticeService {
             throw new BusinessException(ResultCode.NOT_FOUND, "课练口令不存在，请核对后重试");
         }
         if (expectedPracticeId != null && !Objects.equals(practice.getId(), expectedPracticeId)) {
-            throw new BusinessException(
-                    ResultCode.PARAM_ERROR, "输入的口令与所选课练不匹配，请核对 6 位课堂口令");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "输入的口令与所选课练不匹配，请核对 6 位课堂口令");
         }
 
         syncPracticeStatusIfExpired(practice);
@@ -555,9 +557,7 @@ public class LessonPracticeService {
                 .build();
     }
 
-    /**
-     * 客观题增量保存与即时判分（方案 B：未交卷时即时返回本题 AC/PARTIAL/WA 与得分，严格隐藏标准答案文本）。
-     */
+    /** 客观题增量保存与即时判分（方案 B：未交卷时即时返回本题 AC/PARTIAL/WA 与得分，严格隐藏标准答案文本）。 */
     @Transactional
     public PracticeObjectiveResultVO submitObjective(
             String accessCode, Long userId, PracticeObjectiveSubmitRequest req) {
@@ -573,8 +573,7 @@ public class LessonPracticeService {
         LessonPracticeMember member = memberMapper.findByPracticeAndUser(practice.getId(), userId);
         if (member == null) {
             if (canManagePractice(practice, userId)) {
-                throw new BusinessException(
-                        ResultCode.PARAM_ERROR, "当前为教师管理预览视角，不记录学生作答成绩");
+                throw new BusinessException(ResultCode.PARAM_ERROR, "当前为教师管理预览视角，不记录学生作答成绩");
             }
             throw new BusinessException(ResultCode.FORBIDDEN, "请先输入 6 位课堂口令加入课练后再作答");
         }
@@ -602,8 +601,7 @@ public class LessonPracticeService {
                 }
                 String submittedAnswer = entry.getValue() != null ? entry.getValue().trim() : "";
                 LessonPracticeSubmission existSub =
-                        submissionMapper.findByPracticeUserQuestion(
-                                practice.getId(), userId, pqId);
+                        submissionMapper.findByPracticeUserQuestion(practice.getId(), userId, pqId);
 
                 if (submittedAnswer.isEmpty() && existSub == null) {
                     continue;
@@ -734,9 +732,7 @@ public class LessonPracticeService {
                 .build();
     }
 
-    /**
-     * 实操题提交创建时（入 Redis 判题队列前）在同一事务内原子绑定课练记录，彻底消除快判竞态与断网丢单。
-     */
+    /** 实操题提交创建时（入 Redis 判题队列前）在同一事务内原子绑定课练记录，彻底消除快判竞态与断网丢单。 */
     @Transactional
     public void bindPracticalSubmissionOnCreate(
             String accessCode,
@@ -779,8 +775,7 @@ public class LessonPracticeService {
         Long lpsId;
         if (exist != null) {
             if (!Objects.equals(exist.getSubmissionId(), submissionId)) {
-                int attempts =
-                        (exist.getAttemptCount() != null ? exist.getAttemptCount() : 1) + 1;
+                int attempts = (exist.getAttemptCount() != null ? exist.getAttemptCount() : 1) + 1;
                 exist.setAttemptCount(attempts);
                 exist.setSubmissionId(submissionId);
                 int currentScore = exist.getScore() != null ? exist.getScore() : 0;
@@ -827,8 +822,8 @@ public class LessonPracticeService {
     }
 
     /**
-     * 原生判题完成回调：由 JudgeResultBlockingListener (Redis BRPOP) 驱动唤醒。
-     * 支持连续高频多次提交反查，严格保护已拿到的最高分源码快照 bestSubmissionId 与首次达成时间 bestAchievedAt。
+     * 原生判题完成回调：由 JudgeResultBlockingListener (Redis BRPOP) 驱动唤醒。 支持连续高频多次提交反查，严格保护已拿到的最高分源码快照
+     * bestSubmissionId 与首次达成时间 bestAchievedAt。
      */
     @Transactional
     public void onPracticalJudgeCompleted(String questionType, Long submissionId) {
@@ -883,7 +878,10 @@ public class LessonPracticeService {
             String questionType,
             String status,
             int score) {
-        if (accessCode == null || accessCode.isBlank() || userId == null || practiceQuestionId == null) {
+        if (accessCode == null
+                || accessCode.isBlank()
+                || userId == null
+                || practiceQuestionId == null) {
             return;
         }
         LessonPractice practice = practiceMapper.findByAccessCode(accessCode.trim().toUpperCase());
@@ -915,9 +913,7 @@ public class LessonPracticeService {
 
         JudgeInfo info = null;
         if (submissionId != null) {
-            info =
-                    verifyAndExtractJudgeInfo(
-                            normType, submissionId, userId, pq.getQuestionId());
+            info = verifyAndExtractJudgeInfo(normType, submissionId, userId, pq.getQuestionId());
             if (info == null) {
                 return;
             }
@@ -939,8 +935,7 @@ public class LessonPracticeService {
             boolean sameSub =
                     submissionId != null && Objects.equals(exist.getSubmissionId(), submissionId);
             if (!alreadyBound && !sameSub && submissionId != null) {
-                int attempts =
-                        (exist.getAttemptCount() != null ? exist.getAttemptCount() : 1) + 1;
+                int attempts = (exist.getAttemptCount() != null ? exist.getAttemptCount() : 1) + 1;
                 exist.setAttemptCount(attempts);
                 exist.setSubmissionId(submissionId);
                 try {
@@ -1134,7 +1129,8 @@ public class LessonPracticeService {
                 || questionId == null) {
             return false;
         }
-        LessonPractice practice = practiceMapper.findByAccessCode(practiceCode.trim().toUpperCase());
+        LessonPractice practice =
+                practiceMapper.findByAccessCode(practiceCode.trim().toUpperCase());
         if (practice == null) {
             return false;
         }
@@ -1209,8 +1205,7 @@ public class LessonPracticeService {
         LessonPracticeMember member = memberMapper.findByPracticeAndUser(practice.getId(), userId);
         if (member == null) {
             if (canManagePractice(practice, userId)) {
-                throw new BusinessException(
-                        ResultCode.PARAM_ERROR, "当前为教师管理预览视角，无需交卷");
+                throw new BusinessException(ResultCode.PARAM_ERROR, "当前为教师管理预览视角，无需交卷");
             }
             throw new BusinessException(ResultCode.FORBIDDEN, "您尚未加入本次课练");
         }
@@ -1314,9 +1309,7 @@ public class LessonPracticeService {
                         lastSubTime = activeTime;
                     }
                     LocalDateTime refTime =
-                            sub.getBestAchievedAt() != null
-                                    ? sub.getBestAchievedAt()
-                                    : activeTime;
+                            sub.getBestAchievedAt() != null ? sub.getBestAchievedAt() : activeTime;
                     long elapsed = 0L;
                     if (practice.getStartTime() != null && refTime != null) {
                         elapsed =
@@ -1589,8 +1582,7 @@ public class LessonPracticeService {
                             .questionType(pq.getQuestionType())
                             .title(pq.getTitle())
                             .fullScore(pq.getScore())
-                            .earnedScore(
-                                    sub != null && sub.getScore() != null ? sub.getScore() : 0)
+                            .earnedScore(sub != null && sub.getScore() != null ? sub.getScore() : 0)
                             .status(sub != null ? sub.getStatus() : "UNATTEMPTED")
                             .submittedAt(auditTime);
 
@@ -1683,8 +1675,7 @@ public class LessonPracticeService {
     }
 
     /** 导出全班成绩单 CSV（带 UTF-8 BOM，Excel 兼容不乱码）。 */
-    public void exportScoreboardCsv(
-            Long practiceId, Long teacherId, HttpServletResponse response) {
+    public void exportScoreboardCsv(Long practiceId, Long teacherId, HttpServletResponse response) {
         LessonPractice practice = practiceMapper.findById(practiceId);
         if (practice == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "课练不存在");
@@ -1714,8 +1705,7 @@ public class LessonPracticeService {
             StringBuilder headerSb = new StringBuilder();
             headerSb.append("排名,参练学生(账号),实得总分,攻克题数(AC),交卷状态,最终提交时间");
             for (PracticeScoreboardVO.QuestionHeader q : scoreboard.getQuestionHeaders()) {
-                headerSb.append(",")
-                        .append(escapeCsv(q.getTitle() + " (" + q.getScore() + "分)"));
+                headerSb.append(",").append(escapeCsv(q.getTitle() + " (" + q.getScore() + "分)"));
             }
             writer.println(headerSb);
 
@@ -1839,18 +1829,11 @@ public class LessonPracticeService {
 
     /** 兼容旧签名的分页查询。 */
     public Map<String, Object> listPractices(
-            String keyword,
-            String status,
-            Long teacherId,
-            Long currentUserId,
-            int page,
-            int size) {
+            String keyword, String status, Long teacherId, Long currentUserId, int page, int size) {
         return listPractices(keyword, status, teacherId, currentUserId, false, false, page, size);
     }
 
-    /**
-     * 分页查询课练列表：查询前先自动收口已到期课练，支持口令按权限脱敏及「已参与」服务端过滤。
-     */
+    /** 分页查询课练列表：查询前先自动收口已到期课练，支持口令按权限脱敏及「已参与」服务端过滤。 */
     public Map<String, Object> listPractices(
             String keyword,
             String status,

@@ -87,27 +87,29 @@ public class RankService {
             myRank = fetchUserRank(type, currentUserId);
         }
 
-        RankPageVO result = RankPageVO.builder()
-                .type(type.name())
-                .typeLabel(typeLabel)
-                .total(total)
-                .page(validPage)
-                .size(validSize)
-                .list(list != null ? list : List.of())
-                .myRank(myRank)
-                .build();
+        RankPageVO result =
+                RankPageVO.builder()
+                        .type(type.name())
+                        .typeLabel(typeLabel)
+                        .total(total)
+                        .page(validPage)
+                        .size(validSize)
+                        .list(list != null ? list : List.of())
+                        .myRank(myRank)
+                        .build();
 
         if (canCache) {
             String cacheKey = buildCacheKey(type, validPage, validSize);
             // 写入缓存时排除特定登录用户的 myRank，防止多用户间数据串扰
-            RankPageVO cacheData = RankPageVO.builder()
-                    .type(result.getType())
-                    .typeLabel(result.getTypeLabel())
-                    .total(result.getTotal())
-                    .page(result.getPage())
-                    .size(result.getSize())
-                    .list(result.getList())
-                    .build();
+            RankPageVO cacheData =
+                    RankPageVO.builder()
+                            .type(result.getType())
+                            .typeLabel(result.getTypeLabel())
+                            .total(result.getTotal())
+                            .page(result.getPage())
+                            .size(result.getSize())
+                            .list(result.getList())
+                            .build();
             putToCache(cacheKey, cacheData);
         }
 

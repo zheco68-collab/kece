@@ -18,12 +18,16 @@ public class LoginRequest {
 
     public void setUsername(String username) {
         this.username = username;
-        if ((this.email == null || this.email.isBlank()) && username != null && !username.isBlank()) {
+        if ((this.email == null || this.email.isBlank())
+                && username != null
+                && !username.isBlank()) {
             this.email = username;
         }
     }
 
     public String getAccount() {
-        return email != null && !email.isBlank() ? email.trim() : (username != null ? username.trim() : "");
+        return email != null && !email.isBlank()
+                ? email.trim()
+                : (username != null ? username.trim() : "");
     }
 }
