@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   getAdminProblemSetDetail,
@@ -7,13 +7,13 @@ import {
   updateAdminProblemSet,
   type SaveProblemSetRequest
 } from '@/api/problemSet'
-import { adminApi } from '@/api/admin'
 import { ApiError } from '@/api/request'
 import FormField from '@/components/FormField.vue'
-import Pagination from '@/components/Pagination.vue'
+import QuestionPicker from '@/components/problem-sets/QuestionPicker.vue'
+import QuestionBadge from '@/components/problem-sets/QuestionBadge.vue'
+import type { QuestionCandidate } from '@/components/problem-sets/types'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/user'
-import type { Question, DbQuestion, ObjectiveQuestion } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,7 +27,7 @@ const problemSetId = computed(() => {
 })
 const isEdit = computed(() => problemSetId.value !== null)
 
-const loading = ref(false)
+const loading = ref(isEdit.value)
 const submitting = ref(false)
 const pageError = ref('')
 
@@ -104,140 +104,21 @@ function moveSectionDown(idx: number) {
   activeSectionIndex.value = idx + 1
 }
 
-// ---- 题库检索与选取（严格限定当前题集题型，单一题型不混排） ----
-const tabKeyword = ref('')
-const algoList = ref<Question[]>([])
-const dbList = ref<DbQuestion[]>([])
-const objList = ref<ObjectiveQuestion[]>([])
-const listLoading = ref(false)
-const sourcePage = ref(1)
-const sourceTotal = ref(0)
-const sourceError = ref('')
-const sourcePageSize = 12
-let sourceRequest = 0
 let previousCategory = form.category
-
-async function loadSource() {
-  const request = ++sourceRequest
-  listLoading.value = true
-  sourceError.value = ''
-  try {
-    const input = tabKeyword.value.trim()
-    const idMatch = /^#?([1-9]\d*)$/.exec(input)
-    const id = idMatch ? Number(idMatch[1]) : undefined
-    const keyword = id === undefined ? input || undefined : undefined
-    const params = { id, keyword, page: sourcePage.value, size: sourcePageSize }
-    if (form.category === 'ALGO') {
-      const result = await adminApi.listQuestions(params)
-      if (request === sourceRequest) {
-        algoList.value = result.list
-        sourceTotal.value = result.total
-      }
-    } else if (form.category === 'DB') {
-      const result = await adminApi.listDbQuestions(params)
-      if (request === sourceRequest) {
-        dbList.value = result.list
-        sourceTotal.value = result.total
-      }
-    } else {
-      const result = await adminApi.listObjectiveQuestions(params)
-      if (request === sourceRequest) {
-        objList.value = result.list
-        sourceTotal.value = result.total
-      }
-    }
-  } catch (e) {
-    if (request === sourceRequest) {
-      sourceError.value = e instanceof ApiError ? e.message : '检索题库失败，请重试'
-      sourceTotal.value = 0
-    }
-  } finally {
-    if (request === sourceRequest) listLoading.value = false
-  }
-}
-
-let tabKeywordTimer: ReturnType<typeof setTimeout> | null = null
-watch(tabKeyword, () => {
-  sourceRequest++
-  sourcePage.value = 1
-  if (tabKeywordTimer !== null) clearTimeout(tabKeywordTimer)
-  tabKeywordTimer = setTimeout(loadSource, 300)
-})
+const selectedKeys = computed(() => sections.value.flatMap(section =>
+  section.items.map(item => `${item.questionType}-${item.questionId}`)
+))
 
 function onCategoryChange() {
   if (totalSelectedCount.value > 0) {
-    const ok = window.confirm('切换题集题型将清空当前已添加的所有题目，确定切换吗？')
-    if (!ok) {
+    if (!window.confirm('切换题集题型将清空当前已添加的所有题目，确定切换吗？')) {
       form.category = previousCategory
       return
     }
-    sections.value.forEach((s) => (s.items = []))
+    sections.value.forEach(section => { section.items = [] })
   }
   previousCategory = form.category
-  sourcePage.value = 1
-  loadSource()
 }
-
-function goSourcePage(page: number) {
-  sourcePage.value = page
-  loadSource()
-}
-
-onBeforeUnmount(() => {
-  sourceRequest++
-  if (tabKeywordTimer !== null) clearTimeout(tabKeywordTimer)
-})
-
-interface SourceCandidate {
-  questionType: 'ALGO' | 'DB' | 'OBJECTIVE'
-  questionId: number
-  title: string
-  difficulty: string
-}
-
-function getItemBadge(diffOrType?: string, qType?: 'ALGO' | 'DB' | 'OBJECTIVE') {
-  const d = (diffOrType || '').toUpperCase()
-  if (d === 'EASY') return { label: '简单', cls: 'pill-easy' }
-  if (d === 'MEDIUM') return { label: '中等', cls: 'pill-medium' }
-  if (d === 'HARD') return { label: '困难', cls: 'pill-hard' }
-
-  if (d === 'SELECT') return { label: 'SELECT 查询', cls: 'pill-select' }
-  if (d === 'DML') return { label: 'DML 操作', cls: 'pill-dml' }
-
-  if (d === 'SINGLE') return { label: '单选题', cls: 'pill-single' }
-  if (d === 'MULTIPLE') return { label: '多选题', cls: 'pill-multiple' }
-  if (d === 'JUDGE') return { label: '判断题', cls: 'pill-judge' }
-  if (d === 'FILL') return { label: '填空题', cls: 'pill-fill' }
-
-  if (qType === 'DB') return { label: 'SQL', cls: 'pill-select' }
-  if (qType === 'OBJECTIVE') return { label: '客观', cls: 'pill-single' }
-  return { label: '编程', cls: 'pill-medium' }
-}
-
-const sourceCandidates = computed<SourceCandidate[]>(() => {
-  if (form.category === 'ALGO') {
-    return algoList.value.map((q) => ({
-      questionType: 'ALGO' as const,
-      questionId: q.id,
-      title: q.title,
-      difficulty: q.difficulty || 'MEDIUM'
-    }))
-  }
-  if (form.category === 'DB') {
-    return dbList.value.map((q) => ({
-      questionType: 'DB' as const,
-      questionId: q.id,
-      title: q.title,
-      difficulty: q.type || 'SELECT'
-    }))
-  }
-  return objList.value.map((q) => ({
-    questionType: 'OBJECTIVE' as const,
-    questionId: q.id,
-    title: q.content ? q.content.replace(/\s+/g, ' ').slice(0, 64) : `客观题 #${q.id}`,
-    difficulty: q.type || 'SINGLE'
-  }))
-})
 
 function isInProblemSet(type: 'ALGO' | 'DB' | 'OBJECTIVE', id: number): boolean {
   return sections.value.some((sec) =>
@@ -245,7 +126,7 @@ function isInProblemSet(type: 'ALGO' | 'DB' | 'OBJECTIVE', id: number): boolean 
   )
 }
 
-function addQuestionToActiveSection(cand: SourceCandidate) {
+function addQuestionToActiveSection(cand: QuestionCandidate) {
   if (isInProblemSet(cand.questionType, cand.questionId)) {
     toast.info('该题已在当前题集中')
     return
@@ -372,10 +253,7 @@ async function handleSubmit() {
   }
 }
 
-onMounted(async () => {
-  await loadExisting()
-  await loadSource()
-})
+onMounted(loadExisting)
 </script>
 
 <template>
@@ -384,7 +262,7 @@ onMounted(async () => {
       <div>
         <h1 class="page-title">{{ isEdit ? `编辑题集 #${problemSetId}` : '新建题集' }}</h1>
         <p class="page-sub">
-          支持将编程题、数据库 SQL 题与客观题按章节自由编排，自带题目标题快照容灾保护。
+          选择一种题型，按章节编排题目。点击章节后，在题库中搜索并添加。
         </p>
       </div>
       <div class="head-actions">
@@ -479,7 +357,7 @@ onMounted(async () => {
         <section class="panel sections-panel">
           <div class="panel-header-row">
             <h2 class="panel-title">
-              02 / 章节目录编排（共 {{ sections.length }} 节，{{ totalSelectedCount }} 题）
+              章节编排 · {{ sections.length }} 节 / {{ totalSelectedCount }} 题
             </h2>
             <button class="btn btn-ghost btn-sm" type="button" @click="addSection">
               + 新增章节
@@ -540,7 +418,7 @@ onMounted(async () => {
               />
 
               <div v-if="sec.items.length === 0" class="sec-empty">
-                当前章节暂无题目 — 点击右侧题库列表中的「+ 加入第 {{ sIdx + 1 }} 节」添加
+                当前章节暂无题目，请在题库检索中选择「加入章节」。
               </div>
 
               <div v-else class="sec-items">
@@ -550,9 +428,7 @@ onMounted(async () => {
                   class="sec-item-row"
                 >
                   <span class="item-order mono">{{ iIdx + 1 }}.</span>
-                  <span class="difficulty-pill" :class="getItemBadge(item.difficulty, item.questionType).cls">
-                    {{ getItemBadge(item.difficulty, item.questionType).label }}
-                  </span>
+                  <QuestionBadge :value="item.difficulty" :question-type="item.questionType" />
                   <span class="item-id mono">#{{ item.questionId }}</span>
                   <span class="item-title" :title="item.title">{{ item.title }}</span>
                   <span v-if="item.sourceAlive === false" class="graveyard-pill">原题已归档</span>
@@ -587,516 +463,55 @@ onMounted(async () => {
           </div>
         </section>
 
-        <!-- 右侧：全题库检索器 -->
-        <section class="panel picker-panel">
-          <div class="panel-header-row">
-            <h2 class="panel-title">03 / 题库检索器</h2>
-            <span class="target-hint">
-              目标：<strong>第 {{ activeSectionIndex + 1 }} 节</strong>
-            </span>
-          </div>
-
-          <div class="picker-type-banner">
-            <span class="mono">专属题型：</span>
-            <strong>{{ form.category === 'ALGO' ? '算法编程题' : form.category === 'DB' ? '数据库 SQL 题' : '标准客观题' }}</strong>
-            <span class="banner-sub">（本题集内题目均严格限定为此单一题型）</span>
-          </div>
-
-          <input
-            v-model="tabKeyword"
-            class="input picker-search"
-            type="text"
-            aria-label="按题号或标题检索题库"
-            placeholder="输入题号（如 #123）或标题关键词…"
-          />
-
-          <div class="picker-summary">
-            <span>共 {{ sourceTotal }} 道题 · 每页 {{ sourcePageSize }} 道</span>
-            <span v-if="sourceTotal > 0">第 {{ sourcePage }} 页</span>
-          </div>
-
-          <div v-if="listLoading" class="loading-box compact">
-            <div class="loading-spinner"></div>
-            <span>检索题库中…</span>
-          </div>
-
-          <div v-else-if="sourceError" class="picker-state" role="alert">
-            {{ sourceError }}
-            <button type="button" class="btn btn-ghost btn-sm" @click="loadSource">重试</button>
-          </div>
-
-          <div v-else-if="sourceCandidates.length === 0" class="picker-state">
-            没有找到符合条件的题目，请换个题号或关键词。
-          </div>
-
-          <div v-else class="candidate-list">
-            <div
-              v-for="cand in sourceCandidates"
-              :key="`${cand.questionType}-${cand.questionId}`"
-              class="candidate-row"
-            >
-              <div class="cand-info">
-                <span class="cand-id mono">#{{ cand.questionId }}</span>
-                <span class="difficulty-pill" :class="getItemBadge(cand.difficulty, cand.questionType).cls">
-                  {{ getItemBadge(cand.difficulty, cand.questionType).label }}
-                </span>
-                <span class="cand-title" :title="cand.title">{{ cand.title }}</span>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm"
-                :class="
-                  isInProblemSet(cand.questionType, cand.questionId)
-                    ? 'btn-ghost'
-                    : 'btn-primary'
-                "
-                :disabled="isInProblemSet(cand.questionType, cand.questionId)"
-                @click="addQuestionToActiveSection(cand)"
-              >
-                {{
-                  isInProblemSet(cand.questionType, cand.questionId)
-                    ? '已加入'
-                    : `+ 加入第 ${activeSectionIndex + 1} 节`
-                }}
-              </button>
-            </div>
-          </div>
-
-          <Pagination
-            v-if="!listLoading && !sourceError"
-            :page="sourcePage"
-            :size="sourcePageSize"
-            :total="sourceTotal"
-            @update:page="goSourcePage"
-          />
-        </section>
+        <QuestionPicker
+          :category="form.category"
+          :section-number="activeSectionIndex + 1"
+          :selected-keys="selectedKeys"
+          @select="addQuestionToActiveSection"
+        />
       </div>
     </template>
   </div>
 </template>
 
 <style scoped>
-.pset-edit {
-  width: 100%;
-  max-width: 100%;
-  padding-bottom: 64px;
-}
-
-.page-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.page-title {
-  margin: 0 0 6px;
-  font-size: 22px;
-  font-weight: 700;
-}
-
-.page-sub {
-  margin: 0;
-  color: var(--ink-secondary);
-  font-size: 13px;
-}
-
-.head-actions {
-  display: flex;
-  gap: 10px;
-}
-
-.panel {
-  background: #ffffff;
-  border: 1px solid var(--line);
-  padding: 20px;
-  margin-bottom: 20px;
-}
-
-.panel-title {
-  margin: 0 0 16px;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-}
-
-.panel-header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.panel-header-row .panel-title {
-  margin: 0;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  margin-bottom: 20px;
-}
-
-.textarea {
-  width: 100%;
-  resize: vertical;
-}
-
-.composer-grid {
-  display: grid;
-  grid-template-columns: 1.15fr 1fr;
-  gap: 24px;
-  align-items: start;
-}
-
-.section-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.section-box {
-  border: 1px solid var(--line);
-  padding: 14px;
-  background: #fafafa;
-  cursor: pointer;
-  transition: border-color 0.15s ease;
-}
-
-.section-box.active {
-  border-color: #111111;
-  border-width: 2px;
-  background: #ffffff;
-}
-
-.section-box-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.sec-index {
-  font-weight: 700;
-  font-size: 13px;
-  color: #111111;
-}
-
-.sec-title-input {
-  flex: 1;
-  font-weight: 600;
-}
-
-.sec-desc-input {
-  width: 100%;
-  font-size: 12px;
-  margin-bottom: 10px;
-}
-
-.sec-btns,
-.item-actions {
-  display: inline-flex;
-  gap: 4px;
-}
-
-.icon-btn {
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--line);
-  background: #ffffff;
-  cursor: pointer;
-  font-size: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.icon-btn:hover:not(:disabled) {
-  border-color: #111111;
-}
-
-.icon-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.icon-btn.danger:hover {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
-.sec-empty {
-  padding: 16px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--ink-tertiary);
-  border: 1px dashed var(--line);
-}
-
-.sec-items {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.sec-item-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: #f9fafb;
-  border: 1px solid var(--line);
-  font-size: 13px;
-}
-
-.item-order {
-  color: var(--ink-tertiary);
-  width: 22px;
-}
-
-.type-pill {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 1px 6px;
-}
-
-.type-algo {
-  background: #111111;
-  color: #ffffff;
-}
-
-.type-db {
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.type-objective {
-  background: #f3f4f6;
-  color: #374151;
-}
-
-.item-id {
-  color: var(--ink-tertiary);
-  font-size: 12px;
-}
-
-.item-title {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.graveyard-pill {
-  background: #fef2f2;
-  color: #dc2626;
-  font-size: 11px;
-  padding: 1px 6px;
-}
-
-.target-hint {
-  font-size: 12px;
-  color: var(--ink-secondary);
-}
-
-.picker-type-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  background: #f5f5f5;
-  border: 1px solid var(--line);
-  margin-bottom: 12px;
-  font-size: 13px;
-}
-.banner-sub {
-  color: var(--ink-tertiary);
-  font-size: 12px;
-}
-.picker-tabs {
-  display: flex;
-  border: 1px solid var(--line);
-  margin-bottom: 12px;
-}
-
-.picker-tab {
-  flex: 1;
-  padding: 8px;
-  background: #fafafa;
-  border: none;
-  border-right: 1px solid var(--line);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.picker-tab:last-child {
-  border-right: none;
-}
-
-.picker-tab.active {
-  background: #111111;
-  color: #ffffff;
-}
-
-.picker-search {
-  width: 100%;
-  margin-bottom: 8px;
-}
-
-.picker-summary {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--ink-secondary);
-  font-size: 12px;
-  margin-bottom: 12px;
-}
-
-.picker-state {
-  min-height: 140px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 12px;
-  padding: 24px;
-  border: 1px dashed var(--line);
-  color: var(--ink-secondary);
-  text-align: center;
-}
-
-.candidate-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.candidate-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-}
-
-.cand-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex: 1;
-}
-
-.cand-id {
-  color: var(--ink-tertiary);
-  font-size: 12px;
-}
-
-.cand-title {
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.loading-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 48px 0;
-  color: var(--ink-secondary);
-  font-size: 13px;
-}
-
-.loading-box.compact {
-  padding: 28px 0;
-}
-
-@media (max-width: 960px) {
-  .form-grid,
-  .composer-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* 题目徽标样式（与前台题集及题库一致，客观题由白到黑渐变） */
-.difficulty-pill {
-  min-width: 58px;
-  padding: 2px 8px;
-  font-size: 11.5px;
-  font-weight: 600;
-  text-align: center;
-  border-radius: 0;
-  letter-spacing: 0.3px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.pill-easy {
-  background: #2b8a3e;
-  color: #ffffff;
-  border: 1px solid #237032;
-}
-
-.pill-medium {
-  background: #e67700;
-  color: #ffffff;
-  border: 1px solid #c96500;
-}
-
-.pill-hard {
-  background: #c92a2a;
-  color: #ffffff;
-  border: 1px solid #b02525;
-}
-
-.pill-select {
-  background: #1e1e1e;
-  color: #ffffff;
-  border: 1px solid #111111;
-}
-
-.pill-dml {
-  background: #495057;
-  color: #ffffff;
-  border: 1px solid #343a40;
-}
-
-.pill-single {
-  background: #f8f9fa;
-  color: #18181b;
-  border: 1px solid #d4d4d8;
-}
-
-.pill-multiple {
-  background: #d4d4d8;
-  color: #18181b;
-  border: 1px solid #a1a1aa;
-}
-
-.pill-judge {
-  background: #52525b;
-  color: #ffffff;
-  border: 1px solid #3f3f46;
-}
-
-.pill-fill {
-  background: #18181b;
-  color: #ffffff;
-  border: 1px solid #09090b;
-}
-
-.pill-default {
-  background: #495057;
-  color: #ffffff;
-  border: 1px solid #343a40;
-}
-
+.pset-edit { width: 100%; min-width: 0; padding-bottom: 40px; font-size: 16px; container-type: inline-size; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 20px; margin-bottom: 28px; }
+.page-title { margin: 0 0 10px; font-size: 28px; font-weight: 700; }
+.page-sub { margin: 0; color: var(--ink-secondary); font-size: 16px; line-height: 1.7; }
+.head-actions { display: flex; gap: 12px; }
+.panel { min-width: 0; background: var(--surface); border: 1px solid var(--line); padding: 24px; margin-bottom: 24px; }
+.panel-title { margin: 0 0 20px; font-size: 21px; font-weight: 700; }
+.panel-header-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 20px; }
+.panel-header-row .panel-title { margin: 0; }
+.form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-bottom: 24px; }
+.input { min-width: 0; max-width: 100%; min-height: 46px; font-size: 16px; }
+.textarea { width: 100%; resize: vertical; line-height: 1.7; }
+.btn { min-height: 44px; font-size: 15px; }
+.composer-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.section-list { display: flex; flex-direction: column; gap: 20px; }
+.section-box { min-width: 0; border: 1px solid var(--line); padding: 18px; background: var(--bg); }
+.section-box.active { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); background: var(--surface); }
+.section-box-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.sec-index { font-weight: 700; font-size: 15px; }
+.sec-title-input { flex: 1; width: 0; min-width: 150px; font-weight: 600; }
+.sec-desc-input { width: 100%; margin-bottom: 16px; }
+.sec-btns, .item-actions { display: inline-flex; gap: 6px; flex-shrink: 0; }
+.icon-btn { width: 36px; height: 36px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; font-size: 16px; display: inline-flex; align-items: center; justify-content: center; }
+.icon-btn:hover:not(:disabled) { border-color: var(--ink); background: var(--bg); }
+.icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+.icon-btn.danger:hover { color: var(--danger); border-color: var(--danger); }
+.sec-empty { padding: 28px 16px; text-align: center; font-size: 16px; line-height: 1.7; color: var(--ink-secondary); border: 1px dashed var(--line); }
+.sec-items { display: flex; flex-direction: column; gap: 10px; }
+.sec-item-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px; background: var(--bg); border: 1px solid var(--line); font-size: 16px; min-width: 0; }
+.item-order { color: var(--ink-secondary); min-width: 24px; }
+.item-id { color: var(--ink-secondary); font-size: 14px; }
+.item-title { order: 2; flex-basis: 100%; min-width: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.7; }
+.item-actions { margin-left: auto; }
+.graveyard-pill { background: #fef2f2; color: #ac2933; font-size: 13px; padding: 3px 8px; }
+.loading-box { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 48px 0; color: var(--ink-secondary); font-size: 16px; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+:deep(.field-label) { font-size: 15px; }
+@container (max-width: 980px) { .composer-grid { grid-template-columns: minmax(0, 1fr); } .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .form-grid { grid-template-columns: minmax(0, 1fr); } .panel { padding: 16px; } .section-box { padding: 12px; } .head-actions { width: 100%; } .head-actions .btn { flex: 1; } .page-title { font-size: 24px; } }
 </style>

@@ -5,6 +5,8 @@ const props = defineProps<{
   page: number
   size: number
   total: number
+  compact?: boolean
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -40,7 +42,7 @@ const pages = computed<Array<number | null>>(() => {
 })
 
 function go(p: number | null) {
-  if (p === null || p < 1 || p > pageCount.value || p === props.page) return
+  if (props.disabled || p === null || p < 1 || p > pageCount.value || p === props.page) return
   emit('update:page', p)
 }
 
@@ -52,16 +54,19 @@ function jump() {
 </script>
 
 <template>
-  <div v-if="total > 0" class="pagination">
-    <span class="page-total">共 {{ total }} 条</span>
+  <div v-if="total > 0" class="pagination" :class="{ compact }">
+    <span v-if="!compact" class="page-total">共 {{ total }} 条</span>
     <div class="page-nav">
-      <button class="btn btn-ghost btn-sm" :disabled="page <= 1" @click="go(page - 1)">
+      <button type="button" class="btn btn-ghost btn-sm" :disabled="disabled || page <= 1" @click="go(page - 1)">
         上一页
       </button>
-      <template v-for="(item, i) in pages" :key="i">
+      <span v-if="compact" class="page-total">{{ page }} / {{ pageCount }}</span>
+      <template v-for="(item, i) in compact ? [] : pages" :key="i">
         <span v-if="item === null" class="page-gap" aria-hidden="true">…</span>
         <button
           v-else
+          type="button"
+          :disabled="disabled"
           class="btn btn-ghost btn-sm page-num"
           :class="{ active: item === page }"
           @click="go(item)"
@@ -69,7 +74,7 @@ function jump() {
           {{ item }}
         </button>
       </template>
-      <button class="btn btn-ghost btn-sm" :disabled="page >= pageCount" @click="go(page + 1)">
+      <button type="button" class="btn btn-ghost btn-sm" :disabled="disabled || page >= pageCount" @click="go(page + 1)">
         下一页
       </button>
     </div>
@@ -77,13 +82,14 @@ function jump() {
       <span class="page-total">共 {{ pageCount }} 页</span>
       <input
         v-model="jumpPage"
+        :disabled="disabled"
         class="input jump-input"
         type="text"
         inputmode="numeric"
         aria-label="跳转页码"
         placeholder="页码"
       />
-      <button class="btn btn-ghost btn-sm" type="submit" :disabled="validJumpPage === null">跳转</button>
+      <button class="btn btn-ghost btn-sm" type="submit" :disabled="disabled || validJumpPage === null">跳转</button>
     </form>
   </div>
 </template>
@@ -97,6 +103,9 @@ function jump() {
   flex-wrap: wrap;
   padding: 20px 0;
 }
+.pagination.compact { padding: 0; gap: 12px; justify-content: space-between; }
+.compact .page-nav, .compact .page-jump { gap: 8px; }
+.compact .btn, .compact .jump-input { min-height: 40px; font-size: 14px; }
 .page-total {
   color: var(--ink-secondary);
   font-size: 14px;
