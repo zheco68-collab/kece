@@ -62,6 +62,8 @@ logs/
 # Scratch / temporary scripts
 scratch/
 *.scratch.*
+__pycache__/
+*.pyc
 
 # Coverage
 
