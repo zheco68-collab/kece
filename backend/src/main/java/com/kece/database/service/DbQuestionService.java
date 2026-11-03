@@ -114,16 +114,35 @@ public class DbQuestionService {
     /** 后台数据库题列表：ADMIN 可按 createdBy 筛选，非 ADMIN 仅见自己出的题。 */
     public PageResult<DbQuestionVO> listAdmin(
             String type, String keyword, Integer status, Long createdBy, int page, int size) {
+        return listAdmin(type, keyword, status, createdBy, null, page, size);
+    }
+
+    public PageResult<DbQuestionVO> listAdmin(
+            String type,
+            String keyword,
+            Integer status,
+            Long createdBy,
+            Long id,
+            int page,
+            int size) {
         PageParam p = PageParam.of(page, size);
         Long targetCreatedBy = createdBy;
         AuthUser user = AuthContextHolder.get();
         if (user == null || !user.hasRole(Role.ADMIN)) {
             targetCreatedBy = AuthContextHolder.currentUserId();
         }
+        List<Long> includeIds = id == null ? null : List.of(id);
         List<DbQuestion> items =
                 questionMapper.findPage(
-                        type, keyword, status, targetCreatedBy, null, null, p.offset(), p.size());
-        long total = questionMapper.count(type, keyword, status, targetCreatedBy, null, null);
+                        type,
+                        keyword,
+                        status,
+                        targetCreatedBy,
+                        includeIds,
+                        null,
+                        p.offset(),
+                        p.size());
+        long total = questionMapper.count(type, keyword, status, targetCreatedBy, includeIds, null);
         return new PageResult<>(
                 items.stream().map(this::toListVO).toList(), total, p.page(), p.size());
     }

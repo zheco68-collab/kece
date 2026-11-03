@@ -22,6 +22,7 @@
             <if test="keyword != null and keyword != ''">AND content LIKE CONCAT('%', #{keyword}, '%')</if>
             <if test="status != null">AND status = #{status}</if>
             <if test="createdBy != null">AND created_by = #{createdBy}</if>
+            <if test="id != null">AND id = #{id}</if>
         </where>
     </sql>
 

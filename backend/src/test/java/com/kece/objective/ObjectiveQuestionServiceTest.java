@@ -3,10 +3,14 @@ package com.kece.objective;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kece.common.response.PageResult;
+import com.kece.common.security.AuthContextHolder;
+import com.kece.common.security.AuthUser;
+import com.kece.common.security.Role;
 import com.kece.objective.dto.ObjectiveQuestionVO;
 import com.kece.objective.entity.ObjectiveQuestion;
 import com.kece.objective.mapper.ObjectiveQuestionMapper;
@@ -17,6 +21,7 @@ import com.kece.user.entity.User;
 import com.kece.user.mapper.UserMapper;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -67,9 +72,9 @@ class ObjectiveQuestionServiceTest {
         q2.setStatus(1);
         q2.setCreatedAt(LocalDateTime.now());
 
-        when(mapper.findPage(isNull(), isNull(), eq(1), isNull(), eq(0), eq(10)))
+        when(mapper.findPage(isNull(), isNull(), eq(1), isNull(), isNull(), eq(0), eq(10)))
                 .thenReturn(List.of(q1, q2));
-        when(mapper.count(isNull(), isNull(), eq(1), isNull())).thenReturn(2L);
+        when(mapper.count(isNull(), isNull(), eq(1), isNull(), isNull())).thenReturn(2L);
 
         User author = new User();
         author.setId(100L);
@@ -94,5 +99,20 @@ class ObjectiveQuestionServiceTest {
         assertThat(vo2.getAuthorName()).isNull();
         assertThat(vo2.getCreatedBy()).isNull();
         assertThat(vo2.getOptions()).containsExactly("对", "错");
+    }
+
+    @Test
+    void listAdmin_byId_shouldKeepTeacherOwnershipFilter() {
+        AuthContextHolder.set(new AuthUser(7L, "teacher", Set.of(Role.TEACHER.name())));
+        try {
+            PageResult<ObjectiveQuestionVO> result =
+                    service.listAdmin(null, null, null, 99L, 42L, 1, 12);
+
+            assertThat(result.getList()).isEmpty();
+            verify(mapper).findPage(null, null, null, 7L, 42L, 0, 12);
+            verify(mapper).count(null, null, null, 7L, 42L);
+        } finally {
+            AuthContextHolder.clear();
+        }
     }
 }

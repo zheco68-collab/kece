@@ -28,6 +28,7 @@ export interface AdminQuestionListParams {
 }
 
 export interface AdminDbQuestionListParams {
+  id?: number;
   type?: string;
   keyword?: string;
   status?: number;
@@ -37,6 +38,7 @@ export interface AdminDbQuestionListParams {
 }
 
 export interface AdminObjectiveListParams {
+  id?: number;
   type?: string;
   keyword?: string;
   status?: number;

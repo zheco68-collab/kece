@@ -44,8 +44,8 @@ public class ObjectiveQuestionService {
     public PageResult<ObjectiveQuestionVO> list(String type, String keyword, int page, int size) {
         PageParam p = PageParam.of(page, size);
         List<ObjectiveQuestion> items =
-                mapper.findPage(type, keyword, 1, null, p.offset(), p.size());
-        long total = mapper.count(type, keyword, 1, null);
+                mapper.findPage(type, keyword, 1, null, null, p.offset(), p.size());
+        long total = mapper.count(type, keyword, 1, null, null);
         java.util.Map<Long, User> authorCache = new java.util.HashMap<>();
         return new PageResult<>(
                 items.stream()
@@ -82,6 +82,17 @@ public class ObjectiveQuestionService {
 
     public PageResult<ObjectiveQuestionVO> listAdmin(
             String type, String keyword, Integer status, Long createdBy, int page, int size) {
+        return listAdmin(type, keyword, status, createdBy, null, page, size);
+    }
+
+    public PageResult<ObjectiveQuestionVO> listAdmin(
+            String type,
+            String keyword,
+            Integer status,
+            Long createdBy,
+            Long id,
+            int page,
+            int size) {
         PageParam p = PageParam.of(page, size);
         AuthUser user = AuthContextHolder.get();
         Long targetCreatedBy =
@@ -89,8 +100,8 @@ public class ObjectiveQuestionService {
                         ? createdBy
                         : (user == null ? null : user.getId());
         List<ObjectiveQuestion> items =
-                mapper.findPage(type, keyword, status, targetCreatedBy, p.offset(), p.size());
-        long total = mapper.count(type, keyword, status, targetCreatedBy);
+                mapper.findPage(type, keyword, status, targetCreatedBy, id, p.offset(), p.size());
+        long total = mapper.count(type, keyword, status, targetCreatedBy, id);
         return new PageResult<>(
                 items.stream().map(this::toListVO).toList(), total, p.page(), p.size());
     }

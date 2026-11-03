@@ -614,4 +614,24 @@ class DbQuestionIntegrationTest extends AbstractIntegrationTest {
         MvcResult anonymous = mockMvc.perform(get("/db-submissions/" + submissionId)).andReturn();
         assertThat(code(anonymous)).isEqualTo(4002);
     }
+
+    @Test
+    void adminList_shouldFindExactQuestionId() throws Exception {
+        String teacher = teacherToken();
+        long id = createQuestion(teacher, selectQuestion(uniqueTitle("admin_id_lookup")));
+
+        MvcResult result =
+                mockMvc.perform(
+                                get("/admin/db-questions")
+                                        .header("Authorization", "Bearer " + teacher)
+                                        .param("id", String.valueOf(id))
+                                        .param("page", "1")
+                                        .param("size", "12"))
+                        .andExpect(status().isOk())
+                        .andReturn();
+
+        assertThat(code(result)).isEqualTo(200);
+        assertThat(data(result).path("total").asLong()).isEqualTo(1);
+        assertThat(data(result).path("list").get(0).path("id").asLong()).isEqualTo(id);
+    }
 }

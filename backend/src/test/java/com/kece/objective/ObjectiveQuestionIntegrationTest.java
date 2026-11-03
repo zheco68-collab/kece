@@ -296,4 +296,35 @@ class ObjectiveQuestionIntegrationTest extends AbstractIntegrationTest {
         assertThat(first.path("correct").asInt()).isEqualTo(1);
         assertThat(first.path("score").asInt()).isEqualTo(5);
     }
+
+    @Test
+    void adminList_shouldFindExactQuestionId() throws Exception {
+        String teacher = teacherToken();
+        long id =
+                createQuestion(
+                        teacher,
+                        Map.of(
+                                "type",
+                                "SINGLE",
+                                "content",
+                                "题号精确检索 " + UUID.randomUUID(),
+                                "options",
+                                List.of("A. 对", "B. 错"),
+                                "answer",
+                                "A",
+                                "score",
+                                2));
+
+        MvcResult result =
+                mockMvc.perform(
+                                get("/admin/objective-questions")
+                                        .header("Authorization", "Bearer " + teacher)
+                                        .param("id", String.valueOf(id)))
+                        .andExpect(status().isOk())
+                        .andReturn();
+
+        assertThat(code(result)).isEqualTo(200);
+        assertThat(data(result).path("total").asLong()).isEqualTo(1);
+        assertThat(data(result).path("list").get(0).path("id").asLong()).isEqualTo(id);
+    }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   getAdminProblemSetDetail,
@@ -10,6 +10,7 @@ import {
 import { adminApi } from '@/api/admin'
 import { ApiError } from '@/api/request'
 import FormField from '@/components/FormField.vue'
+import Pagination from '@/components/Pagination.vue'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/user'
 import type { Question, DbQuestion, ObjectiveQuestion } from '@/types'
@@ -109,25 +110,56 @@ const algoList = ref<Question[]>([])
 const dbList = ref<DbQuestion[]>([])
 const objList = ref<ObjectiveQuestion[]>([])
 const listLoading = ref(false)
+const sourcePage = ref(1)
+const sourceTotal = ref(0)
+const sourceError = ref('')
+const sourcePageSize = 12
+let sourceRequest = 0
+let previousCategory = form.category
 
 async function loadSource() {
+  const request = ++sourceRequest
   listLoading.value = true
+  sourceError.value = ''
   try {
-    const keyword = tabKeyword.value.trim() || undefined
+    const input = tabKeyword.value.trim()
+    const idMatch = /^#?([1-9]\d*)$/.exec(input)
+    const id = idMatch ? Number(idMatch[1]) : undefined
+    const keyword = id === undefined ? input || undefined : undefined
+    const params = { id, keyword, page: sourcePage.value, size: sourcePageSize }
     if (form.category === 'ALGO') {
-      algoList.value = (await adminApi.listQuestions({ keyword, page: 1, size: 100 })).list
+      const result = await adminApi.listQuestions(params)
+      if (request === sourceRequest) {
+        algoList.value = result.list
+        sourceTotal.value = result.total
+      }
     } else if (form.category === 'DB') {
-      dbList.value = (await adminApi.listDbQuestions({ keyword, page: 1, size: 100 })).list
+      const result = await adminApi.listDbQuestions(params)
+      if (request === sourceRequest) {
+        dbList.value = result.list
+        sourceTotal.value = result.total
+      }
     } else {
-      objList.value = (await adminApi.listObjectiveQuestions({ keyword, page: 1, size: 100 })).list
+      const result = await adminApi.listObjectiveQuestions(params)
+      if (request === sourceRequest) {
+        objList.value = result.list
+        sourceTotal.value = result.total
+      }
+    }
+  } catch (e) {
+    if (request === sourceRequest) {
+      sourceError.value = e instanceof ApiError ? e.message : '检索题库失败，请重试'
+      sourceTotal.value = 0
     }
   } finally {
-    listLoading.value = false
+    if (request === sourceRequest) listLoading.value = false
   }
 }
 
 let tabKeywordTimer: ReturnType<typeof setTimeout> | null = null
 watch(tabKeyword, () => {
+  sourceRequest++
+  sourcePage.value = 1
   if (tabKeywordTimer !== null) clearTimeout(tabKeywordTimer)
   tabKeywordTimer = setTimeout(loadSource, 300)
 })
@@ -135,11 +167,26 @@ watch(tabKeyword, () => {
 function onCategoryChange() {
   if (totalSelectedCount.value > 0) {
     const ok = window.confirm('切换题集题型将清空当前已添加的所有题目，确定切换吗？')
-    if (!ok) return
+    if (!ok) {
+      form.category = previousCategory
+      return
+    }
     sections.value.forEach((s) => (s.items = []))
   }
+  previousCategory = form.category
+  sourcePage.value = 1
   loadSource()
 }
+
+function goSourcePage(page: number) {
+  sourcePage.value = page
+  loadSource()
+}
+
+onBeforeUnmount(() => {
+  sourceRequest++
+  if (tabKeywordTimer !== null) clearTimeout(tabKeywordTimer)
+})
 
 interface SourceCandidate {
   questionType: 'ALGO' | 'DB' | 'OBJECTIVE'
@@ -248,6 +295,7 @@ async function loadExisting() {
     form.title = detail.title || ''
     form.description = detail.description || ''
     form.category = detail.category || 'ALGO'
+    previousCategory = form.category
     form.difficulty = detail.difficulty || 'MEDIUM'
     form.tagsText = (detail.tags || []).join(', ')
     form.isOfficial = detail.isOfficial ?? 1
@@ -324,9 +372,9 @@ async function handleSubmit() {
   }
 }
 
-onMounted(() => {
-  loadSource()
-  loadExisting()
+onMounted(async () => {
+  await loadExisting()
+  await loadSource()
 })
 </script>
 
@@ -558,12 +606,27 @@ onMounted(() => {
             v-model="tabKeyword"
             class="input picker-search"
             type="text"
-            placeholder="输入题号或标题关键词检索…"
+            aria-label="按题号或标题检索题库"
+            placeholder="输入题号（如 #123）或标题关键词…"
           />
+
+          <div class="picker-summary">
+            <span>共 {{ sourceTotal }} 道题 · 每页 {{ sourcePageSize }} 道</span>
+            <span v-if="sourceTotal > 0">第 {{ sourcePage }} 页</span>
+          </div>
 
           <div v-if="listLoading" class="loading-box compact">
             <div class="loading-spinner"></div>
             <span>检索题库中…</span>
+          </div>
+
+          <div v-else-if="sourceError" class="picker-state" role="alert">
+            {{ sourceError }}
+            <button type="button" class="btn btn-ghost btn-sm" @click="loadSource">重试</button>
+          </div>
+
+          <div v-else-if="sourceCandidates.length === 0" class="picker-state">
+            没有找到符合条件的题目，请换个题号或关键词。
           </div>
 
           <div v-else class="candidate-list">
@@ -598,6 +661,14 @@ onMounted(() => {
               </button>
             </div>
           </div>
+
+          <Pagination
+            v-if="!listLoading && !sourceError"
+            :page="sourcePage"
+            :size="sourcePageSize"
+            :total="sourceTotal"
+            @update:page="goSourcePage"
+          />
         </section>
       </div>
     </template>
@@ -873,12 +944,32 @@ onMounted(() => {
 
 .picker-search {
   width: 100%;
+  margin-bottom: 8px;
+}
+
+.picker-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink-secondary);
+  font-size: 12px;
   margin-bottom: 12px;
 }
 
+.picker-state {
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+  border: 1px dashed var(--line);
+  color: var(--ink-secondary);
+  text-align: center;
+}
+
 .candidate-list {
-  max-height: 520px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;

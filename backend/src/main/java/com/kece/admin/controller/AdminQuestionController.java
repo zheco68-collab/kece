@@ -47,11 +47,12 @@ public class AdminQuestionController {
     public ApiResponse<PageResult<DbQuestionVO>> listDbQuestions(
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long id,
             @RequestParam(required = false) Integer status,
             @RequestParam(required = false) Long createdBy,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         return ApiResponse.success(
-                dbQuestionService.listAdmin(type, keyword, status, createdBy, page, size));
+                dbQuestionService.listAdmin(type, keyword, status, createdBy, id, page, size));
     }
 }

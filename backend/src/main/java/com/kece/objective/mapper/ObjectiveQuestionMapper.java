@@ -25,6 +25,7 @@ public interface ObjectiveQuestionMapper {
             @Param("keyword") String keyword,
             @Param("status") Integer status,
             @Param("createdBy") Long createdBy,
+            @Param("id") Long id,
             @Param("offset") int offset,
             @Param("size") int size);
 
@@ -32,5 +33,6 @@ public interface ObjectiveQuestionMapper {
             @Param("type") String type,
             @Param("keyword") String keyword,
             @Param("status") Integer status,
-            @Param("createdBy") Long createdBy);
+            @Param("createdBy") Long createdBy,
+            @Param("id") Long id);
 }

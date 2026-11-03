@@ -55,7 +55,7 @@ public class ProblemSetSeeder {
                 List<DbQuestion> dbList =
                         dbQuestionMapper.findPage(null, null, 1, null, null, null, 0, 20);
                 List<ObjectiveQuestion> objList =
-                        objectiveQuestionMapper.findPage(null, null, 1, null, 0, 20);
+                        objectiveQuestionMapper.findPage(null, null, 1, null, null, 0, 20);
 
                 seedAlgoSet(authorId, algoList);
                 seedDbSet(authorId, dbList);
