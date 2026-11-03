@@ -31,7 +31,6 @@ type Judge struct {
 	cfg       config.Config
 	sqlMu     sync.Mutex
 	adminPool *sql.DB
-	userPool  *sql.DB
 }
 
 // New 创建判题编排器。
@@ -47,10 +46,6 @@ func (j *Judge) Close() {
 		_ = j.adminPool.Close()
 		j.adminPool = nil
 	}
-	if j.userPool != nil {
-		_ = j.userPool.Close()
-		j.userPool = nil
-	}
 }
 
 // ParseTask 解析后端推送的任务 JSON。
@@ -61,11 +56,10 @@ func ParseTask(data string) (model.Task, error) {
 }
 
 // Process 完整处理一次提交：编译 → 逐用例运行 → 汇总并回写终态。
-func (j *Judge) Process(ctx context.Context, task model.Task) {
+func (j *Judge) Process(ctx context.Context, task model.Task) error {
 	ws, err := os.MkdirTemp(j.cfg.WorkspaceDir, "sub-")
 	if err != nil {
-		j.finishSystemError(ctx, task.SubmissionID)
-		return
+		return j.finishSystemError(ctx, task.SubmissionID)
 	}
 	defer os.RemoveAll(ws)
 	_ = os.Chmod(ws, 0o777)
@@ -73,20 +67,17 @@ func (j *Judge) Process(ctx context.Context, task model.Task) {
 	// 1. 落盘源码。
 	filename := filenameFor(task.Language)
 	if err := os.WriteFile(filepath.Join(ws, filename), []byte(extractCode(task, filename)), 0o666); err != nil {
-		j.finishSystemError(ctx, task.SubmissionID)
-		return
+		return j.finishSystemError(ctx, task.SubmissionID)
 	}
 
 	// 2. 编译（在独立编译容器中进行，避免编译器 g++/javac/tsc 的内存峰值污染运行容器的 cgroup memory.peak）。
 	j.publish(ctx, task.SubmissionID, statusCompiling, len(task.TestCases), 0)
 	stderr, ok, err := j.runner.Compile(ctx, task.Language, ws)
 	if err != nil {
-		j.finishSystemError(ctx, task.SubmissionID)
-		return
+		return j.finishSystemError(ctx, task.SubmissionID)
 	}
 	if !ok {
-		j.finishCompileError(ctx, task.SubmissionID, stderr)
-		return
+		return j.finishCompileError(ctx, task.SubmissionID, stderr)
 	}
 
 	// 启动单次提交沙箱会话（直接按题目的运行内存限制创建并复用容器，避免逐用例 cold start）
@@ -109,8 +100,7 @@ func (j *Judge) Process(ctx context.Context, task model.Task) {
 	for i, tc := range task.TestCases {
 		cr, err := j.runCaseWithSession(ctx, task, ws, tc, sess)
 		if err != nil {
-			j.finishSystemError(ctx, task.SubmissionID)
-			return
+			return j.finishSystemError(ctx, task.SubmissionID)
 		}
 		report = append(report, cr)
 		statuses = append(statuses, cr.Status)
@@ -132,7 +122,7 @@ func (j *Judge) Process(ctx context.Context, task model.Task) {
 		MemoryUsedKb:    maxMemKb,
 		TestCasesReport: report,
 	}
-	j.finishTerminal(ctx, task.SubmissionID, overall, result)
+	return j.finishTerminal(ctx, task.SubmissionID, overall, result)
 }
 
 // runCaseWithSession 在指定沙箱会话（若无则兜底新建容器）中运行单个测试点。
@@ -226,22 +216,29 @@ func (j *Judge) publish(ctx context.Context, submissionID int64, status string, 
 }
 
 // finishCompileError 写入编译错误终态。
-func (j *Judge) finishCompileError(ctx context.Context, submissionID int64, log string) {
+func (j *Judge) finishCompileError(ctx context.Context, submissionID int64, log string) error {
 	result := model.Result{Score: intPtr(0), CompileErrorLog: strPtr(log), TestCasesReport: []model.CaseResult{}}
-	j.finishTerminal(ctx, submissionID, sandbox.StatusCompileError, result)
+	return j.finishTerminal(ctx, submissionID, sandbox.StatusCompileError, result)
 }
 
 // finishSystemError 写入系统错误终态。
-func (j *Judge) finishSystemError(ctx context.Context, submissionID int64) {
+func (j *Judge) finishSystemError(ctx context.Context, submissionID int64) error {
 	result := model.Result{Score: intPtr(0), TestCasesReport: []model.CaseResult{}}
-	j.finishTerminal(ctx, submissionID, sandbox.StatusSystemError, result)
+	return j.finishTerminal(ctx, submissionID, sandbox.StatusSystemError, result)
 }
 
 // finishTerminal 写入终态并推送结果。
-func (j *Judge) finishTerminal(ctx context.Context, submissionID int64, status string, result model.Result) {
+func (j *Judge) finishTerminal(ctx context.Context, submissionID int64, status string, result model.Result) error {
 	vo := model.SubmissionVO{SubmissionID: submissionID, Status: status, Result: &result}
-	j.writeStatus(ctx, submissionID, vo)
-	_ = j.queue.PushResult(ctx, submissionID)
+	return publishTerminal(ctx, j.queue, vo)
+}
+
+func publishTerminal(ctx context.Context, q *queue.Queue, vo model.SubmissionVO) error {
+	data, err := json.Marshal(vo)
+	if err != nil {
+		return err
+	}
+	return q.PublishTerminal(ctx, vo.SubmissionID, string(data))
 }
 
 // writeStatus 序列化并写状态缓存，序列化失败时静默忽略。

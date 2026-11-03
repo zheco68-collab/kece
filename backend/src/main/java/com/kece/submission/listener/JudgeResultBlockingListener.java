@@ -6,30 +6,61 @@ import com.kece.submission.service.SubmissionService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-import lombok.RequiredArgsConstructor;
+import java.util.function.BiConsumer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
-/**
- * 评测结果阻塞监听器：
- * 使用双线程池守护线程阻塞轮询 Redis 结果队列，实现毫秒级快速落库，消除固定定时轮询带来的时延。
- * 评测完成后原生联动随堂课练（Lesson Practice）实现 0.1ms 自动折算得分与榜单结算。
- */
+/** 认领结果并在落库后确认；过期的认领会重新投递。 */
 @Slf4j
 @Component
 public class JudgeResultBlockingListener {
 
     public static final String ALGO_RESULTS_KEY = "judge:results";
     public static final String SQL_RESULTS_KEY = "judge:sql:results";
-    public static final Duration POP_TIMEOUT = Duration.ofSeconds(2);
+    private static final Duration CLAIM_TIMEOUT = Duration.ofMinutes(2);
+    private static final long IDLE_DELAY_MS = 250;
+    private static final int MAX_CLAIMS = 30;
+    private static final DefaultRedisScript<String> CLAIM =
+            new DefaultRedisScript<>(
+                    """
+            local clock = redis.call('TIME')
+            local now = clock[1] * 1000 + math.floor(clock[2] / 1000)
+            local stale = redis.call('ZRANGEBYSCORE', KEYS[2], '-inf', now, 'LIMIT', 0, 1)[1]
+            local payload
+            local attempt = 1
+            if stale then
+                local separator = string.find(stale, '|', string.len(ARGV[1]) + 2, true)
+                attempt = tonumber(string.sub(stale, string.len(ARGV[1]) + 2, separator - 1)) + 1
+                payload = string.sub(stale, separator + 1)
+                if attempt > tonumber(ARGV[3]) then
+                    redis.call('RPUSH', KEYS[3], payload)
+                    redis.call('ZREM', KEYS[2], stale)
+                    return ''
+                end
+            else
+                payload = redis.call('LINDEX', KEYS[1], 0)
+            end
+            if not payload then return nil end
+            local claim = ARGV[1] .. '|' .. attempt .. '|' .. payload
+            redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]), claim)
+            if stale then
+                redis.call('ZREM', KEYS[2], stale)
+            else
+                redis.call('LPOP', KEYS[1])
+            end
+            return claim
+            """,
+                    String.class);
 
     private final StringRedisTemplate redis;
     private final SubmissionService submissionService;
@@ -82,30 +113,21 @@ public class JudgeResultBlockingListener {
                 SQL_RESULTS_KEY);
     }
 
-    private void handleAlgoResult(Long submissionId) {
-        submissionService.persistResult(submissionId);
-        if (practiceServiceProvider != null) {
-            LessonPracticeService practiceService = practiceServiceProvider.getIfAvailable();
-            if (practiceService != null) {
-                try {
-                    practiceService.onPracticalJudgeCompleted("ALGO", submissionId);
-                } catch (Exception e) {
-                    log.warn("课练自动折算算法题失败 submissionId={}: {}", submissionId, e.getMessage());
-                }
-            }
-        }
+    private void handleAlgoResult(Long submissionId, String payload) {
+        submissionService.persistResult(submissionId, payload);
+        updatePractice("ALGO", submissionId);
     }
 
-    private void handleSqlResult(Long submissionId) {
-        dbSubmissionService.persistResult(submissionId);
+    private void handleSqlResult(Long submissionId, String payload) {
+        dbSubmissionService.persistResult(submissionId, payload);
+        updatePractice("DB", submissionId);
+    }
+
+    private void updatePractice(String type, Long submissionId) {
         if (practiceServiceProvider != null) {
             LessonPracticeService practiceService = practiceServiceProvider.getIfAvailable();
             if (practiceService != null) {
-                try {
-                    practiceService.onPracticalJudgeCompleted("DB", submissionId);
-                } catch (Exception e) {
-                    log.warn("课练自动折算数据库SQL题失败 submissionId={}: {}", submissionId, e.getMessage());
-                }
+                practiceService.onPracticalJudgeCompleted(type, submissionId);
             }
         }
     }
@@ -126,11 +148,16 @@ public class JudgeResultBlockingListener {
         return running;
     }
 
-    void listenLoop(String queueKey, Consumer<Long> resultConsumer) {
+    void listenLoop(String queueKey, BiConsumer<Long, String> resultConsumer) {
         log.info("开始阻塞监听队列: {}", queueKey);
         while (running && !Thread.currentThread().isInterrupted()) {
             try {
-                processNext(queueKey, resultConsumer);
+                if (!processNext(queueKey, resultConsumer)) {
+                    TimeUnit.MILLISECONDS.sleep(IDLE_DELAY_MS);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
             } catch (Exception e) {
                 if (!running || Thread.currentThread().isInterrupted()) {
                     break;
@@ -147,21 +174,41 @@ public class JudgeResultBlockingListener {
         log.info("停止监听队列: {}", queueKey);
     }
 
-    public boolean processNext(String queueKey, Consumer<Long> resultConsumer) {
-        String submissionIdStr = redis.opsForList().leftPop(queueKey, POP_TIMEOUT);
-        if (submissionIdStr == null || submissionIdStr.isBlank()) {
+    public boolean processNext(String queueKey, BiConsumer<Long, String> resultConsumer) {
+        String pendingKey = queueKey + ":pending";
+        String token = UUID.randomUUID().toString();
+        String claim =
+                redis.execute(
+                        CLAIM,
+                        List.of(queueKey, pendingKey, queueKey + ":failed"),
+                        token,
+                        Long.toString(CLAIM_TIMEOUT.toMillis()),
+                        Integer.toString(MAX_CLAIMS));
+        if (claim == null) {
             return false;
         }
-        try {
-            Long submissionId = Long.valueOf(submissionIdStr.trim());
-            resultConsumer.accept(submissionId);
-        } catch (Exception e) {
-            log.warn(
-                    "处理评测结果失败 queueKey={}, submissionId={}: {}",
-                    queueKey,
-                    submissionIdStr,
-                    e.getMessage());
+
+        if (claim.isEmpty()) {
+            log.error("评测结果多次处理失败，已转入 {}", queueKey + ":failed");
+            return true;
         }
+
+        String message = claim.substring(claim.indexOf('|', token.length() + 1) + 1);
+        // Legacy workers queued only the numeric ID. New messages also carry a durable result body.
+        int separator = message.indexOf('\n');
+        String id = separator < 0 ? message : message.substring(0, separator);
+        String payload = separator < 0 ? null : message.substring(separator + 1);
+        Long submissionId;
+        try {
+            submissionId = Long.valueOf(id.trim());
+        } catch (NumberFormatException e) {
+            log.warn("忽略无法识别的评测结果 queueKey={}", queueKey);
+            redis.opsForZSet().remove(pendingKey, claim);
+            return true;
+        }
+
+        resultConsumer.accept(submissionId, payload);
+        redis.opsForZSet().remove(pendingKey, claim);
         return true;
     }
 

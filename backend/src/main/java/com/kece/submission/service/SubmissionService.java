@@ -49,7 +49,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class SubmissionService {
 
     private static final String QUEUE_KEY = "judge:queue";
-    private static final String RESULTS_KEY = "judge:results";
     private static final String STATUS_KEY_PREFIX = "sub:status:";
     private static final String OWNER_KEY_PREFIX = "sub:owner:";
     private static final long STATUS_TTL_SECONDS = 3600;
@@ -73,6 +72,9 @@ public class SubmissionService {
         Long userId = AuthContextHolder.currentUserId();
         if (userId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
+        }
+        if (request.getContestId() != null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "考试提交须通过考试作答接口");
         }
         String language = request.getLanguage().trim().toLowerCase();
         if (!SUPPORTED_LANGUAGES.contains(language)) {
@@ -103,7 +105,6 @@ public class SubmissionService {
         Submission submission = new Submission();
         submission.setUserId(userId);
         submission.setQuestionId(request.getQuestionId());
-        submission.setContestId(request.getContestId());
         submission.setLanguage(language);
         submission.setCodeContent(writeJson(code));
         submission.setStatus(SubmissionStatus.PENDING.name());
@@ -374,41 +375,38 @@ public class SubmissionService {
         }
     }
 
-    /** 定时回写：将判题机写入 Redis 的终态结果落库 MySQL（幂等）。 */
-    public void collectResults() {
-        try {
-            while (true) {
-                String submissionIdStr = redis.opsForList().leftPop(RESULTS_KEY);
-                if (submissionIdStr == null) {
-                    break;
-                }
-                try {
-                    persistResult(Long.valueOf(submissionIdStr));
-                } catch (Exception e) {
-                    log.warn("回写评测结果失败 submissionId={}: {}", submissionIdStr, e.getMessage());
-                }
-            }
-        } catch (Exception e) {
-            log.debug("回写任务扫描跳过: {}", e.getMessage());
+    @Transactional
+    public void persistResult(Long submissionId, String payload) {
+        Submission sub = submissionMapper.findByIdForUpdate(submissionId);
+        if (sub == null) {
+            // The result can arrive before the submit transaction commits.
+            throw new IllegalStateException("提交尚未可见：" + submissionId);
         }
-    }
-
-    public void persistResult(Long submissionId) {
         String cached = redis.opsForValue().get(statusKey(submissionId));
-        if (cached == null) {
+        if (payload != null && cached != null && !payload.equals(cached)) {
+            // A newer judgment has already replaced this attempt's status.
             return;
         }
-        SubmissionVO vo = readJson(cached, SubmissionVO.class);
+        if (cached == null
+                && sub.getStatus() != null
+                && SubmissionStatus.from(sub.getStatus()).isTerminal()) {
+            // A retry after the UI cache expired must not overwrite an already finalized attempt.
+            return;
+        }
+        String body = payload != null ? payload : cached;
+        if (body == null) {
+            // Only legacy messages depend on a cache entry that can expire.
+            return;
+        }
+        SubmissionVO vo = readJson(body, SubmissionVO.class);
         if (vo == null
                 || vo.getStatus() == null
                 || !SubmissionStatus.from(vo.getStatus()).isTerminal()) {
-            return;
+            throw new IllegalStateException("尚无有效评测终态：" + submissionId);
         }
         SubmissionResultVO result = vo.getResult();
-        Submission sub = submissionMapper.findById(submissionId);
         boolean newlyAccepted =
-                sub != null
-                        && !"ACCEPTED".equals(sub.getStatus())
+                !"ACCEPTED".equals(sub.getStatus())
                         && SubmissionStatus.ACCEPTED.name().equals(vo.getStatus());
 
         submissionMapper.updateResult(

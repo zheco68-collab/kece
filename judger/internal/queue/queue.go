@@ -54,9 +54,16 @@ func (q *Queue) PublishStatus(ctx context.Context, submissionID int64, statusJSO
 	return q.client.Set(ctx, q.cfg.StatusKeyPrefix+itoa(submissionID), statusJSON, q.cfg.StatusTTL).Err()
 }
 
-// PushResult 将终态提交 ID 推入结果列表，供后端收集器持久化。
-func (q *Queue) PushResult(ctx context.Context, submissionID int64) error {
-	return q.client.RPush(ctx, q.cfg.ResultsKey, itoa(submissionID)).Err()
+// PublishTerminal atomically updates the UI cache and enqueues a durable copy
+// of the terminal result. Persistence can finish even after the cache expires.
+func (q *Queue) PublishTerminal(ctx context.Context, submissionID int64, statusJSON string) error {
+	id := itoa(submissionID)
+	_, err := q.client.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.Set(ctx, q.cfg.StatusKeyPrefix+id, statusJSON, q.cfg.StatusTTL)
+		pipe.RPush(ctx, q.cfg.ResultsKey, id+"\n"+statusJSON)
+		return nil
+	})
+	return err
 }
 
 // SetLease 为提交设置处理租约，供宕机重投判断存活。
@@ -82,12 +89,14 @@ func (q *Queue) RemoveProcessing(ctx context.Context, taskJSON string) error {
 
 // Requeue 将任务重新放回待判队列并从处理中列表移除（用于宕机重投）。
 func (q *Queue) Requeue(ctx context.Context, taskJSON string) error {
-	pipe := q.client.TxPipeline()
-	pipe.LPush(ctx, q.cfg.QueueKey, taskJSON)
-	pipe.LRem(ctx, q.cfg.ProcessingKey, 1, taskJSON)
-	_, err := pipe.Exec(ctx)
-	return err
+	return q.client.Eval(ctx, requeueExpired, []string{q.cfg.QueueKey, q.cfg.ProcessingKey}, taskJSON).Err()
 }
+
+const requeueExpired = `
+if redis.call('LREM', KEYS[2], 1, ARGV[1]) > 0 then
+    redis.call('LPUSH', KEYS[1], ARGV[1])
+end
+`
 
 // ListProcessing 返回处理中列表的全部任务（重投扫描用）。
 func (q *Queue) ListProcessing(ctx context.Context) ([]string, error) {

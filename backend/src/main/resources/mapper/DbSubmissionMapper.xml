@@ -25,6 +25,10 @@
         SELECT * FROM `db_submission` WHERE id = #{id}
     </select>
 
+    <select id="findByIdForUpdate" resultMap="BaseResultMap">
+        SELECT * FROM `db_submission` WHERE id = #{id} FOR UPDATE
+    </select>
+
     <select id="findPage" resultType="com.kece.database.dto.DbSubmissionListVO">
         SELECT s.id AS submissionId,
                s.user_id AS userId,

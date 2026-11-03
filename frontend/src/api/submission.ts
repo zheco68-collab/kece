@@ -3,7 +3,6 @@ import type { PageResult, Submission, SubmissionRecord } from '@/types'
 
 export interface SubmitPayload {
   questionId: number
-  contestId?: number
   practiceCode?: string
   practiceQuestionId?: number
   language: string

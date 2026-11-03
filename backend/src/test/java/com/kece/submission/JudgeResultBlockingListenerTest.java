@@ -1,12 +1,13 @@
 package com.kece.submission;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -14,18 +15,25 @@ import static org.mockito.Mockito.when;
 import com.kece.database.service.DbSubmissionService;
 import com.kece.submission.listener.JudgeResultBlockingListener;
 import com.kece.submission.service.SubmissionService;
-import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.core.ListOperations;
+import org.mockito.stubbing.OngoingStubbing;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
 class JudgeResultBlockingListenerTest {
 
+    private static final String ALGO = JudgeResultBlockingListener.ALGO_RESULTS_KEY;
+    private static final String SQL = JudgeResultBlockingListener.SQL_RESULTS_KEY;
+    private static final String PAYLOAD = "{\"status\":\"ACCEPTED\"}";
+
     private StringRedisTemplate redis;
-    private ListOperations<String, String> listOps;
+    private ZSetOperations<String, String> pending;
     private SubmissionService submissionService;
     private DbSubmissionService dbSubmissionService;
     private JudgeResultBlockingListener listener;
@@ -34,144 +42,99 @@ class JudgeResultBlockingListenerTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         redis = mock(StringRedisTemplate.class);
-        listOps = mock(ListOperations.class);
-        when(redis.opsForList()).thenReturn(listOps);
-
+        pending = mock(ZSetOperations.class);
+        when(redis.opsForZSet()).thenReturn(pending);
         submissionService = mock(SubmissionService.class);
         dbSubmissionService = mock(DbSubmissionService.class);
-
         listener = new JudgeResultBlockingListener(redis, submissionService, dbSubmissionService);
     }
 
     @AfterEach
     void tearDown() {
-        if (listener != null) {
-            listener.stop();
-        }
+        listener.stop();
     }
 
     @Test
-    void testAlgoResultPopAndPersist() {
-        when(listOps.leftPop(eq(JudgeResultBlockingListener.ALGO_RESULTS_KEY), any(Duration.class)))
-                .thenReturn("1001");
-
-        boolean processed =
-                listener.processNext(
-                        JudgeResultBlockingListener.ALGO_RESULTS_KEY,
-                        submissionService::persistResult);
-
-        assertThat(processed).isTrue();
-        verify(submissionService, times(1)).persistResult(1001L);
-        verifyNoInteractions(dbSubmissionService);
+    void acknowledgesOnlyAfterPersistenceAndAcceptsLegacyMessages() {
+        claim(ALGO).thenAnswer(invocation -> invocation.getArgument(2) + "|1|1001");
+        assertThat(
+                        listener.processNext(
+                                ALGO,
+                                (id, payload) -> {
+                                    assertThat(id).isEqualTo(1001L);
+                                    assertThat(payload).isNull();
+                                    verifyNoInteractions(pending);
+                                }))
+                .isTrue();
+        verify(pending).remove(eq(ALGO + ":pending"), anyString());
     }
 
     @Test
-    void testSqlResultPopAndPersist() {
-        when(listOps.leftPop(eq(JudgeResultBlockingListener.SQL_RESULTS_KEY), any(Duration.class)))
-                .thenReturn("2001");
+    void failedPersistenceLeavesTheResultForRedelivery() {
+        claim(ALGO).thenAnswer(invocation -> invocation.getArgument(2) + "|1|1001\n" + PAYLOAD);
+        var attempts = new AtomicInteger();
+        BiConsumer<Long, String> consumer =
+                (id, body) -> {
+                    assertThat(id).isEqualTo(1001L);
+                    assertThat(body).isEqualTo(PAYLOAD);
+                    if (attempts.incrementAndGet() == 1) {
+                        throw new IllegalStateException("database unavailable");
+                    }
+                };
+        assertThatThrownBy(() -> listener.processNext(ALGO, consumer))
+                .isInstanceOf(IllegalStateException.class);
+        verifyNoInteractions(pending);
 
-        boolean processed =
-                listener.processNext(
-                        JudgeResultBlockingListener.SQL_RESULTS_KEY,
-                        dbSubmissionService::persistResult);
-
-        assertThat(processed).isTrue();
-        verify(dbSubmissionService, times(1)).persistResult(2001L);
-        verifyNoInteractions(submissionService);
+        assertThat(listener.processNext(ALGO, consumer)).isTrue();
+        assertThat(attempts.get()).isEqualTo(2);
+        verify(pending).remove(eq(ALGO + ":pending"), anyString());
     }
 
     @Test
-    void testTimeoutReturnsFalseAndDoesNotPersist() {
-        when(listOps.leftPop(eq(JudgeResultBlockingListener.ALGO_RESULTS_KEY), any(Duration.class)))
-                .thenReturn(null);
-
-        boolean processed =
-                listener.processNext(
-                        JudgeResultBlockingListener.ALGO_RESULTS_KEY,
-                        submissionService::persistResult);
-
-        assertThat(processed).isFalse();
-        verify(submissionService, never()).persistResult(any());
-        verifyNoInteractions(dbSubmissionService);
+    void emptyQueueDoesNotPersist() {
+        assertThat(listener.processNext(ALGO, submissionService::persistResult)).isFalse();
+        verifyNoInteractions(submissionService, dbSubmissionService, pending);
     }
 
     @Test
-    void testStartAndStopLifecycleWithTimeoutAndSubsequentPop() {
-        AtomicInteger algoCount = new AtomicInteger(0);
-        when(listOps.leftPop(eq(JudgeResultBlockingListener.ALGO_RESULTS_KEY), any(Duration.class)))
+    void independentWorkerLoopsDeliverBothResultTypes() {
+        var algoClaims = new AtomicInteger();
+        var sqlClaims = new AtomicInteger();
+        claim(ALGO)
                 .thenAnswer(
-                        invocation -> {
-                            int count = algoCount.getAndIncrement();
-                            if (count == 0) {
-                                // 第一次超时，返回 null
-                                return null;
-                            } else if (count == 1) {
-                                // 第二次正常收到结果
-                                return "1002";
-                            }
-                            // 后续模拟等待，避免热轮询
-                            Thread.sleep(50);
-                            return null;
-                        });
-
-        when(listOps.leftPop(eq(JudgeResultBlockingListener.SQL_RESULTS_KEY), any(Duration.class)))
+                        invocation ->
+                                algoClaims.incrementAndGet() == 2
+                                        ? invocation.getArgument(2) + "|1|1001"
+                                        : null);
+        claim(SQL)
                 .thenAnswer(
-                        invocation -> {
-                            Thread.sleep(50);
-                            return null;
-                        });
-
+                        invocation ->
+                                sqlClaims.incrementAndGet() == 1
+                                        ? invocation.getArgument(2) + "|1|2001\n" + PAYLOAD
+                                        : null);
         listener.start();
         assertThat(listener.isRunning()).isTrue();
-
-        // 验证超时循环后成功触发 persistResult
-        verify(submissionService, timeout(3000).times(1)).persistResult(1002L);
-
+        verify(submissionService, timeout(3000)).persistResult(1001L, null);
+        verify(dbSubmissionService, timeout(3000)).persistResult(2001L, PAYLOAD);
         listener.stop();
         assertThat(listener.isRunning()).isFalse();
     }
 
     @Test
-    void testSqlResultInThreadLoop() {
-        AtomicInteger sqlCount = new AtomicInteger(0);
-        when(listOps.leftPop(eq(JudgeResultBlockingListener.SQL_RESULTS_KEY), any(Duration.class)))
-                .thenAnswer(
-                        invocation -> {
-                            int count = sqlCount.getAndIncrement();
-                            if (count == 0) {
-                                return null; // 模拟超时
-                            } else if (count == 1) {
-                                return "2002";
-                            }
-                            Thread.sleep(50);
-                            return null;
-                        });
-
-        when(listOps.leftPop(eq(JudgeResultBlockingListener.ALGO_RESULTS_KEY), any(Duration.class)))
-                .thenAnswer(
-                        invocation -> {
-                            Thread.sleep(50);
-                            return null;
-                        });
-
-        listener.start();
-        verify(dbSubmissionService, timeout(3000).times(1)).persistResult(2002L);
-
-        listener.stop();
-        assertThat(listener.isRunning()).isFalse();
+    void malformedMessageIsAcknowledgedAndNotPersisted() {
+        claim(ALGO).thenAnswer(invocation -> invocation.getArgument(2) + "|1|not-an-id");
+        assertThat(listener.processNext(ALGO, submissionService::persistResult)).isTrue();
+        verify(submissionService, never()).persistResult(any(), any());
+        verify(pending).remove(eq(ALGO + ":pending"), anyString());
     }
 
-    @Test
-    void testMalformedSubmissionIdIgnored() {
-        when(listOps.leftPop(eq(JudgeResultBlockingListener.ALGO_RESULTS_KEY), any(Duration.class)))
-                .thenReturn("not-a-number");
-
-        boolean processed =
-                listener.processNext(
-                        JudgeResultBlockingListener.ALGO_RESULTS_KEY,
-                        submissionService::persistResult);
-
-        assertThat(processed).isTrue();
-        verify(submissionService, never()).persistResult(any());
+    private OngoingStubbing<String> claim(String key) {
+        return when(
+                redis.execute(
+                        org.mockito.ArgumentMatchers.<RedisScript<String>>any(),
+                        eq(List.of(key, key + ":pending", key + ":failed")),
+                        anyString(),
+                        anyString(),
+                        anyString()));
     }
 }

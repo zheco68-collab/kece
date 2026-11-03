@@ -39,6 +39,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: kece-redis
+    command: ["redis-server", "--appendonly", "yes"]
     restart: unless-stopped
     ports:
       - "6379:6379"

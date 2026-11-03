@@ -30,6 +30,10 @@
         SELECT * FROM `submission` WHERE id = #{id}
     </select>
 
+    <select id="findByIdForUpdate" resultMap="BaseResultMap">
+        SELECT * FROM `submission` WHERE id = #{id} FOR UPDATE
+    </select>
+
     <select id="findPage" resultType="com.kece.submission.dto.SubmissionListVO">
         SELECT s.id AS submissionId,
                s.user_id AS userId,
