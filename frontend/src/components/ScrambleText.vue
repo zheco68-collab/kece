@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-const props = defineProps<{ text: string }>()
+const props = withDefaults(defineProps<{
+  text: string
+  cycle?: number
+  delay?: number
+}>(), {
+  cycle: 0,
+  delay: 0,
+})
 const root = ref<HTMLElement | null>(null)
 const displayed = ref(props.text)
 const symbols = ['#', '/', '+', '=', '*', '?', '0', '1']
@@ -24,7 +31,7 @@ function replay() {
   const characters = Array.from(props.text)
   let frame = 0
   function tick() {
-    const revealed = Math.floor(frame / 3)
+    const revealed = Math.floor(frame / 2)
     displayed.value = characters
       .map((character, index) =>
         index < revealed || /\s/.test(character)
@@ -33,10 +40,10 @@ function replay() {
       )
       .join('')
     frame++
-    if (revealed < characters.length) timer = setTimeout(tick, 60)
+    if (revealed < characters.length) timer = setTimeout(tick, 42)
     else stop()
   }
-  tick()
+  timer = setTimeout(tick, props.delay)
 }
 
 function onMotionChange() {
@@ -54,6 +61,14 @@ onMounted(() => {
     { threshold: 0.5 },
   )
   if (root.value) observer.observe(root.value)
+})
+
+watch(() => props.text, () => {
+  stop()
+})
+
+watch(() => props.cycle, (next, previous) => {
+  if (next !== previous) replay()
 })
 
 onBeforeUnmount(() => {

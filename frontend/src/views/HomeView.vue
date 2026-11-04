@@ -582,7 +582,7 @@ onMounted(async () => {
   gap: 48px;
   align-items: flex-start;
   padding-top: 52px;
-  padding-bottom: 64px;
+  padding-bottom: 40px;
 }
 
 .hero-text {
