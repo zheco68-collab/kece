@@ -345,13 +345,12 @@ onBeforeUnmount(() => {
         v-if="overview.questionAccuracies && overview.questionAccuracies.length > 0"
         class="accuracy-section"
       >
-        <h2 class="section-title">逐题正答率与考点通过透视</h2>
-        <div class="accuracy-grid">
+        <h2 class="section-title">逐题作答统计</h2>
+        <div class="accuracy-list">
           <div
             v-for="(acc, idx) in overview.questionAccuracies"
             :key="acc.practiceQuestionId"
-            class="accuracy-card card"
-            :style="{ '--drop-index': idx }"
+            class="accuracy-row"
           >
             <div class="acc-top">
               <span class="acc-num mono">#{{ String(idx + 1).padStart(2, '0') }}</span>
@@ -364,14 +363,11 @@ onBeforeUnmount(() => {
                       : '编程算法'
                 }}
               </span>
-              <span class="acc-rate mono" :class="{ 'rate-low': acc.passRate < 50 }">
-                {{ acc.passRate }}%
+              <span class="acc-rate mono" :class="{ 'rate-low': acc.submitCount > 0 && acc.passRate < 50 }">
+                {{ acc.submitCount > 0 ? acc.passRate + '%' : '未作答' }}
               </span>
             </div>
             <div class="acc-title" :title="acc.title">{{ acc.title }}</div>
-            <div class="acc-progress-bar">
-              <div class="acc-progress-fill" :style="{ width: `${acc.passRate}%` }" />
-            </div>
             <div class="acc-meta mono">
               <span>通过: {{ acc.passCount }} / 作答 {{ acc.submitCount }} 人</span>
               <span>满分: {{ acc.fullScore }}分</span>
@@ -755,77 +751,24 @@ onBeforeUnmount(() => {
   margin: 0 0 12px;
   color: var(--ink);
 }
-.accuracy-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 12px;
+.accuracy-list { border-top:1px solid var(--line); background:var(--bg); }
+.accuracy-row { display:grid; grid-template-columns:180px minmax(0,1fr) 240px; gap:20px; align-items:center; padding:18px 16px; border-bottom:1px solid var(--line); }
+.accuracy-row:hover { background:var(--surface); }
+.acc-top { display:grid; grid-template-columns:36px 64px 1fr; gap:10px; align-items:center; }
+.acc-num { color:var(--ink-secondary); font-size:13px; }
+.acc-type { font-size:12px; color:var(--ink-secondary); }
+.acc-rate { font-size:14px; font-weight:600; color:var(--ink); text-align:right; }
+.acc-rate.rate-low { color:#a34d00; }
+.acc-title { min-width:0; overflow-wrap:anywhere; font-size:15px; line-height:1.65; font-weight:600; }
+.acc-meta { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; font-size:13px; color:var(--ink-secondary); font-variant-numeric:tabular-nums; }
+@media(max-width:1200px) {
+  .accuracy-row { grid-template-columns:160px minmax(0,1fr); gap:8px 20px; }
+  .acc-meta { grid-column:2; justify-content:flex-start; }
 }
-.accuracy-card {
-  border: 1px solid var(--line);
-  padding: 14px 16px;
-  background: var(--surface);
-  border-radius: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-  animation: cardDropIn 0.44s cubic-bezier(0.25, 1.15, 0.5, 1) backwards;
-  animation-delay: calc(var(--drop-index, 0) * 45ms);
-}
-.accuracy-card:hover {
-  border-color: var(--ink);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-  transform: translateY(-2px);
-}
-.acc-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.acc-num {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--ink-secondary);
-}
-.acc-type {
-  font-size: 11px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  padding: 1px 6px;
-  color: var(--ink-secondary);
-  font-weight: 600;
-}
-.acc-rate {
-  font-size: 14px;
-  font-weight: 700;
-  color: #2b8a3e;
-}
-.acc-rate.rate-low {
-  color: #e67700;
-}
-.acc-title {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.acc-progress-bar {
-  height: 5px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  overflow: hidden;
-}
-.acc-progress-fill {
-  height: 100%;
-  background: var(--ink);
-}
-.acc-meta {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11.5px;
-  color: var(--ink-tertiary);
+@media(max-width:700px) {
+  .accuracy-row { grid-template-columns:1fr; padding:16px 12px; gap:10px; }
+  .acc-top { grid-template-columns:36px 1fr auto; }
+  .acc-meta { grid-column:1; }
 }
 
 /* 全班作答名单表格 */
