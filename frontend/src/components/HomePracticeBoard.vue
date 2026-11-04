@@ -7,7 +7,6 @@ import ScrambleText from './ScrambleText.vue'
 
 const keyword = ref('')
 const searchFocused = ref(false)
-const scrambleCycle = ref(0)
 const page = ref(1)
 const size = 4
 const total = ref<number | null>(null)
@@ -71,40 +70,33 @@ function difficultyName(value: string) {
   return '中等'
 }
 
-function replayScramble() {
-  scrambleCycle.value += 1
-}
 </script>
 
 <template>
   <section class="practice-board container" aria-labelledby="practice-board-title">
     <div class="practice-intro">
       <div class="intro-copy">
-        <h2 id="practice-board-title"><ScrambleText text="今天，解一道题" :cycle="scrambleCycle" /></h2>
+        <h2 id="practice-board-title"><ScrambleText text="今天，解一道题" /></h2>
         <p class="intro-description">
-          <ScrambleText text="读题、构思、提交。用一次完整评测" :cycle="scrambleCycle" :delay="40" />
-          <ScrambleText text="把今天的想法变成可运行的答案。" :cycle="scrambleCycle" :delay="80" />
+          <ScrambleText text="读题、构思、提交。用一次完整评测" :delay="40" />
+          <ScrambleText text="把今天的想法变成可运行的答案。" :delay="80" />
         </p>
       </div>
-      <button class="decode-button" type="button" aria-label="重新播放整个练习模块的解码动画" @click="replayScramble">
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.8 6.1A7 7 0 1 0 17 10h-1.8a5.2 5.2 0 1 1-1-3L12 9.2h5.8V3.4l-2 2.7Z" /></svg>
-        <ScrambleText text="重放解码" :cycle="scrambleCycle" :delay="120" />
-      </button>
       <ol class="practice-steps">
-        <li><span class="step-number mono"><ScrambleText text="01" :cycle="scrambleCycle" :delay="80" /></span><strong><ScrambleText text="读懂题意" :cycle="scrambleCycle" :delay="100" /></strong></li>
-        <li><span class="step-number mono"><ScrambleText text="02" :cycle="scrambleCycle" :delay="120" /></span><strong><ScrambleText text="形成思路" :cycle="scrambleCycle" :delay="140" /></strong></li>
-        <li><span class="step-number mono"><ScrambleText text="03" :cycle="scrambleCycle" :delay="160" /></span><strong><ScrambleText text="提交验证" :cycle="scrambleCycle" :delay="180" /></strong></li>
+        <li><span class="step-number mono"><ScrambleText text="01" :delay="80" /></span><strong><ScrambleText text="读懂题意" :delay="100" /></strong></li>
+        <li><span class="step-number mono"><ScrambleText text="02" :delay="120" /></span><strong><ScrambleText text="形成思路" :delay="140" /></strong></li>
+        <li><span class="step-number mono"><ScrambleText text="03" :delay="160" /></span><strong><ScrambleText text="提交验证" :delay="180" /></strong></li>
       </ol>
       <div class="intro-footer">
         <div class="practice-total">
           <template v-if="total !== null">
-            <strong><ScrambleText :text="String(total)" :cycle="scrambleCycle" :delay="200" /></strong>
-            <span><ScrambleText :text="`道${keyword.trim() ? '匹配的' : '公开的'}编程题`" :cycle="scrambleCycle" :delay="220" /></span>
+            <strong><ScrambleText :text="String(total)" :delay="200" /></strong>
+            <span><ScrambleText :text="`道${keyword.trim() ? '匹配的' : '公开的'}编程题`" :delay="220" /></span>
           </template>
-          <span v-else><ScrambleText :text="error ? '题库数据暂不可用' : '正在读取题库…'" :cycle="scrambleCycle" /></span>
+          <span v-else><ScrambleText :text="error ? '题库数据暂不可用' : '正在读取题库…'" /></span>
         </div>
         <RouterLink to="/questions" class="all-questions">
-          <ScrambleText text="完整题库" :cycle="scrambleCycle" :delay="240" />
+          <ScrambleText text="完整题库" :delay="240" />
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5m-7 0h7v7" /></svg>
         </RouterLink>
       </div>
@@ -112,34 +104,34 @@ function replayScramble() {
 
     <div class="practice-list-panel">
       <div class="panel-top">
-        <h3><ScrambleText text="选择下一道练习" :cycle="scrambleCycle" /></h3>
-        <span class="live-label"><ScrambleText text="公开题库" :cycle="scrambleCycle" :delay="40" /></span>
+        <h3><ScrambleText text="选择下一道练习" /></h3>
+        <span class="live-label"><ScrambleText text="公开题库" :delay="40" /></span>
       </div>
-      <label class="search-label" for="practice-search"><ScrambleText text="按题目名称搜索" :cycle="scrambleCycle" :delay="60" /></label>
+      <label class="search-label" for="practice-search"><ScrambleText text="按题目名称搜索" :delay="60" /></label>
       <div class="search-field">
         <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.5" /><path d="m13 13 4 4" /></svg>
-        <span v-if="!keyword && !searchFocused" class="search-placeholder" aria-hidden="true"><ScrambleText text="输入算法或题目关键词" :cycle="scrambleCycle" :delay="80" /></span>
+        <span v-if="!keyword && !searchFocused" class="search-placeholder" aria-hidden="true"><ScrambleText text="输入算法或题目关键词" :delay="80" /></span>
         <input id="practice-search" v-model="keyword" type="search" aria-label="输入算法或题目关键词" @focus="searchFocused = true" @blur="searchFocused = false" />
       </div>
       <div class="results-region" :aria-busy="loading">
-        <div v-if="loading" class="list-state" role="status"><ScrambleText text="正在读取题库…" :cycle="scrambleCycle" /></div>
-        <div v-else-if="error" class="list-state" role="alert"><ScrambleText :text="error" :cycle="scrambleCycle" /><button type="button" @click="loadQuestions"><ScrambleText text="重新加载" :cycle="scrambleCycle" /></button></div>
-        <div v-else-if="questions.length === 0" class="list-state" role="status"><strong><ScrambleText text="没有找到匹配的题目" :cycle="scrambleCycle" /></strong><span><ScrambleText text="换个关键词，或清空搜索。" :cycle="scrambleCycle" :delay="40" /></span></div>
+        <div v-if="loading" class="list-state" role="status"><ScrambleText text="正在读取题库…" /></div>
+        <div v-else-if="error" class="list-state" role="alert"><ScrambleText :text="error" /><button type="button" @click="loadQuestions"><ScrambleText text="重新加载" /></button></div>
+        <div v-else-if="questions.length === 0" class="list-state" role="status"><strong><ScrambleText text="没有找到匹配的题目" /></strong><span><ScrambleText text="换个关键词，或清空搜索。" :delay="40" /></span></div>
         <div v-else class="question-rows">
           <RouterLink v-for="(question, index) in questions" :key="question.id" :to="`/questions/${question.id}`" class="question-row">
-            <span class="question-number mono"><ScrambleText :text="`#${question.id}`" :cycle="scrambleCycle" :delay="index * 35" /></span>
-            <span class="question-title"><ScrambleText :text="question.title" :cycle="scrambleCycle" :delay="30 + index * 35" /></span>
-            <span class="difficulty"><ScrambleText :text="difficultyName(question.difficulty)" :cycle="scrambleCycle" :delay="60 + index * 35" /></span>
+            <span class="question-number mono"><ScrambleText :text="`#${question.id}`" :delay="index * 35" /></span>
+            <span class="question-title"><ScrambleText :text="question.title" :delay="30 + index * 35" /></span>
+            <span class="difficulty"><ScrambleText :text="difficultyName(question.difficulty)" :delay="60 + index * 35" /></span>
             <svg class="row-arrow" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5m-7 0h7v7" /></svg>
           </RouterLink>
         </div>
       </div>
       <div class="list-footer">
-        <span v-if="total !== null && total > 0"><ScrambleText :text="`${page} / ${Math.ceil(total / size)} 页`" :cycle="scrambleCycle" :delay="220" /></span>
-        <span v-else><ScrambleText :text="loading ? '正在更新…' : error ? '等待重新加载' : '共 0 道题目'" :cycle="scrambleCycle" /></span>
+        <span v-if="total !== null && total > 0"><ScrambleText :text="`${page} / ${Math.ceil(total / size)} 页`" :delay="220" /></span>
+        <span v-else><ScrambleText :text="loading ? '正在更新…' : error ? '等待重新加载' : '共 0 道题目'" /></span>
         <div class="page-actions">
-          <button type="button" :disabled="page <= 1 || loading || total === null" @click="goPage(page - 1)"><ScrambleText text="上一页" :cycle="scrambleCycle" :delay="240" /></button>
-          <button type="button" :disabled="total === null || page >= Math.ceil((total ?? 0) / size) || loading" @click="goPage(page + 1)"><ScrambleText text="下一页" :cycle="scrambleCycle" :delay="260" /></button>
+          <button type="button" :disabled="page <= 1 || loading || total === null" @click="goPage(page - 1)"><ScrambleText text="上一页" :delay="240" /></button>
+          <button type="button" :disabled="total === null || page >= Math.ceil((total ?? 0) / size) || loading" @click="goPage(page + 1)"><ScrambleText text="下一页" :delay="260" /></button>
         </div>
       </div>
     </div>
@@ -186,24 +178,6 @@ function replayScramble() {
   line-height: 1.75;
 }
 
-.decode-button {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  gap: 8px;
-  min-height: 40px;
-  margin-top: 16px;
-  padding: 0;
-  border: 0;
-  border-bottom: 1px solid #686d74;
-  background: transparent;
-  color: #d5d8dc;
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.decode-button svg,
 .all-questions svg,
 .row-arrow,
 .search-field svg {
@@ -214,7 +188,6 @@ function replayScramble() {
   stroke-linejoin: miter;
 }
 
-.decode-button svg,
 .all-questions svg {
   width: 18px;
   height: 18px;
@@ -298,8 +271,7 @@ function replayScramble() {
   white-space: nowrap;
 }
 
-.all-questions:hover,
-.decode-button:hover {
+.all-questions:hover {
   color: #fff;
   text-decoration: underline;
   text-underline-offset: 5px;

@@ -3,10 +3,8 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   text: string
-  cycle?: number
   delay?: number
 }>(), {
-  cycle: 0,
   delay: 0,
 })
 const root = ref<HTMLElement | null>(null)
@@ -23,7 +21,7 @@ function stop() {
   displayed.value = props.text
 }
 
-function replay() {
+function play() {
   stop()
   played = true
   observer?.disconnect()
@@ -56,7 +54,7 @@ onMounted(() => {
   if (motion?.matches || !window.IntersectionObserver) return
   observer = new IntersectionObserver(
     (entries) => {
-      if (!played && entries.some((entry) => entry.isIntersecting)) replay()
+      if (!played && entries.some((entry) => entry.isIntersecting)) play()
     },
     { threshold: 0.5 },
   )
@@ -67,17 +65,12 @@ watch(() => props.text, () => {
   stop()
 })
 
-watch(() => props.cycle, (next, previous) => {
-  if (next !== previous) replay()
-})
-
 onBeforeUnmount(() => {
   stop()
   observer?.disconnect()
   motion?.removeEventListener('change', onMotionChange)
 })
 
-defineExpose({ replay })
 </script>
 
 <template>
