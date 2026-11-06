@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="520" viewBox="0 0 1280 520" role="img" aria-labelledby="title desc">
+  <title id="title">KECE system overview</title>
+  <desc id="desc">The Vue frontend talks to a Spring Boot API. The API stores business data in MySQL and exchanges judge tasks and results through Redis with the Go judger. The judger runs algorithm tasks in Docker and SQL tasks in a separate MySQL judge instance.</desc>
+  <rect width="1280" height="520" fill="#10161d"/>
+  <text x="52" y="62" fill="#f4f8fa" font-family="Arial, sans-serif" font-size="26" font-weight="700">System overview</text>
+  <text x="52" y="91" fill="#9eafbd" font-family="Arial, sans-serif" font-size="16">Submission, evaluation and result flow</text>
+  <path d="M52 111h1176" stroke="#35434f"/>
+  <g font-family="Arial, sans-serif">
+    <g fill="#18232c" stroke="#425464">
+      <rect x="52" y="165" width="220" height="116"/><rect x="332" y="165" width="220" height="116"/>
+      <rect x="612" y="165" width="220" height="116"/><rect x="892" y="165" width="220" height="116"/>
+      <rect x="332" y="348" width="220" height="112"/><rect x="892" y="348" width="220" height="112"/>
+    </g>
+    <g fill="#59d6b3" font-size="13" font-weight="700" letter-spacing="1.5">
+      <text x="72" y="193">CLIENT</text><text x="352" y="193">APPLICATION</text><text x="632" y="193">TASKS + RESULTS</text><text x="912" y="193">EVALUATION</text>
+      <text x="352" y="376">BUSINESS DATA</text><text x="912" y="376">JUDGE RESOURCES</text>
+    </g>
+    <g fill="#f4f8fa" font-size="21" font-weight="700">
+      <text x="72" y="226">Web frontend</text><text x="352" y="226">Spring Boot API</text><text x="632" y="226">Redis</text><text x="912" y="226">Go judger</text>
+      <text x="352" y="409">MySQL</text><text x="912" y="409">Docker + MySQL</text>
+    </g>
+    <g fill="#adbdc9" font-size="15">
+      <text x="72" y="253">Vue + TypeScript</text><text x="352" y="253">Auth, questions, exams</text><text x="632" y="253">Queues and status</text><text x="912" y="253">Algorithm and SQL</text>
+      <text x="352" y="436">Users, questions, records</text><text x="912" y="436">Sandbox / isolated SQL</text>
+    </g>
+    <g fill="none" stroke="#7bdfc3" stroke-width="2">
+      <path d="M272 218h58m-8-6 8 6-8 6"/><path d="M552 210h58m-8-6 8 6-8 6"/><path d="M610 238h-58m8-6-8 6 8 6"/>
+      <path d="M832 210h58m-8-6 8 6-8 6"/><path d="M890 238h-58m8-6-8 6 8 6"/>
+      <path d="M442 281v65m-6-8 6 8 6-8"/><path d="M1002 281v65m-6-8 6 8 6-8"/>
+    </g>
+  </g>
+</svg>
