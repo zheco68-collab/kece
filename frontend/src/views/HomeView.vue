@@ -266,7 +266,7 @@ function startCodeTyping() {
     clearTimeout(codeTypeTimer)
     codeTypeTimer = null
   }
-  const fullCode = demos[activeTab.value]?.code || ''
+  const fullCode = (demos[activeTab.value]?.code || '').trim()
   if (!fullCode) return
 
   typedCode.value = ''
@@ -368,7 +368,7 @@ onMounted(async () => {
     if (res && res.code && res.code.trim()) {
       demos.algo.filename = res.filename || 'Solution.java'
       demos.algo.langBadge = res.langBadge || 'Java 17'
-      demos.algo.code = res.code
+      demos.algo.code = res.code.trim()
     }
   } catch (err) {
     console.warn('Failed to fetch dynamic demo snippet, using fallback template:', err)
@@ -494,10 +494,7 @@ onMounted(async () => {
             <div class="line-numbers mono" aria-hidden="true">
               <span v-for="n in totalLines" :key="n">{{ n }}</span>
             </div>
-            <pre class="code-view"><template v-if="!hasTriggeredScroll"><span class="waiting-hint mono">// 终端待命中 · 滚动进入视口自动启动沙箱...</span></template><template v-else>
-              <!-- eslint-disable-next-line vue/no-v-html -- highlightedCode is Prism output from static local demo strings. -->
-              <code v-html="highlightedCode"></code><span class="terminal-cursor" :class="{ typing: isTyping }"></span>
-            </template></pre>
+            <pre class="code-view mono"><template v-if="!hasTriggeredScroll"><span class="waiting-hint">// 终端待命中 · 滚动进入视口自动启动沙箱...</span></template><template v-else><code v-html="highlightedCode"></code><span class="terminal-cursor" :class="{ typing: isTyping }"></span></template></pre>
           </div>
         </div>
 
@@ -1028,6 +1025,21 @@ onMounted(async () => {
   margin: 0;
   color: #e2e4e9;
   white-space: pre;
+  font-family: 'Consolas', 'SFMono-Regular', 'Liberation Mono', Menlo, Monaco, 'Courier New', monospace !important;
+  font-size: 13.5px;
+  line-height: 1.6;
+  tab-size: 4;
+  letter-spacing: 0;
+  word-spacing: normal;
+  font-variant-ligatures: none;
+}
+
+.code-view code {
+  font-family: inherit !important;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  word-spacing: inherit;
 }
 
 /* 语法与关键字高亮体系 (Dark 主题高保真对比度) */
