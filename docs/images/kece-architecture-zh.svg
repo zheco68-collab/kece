@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="520" viewBox="0 0 1280 520" role="img" aria-labelledby="title desc">
+  <title id="title">KECE 系统架构</title>
+  <desc id="desc">Vue 前端访问 Spring Boot API；业务数据存入 MySQL，评测任务与结果经 Redis 在后端和 Go 评测机之间流转。算法题在 Docker 中运行，SQL 题使用独立判题数据库。</desc>
+  <rect width="1280" height="520" fill="#10161d"/>
+  <g font-family="Arial, 'Microsoft YaHei', 'PingFang SC', sans-serif">
+    <text x="52" y="62" fill="#f4f8fa" font-size="26" font-weight="700">系统架构</text>
+    <text x="52" y="91" fill="#9eafbd" font-size="16">提交、评测与结果流转</text>
+    <path d="M52 111h1176" stroke="#35434f"/>
+    <g fill="#18232c" stroke="#425464">
+      <rect x="52" y="165" width="220" height="116"/><rect x="332" y="165" width="220" height="116"/>
+      <rect x="612" y="165" width="220" height="116"/><rect x="892" y="165" width="220" height="116"/>
+      <rect x="332" y="348" width="220" height="112"/><rect x="892" y="348" width="220" height="112"/>
+    </g>
+    <g fill="#59d6b3" font-size="15" font-weight="700">
+      <text x="72" y="193">客户端</text><text x="352" y="193">业务服务</text><text x="632" y="193">任务与结果</text><text x="912" y="193">评测执行</text>
+      <text x="352" y="376">业务数据</text><text x="912" y="376">评测资源</text>
+    </g>
+    <g fill="#f4f8fa" font-size="21" font-weight="700">
+      <text x="72" y="226">Web 前端</text><text x="352" y="226">Spring Boot API</text><text x="632" y="226">Redis</text><text x="912" y="226">Go 评测机</text>
+      <text x="352" y="409">MySQL</text><text x="912" y="409">Docker + MySQL</text>
+    </g>
+    <g fill="#adbdc9" font-size="15">
+      <text x="72" y="253">Vue + TypeScript</text><text x="352" y="253">认证、题库、考试</text><text x="632" y="253">队列与状态</text><text x="912" y="253">算法与 SQL</text>
+      <text x="352" y="436">用户、题目、记录</text><text x="912" y="436">沙箱 / 独立判题库</text>
+    </g>
+    <g fill="none" stroke="#7bdfc3" stroke-width="2">
+      <path d="M272 218h58m-8-6 8 6-8 6"/><path d="M552 210h58m-8-6 8 6-8 6"/><path d="M610 238h-58m8-6-8 6 8 6"/>
+      <path d="M832 210h58m-8-6 8 6-8 6"/><path d="M890 238h-58m8-6-8 6 8 6"/>
+      <path d="M442 281v65m-6-8 6 8 6-8"/><path d="M1002 281v65m-6-8 6 8 6-8"/>
+    </g>
+  </g>
+</svg>

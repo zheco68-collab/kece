@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./docs/images/kece-readme-banner.svg" alt="KECE 课测：从练习到评测的在线学习平台" width="100%">
+  <img src="./docs/images/kece-readme-banner-zh.svg" alt="KECE 课测：从练习到评测的在线学习平台" width="100%">
 </p>
 
 <p align="center"><strong>练习、评测与考试，在同一个平台完成。</strong></p>
@@ -32,7 +32,7 @@ KECE（课测）是面向编程教学、日常练习和在线考试的评测平�
 
 选题、编写代码、提交和查看结果构成一次完整练习。题目和题集为学习提供路径，课练和考试则让教师可以围绕同一套题库组织教学。
 
-<p align="center"><img src="./docs/images/kece-judge-flow.svg" alt="练习流程：选题、提交、排队、评测、查看结果" width="100%"></p>
+<p align="center"><img src="./docs/images/kece-judge-flow-zh.svg" alt="练习流程：选题、提交、排队、评测、查看结果" width="100%"></p>
 
 ### 编写与提交
 
@@ -50,7 +50,7 @@ KECE（课测）是面向编程教学、日常练习和在线考试的评测平�
 
 ## 系统如何工作
 
-<p align="center"><img src="./docs/images/kece-architecture.svg" alt="KECE 系统架构：浏览器、Spring Boot、MySQL、Redis 和 Go 评测机" width="100%"></p>
+<p align="center"><img src="./docs/images/kece-architecture-zh.svg" alt="KECE 系统架构：浏览器、Spring Boot、MySQL、Redis 和 Go 评测机" width="100%"></p>
 
 前端通过 API 向业务后端提交请求；评测任务经 Redis 队列交给 Go 评测机，评测结果再回到业务服务。算法代码在 Docker 沙箱中运行，SQL 使用独立的判题数据库实例。具体容量与可靠性受硬件、配置和题目负载影响，需要通过实际压测验证。
 

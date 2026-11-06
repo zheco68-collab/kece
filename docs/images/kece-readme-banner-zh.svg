@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="380" viewBox="0 0 1280 380" role="img" aria-labelledby="title desc">
+  <title id="title">KECE 课测</title>
+  <desc id="desc">面向学习与教学的编程练习和在线评测平台。</desc>
+  <rect width="1280" height="380" fill="#121315"/>
+  <path d="M0 0h10v380H0z" fill="#f4f5f7"/>
+  <path d="M724 0v380M1002 0v380M724 120h556M724 250h556" stroke="#373a3e" fill="none"/>
+  <path d="M63 52h11v46H63zM81 74l21-22h16L96 74l22 24h-16z" fill="#f4f5f7"/>
+  <g font-family="Arial, 'Microsoft YaHei', 'PingFang SC', sans-serif">
+    <text x="137" y="88" fill="#f4f5f7" font-weight="700" font-size="30" letter-spacing="7">KECE</text>
+    <text x="64" y="177" fill="#f6f6f5" font-weight="700" font-size="60">以练促学，以测促进。</text>
+    <text x="64" y="230" fill="#f6f6f5" font-weight="700" font-size="40">从一题，到每一次进步。</text>
+    <path d="M65 259h48" stroke="#6cdbad" stroke-width="3"/>
+    <text x="64" y="307" fill="#b6b8bb" font-size="20">面向教学与学习的编程练习和在线评测平台</text>
+    <g fill="#8c9195" font-size="15" font-weight="700">
+      <text x="760" y="51">练习</text><text x="1038" y="51">学习</text>
+      <text x="760" y="172">教学</text><text x="1038" y="172">测评</text>
+    </g>
+    <g fill="#f4f5f7" font-size="23" font-weight="700">
+      <text x="760" y="87">算法与 SQL</text><text x="1038" y="87">题解分享</text>
+      <text x="760" y="208">随堂课练</text><text x="1038" y="208">在线考试</text>
+    </g>
+    <text x="760" y="305" fill="#b6b8bb" font-size="17">从题目到反馈</text>
+  </g>
+  <path d="M1050 300h130m-13-10 13 10-13 10" fill="none" stroke="#6cdbad" stroke-width="2"/>
+</svg>

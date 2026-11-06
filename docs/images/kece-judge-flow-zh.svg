@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="330" viewBox="0 0 1280 330" role="img" aria-labelledby="title desc">
+  <title id="title">从一道题到一次反馈</title>
+  <desc id="desc">学习者选择题目并提交答案，任务进入队列，由评测机执行，随后展示评测结果。</desc>
+  <rect width="1280" height="330" fill="#f5f5f4"/>
+  <path d="M0 0h1280v330H0z" fill="none" stroke="#d2d4d6" stroke-width="2"/>
+  <g font-family="Arial, 'Microsoft YaHei', 'PingFang SC', sans-serif">
+    <text x="44" y="56" font-size="15" font-weight="700" fill="#65706d">KECE / 评测流程</text>
+    <text x="44" y="96" font-size="29" font-weight="700" fill="#151718">从一道题到一次反馈</text>
+    <path d="M44 120h1192" stroke="#d2d4d6"/>
+    <g fill="#fff" stroke="#cdd0d2">
+      <rect x="44" y="155" width="216" height="127"/><rect x="288" y="155" width="216" height="127"/>
+      <rect x="532" y="155" width="216" height="127"/><rect x="776" y="155" width="216" height="127"/>
+      <rect x="1020" y="155" width="216" height="127"/>
+    </g>
+    <g fill="#347d60" font-size="15" font-weight="700">
+      <text x="62" y="183">01 / 选题</text><text x="306" y="183">02 / 提交</text><text x="550" y="183">03 / 排队</text><text x="794" y="183">04 / 评测</text><text x="1038" y="183">05 / 反馈</text>
+    </g>
+    <g fill="#151718" font-size="22" font-weight="700">
+      <text x="62" y="219">选择题目</text><text x="306" y="219">提交答案</text><text x="550" y="219">等待评测</text><text x="794" y="219">执行评测</text><text x="1038" y="219">查看结果</text>
+    </g>
+    <g fill="#68716e" font-size="16">
+      <text x="62" y="251">阅读题目要求</text><text x="306" y="251">代码或 SQL</text><text x="550" y="251">Redis 任务队列</text><text x="794" y="251">隔离环境执行</text><text x="1038" y="251">状态与详情</text>
+    </g>
+  </g>
+  <g fill="none" stroke="#347d60" stroke-width="2">
+    <path d="M260 218h26m-7-6 7 6-7 6"/><path d="M504 218h26m-7-6 7 6-7 6"/>
+    <path d="M748 218h26m-7-6 7 6-7 6"/><path d="M992 218h26m-7-6 7 6-7 6"/>
+  </g>
+</svg>
