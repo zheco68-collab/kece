@@ -31,4 +31,11 @@ describe('renderMarkdown', () => {
     expect(output.querySelector('.katex .katex-mathml math')).not.toBeNull()
     expect(output.querySelector('.katex .katex-html svg path')).not.toBeNull()
   })
+
+  it('highlights supported fenced code blocks without trusting source HTML', () => {
+    const output = parseMarkdown('```java\npublic static void main() {}\n```')
+
+    expect(output.querySelector('pre.code-block code.language-java')).not.toBeNull()
+    expect(output.querySelector('.token.keyword')?.textContent).toBe('public')
+  })
 })

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kece.solution.mapper.SolutionQuestionMapper">
+
+    <select id="findAlgo" resultType="com.kece.solution.dto.SolutionQuestionVO">
+        SELECT id, title, status FROM `question` WHERE id = #{id}
+    </select>
+
+    <select id="findDb" resultType="com.kece.solution.dto.SolutionQuestionVO">
+        SELECT id, title, status FROM `db_question` WHERE id = #{id}
+    </select>
+
+    <select id="findAlgoByIds" resultType="com.kece.solution.dto.SolutionQuestionVO">
+        SELECT id, title, status FROM `question`
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <select id="findDbByIds" resultType="com.kece.solution.dto.SolutionQuestionVO">
+        SELECT id, title, status FROM `db_question`
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <select id="findAlgoForUpdate" resultType="com.kece.solution.dto.SolutionQuestionVO">
+        SELECT id, title, status FROM `question` WHERE id = #{id} FOR UPDATE
+    </select>
+
+    <select id="findDbForUpdate" resultType="com.kece.solution.dto.SolutionQuestionVO">
+        SELECT id, title, status FROM `db_question` WHERE id = #{id} FOR UPDATE
+    </select>
+</mapper>

@@ -30,6 +30,24 @@ const router = createRouter({
           component: () => import('@/views/QuestionDetailView.vue'),
         },
         {
+          path: 'solutions/new',
+          name: 'solution-new',
+          component: () => import('@/views/SolutionEditView.vue'),
+          meta: { title: '写题解', requiresAuth: true },
+        },
+        {
+          path: 'solutions/:id',
+          name: 'solution-read',
+          component: () => import('@/views/SolutionReadView.vue'),
+          meta: { title: '题解' },
+        },
+        {
+          path: 'solutions/:id/edit',
+          name: 'solution-edit',
+          component: () => import('@/views/SolutionEditView.vue'),
+          meta: { title: '编辑题解', requiresAuth: true },
+        },
+        {
           path: 'questions/:id/submit',
           name: 'question-submit',
           component: () => import('@/views/QuestionSubmitView.vue'),
@@ -348,6 +366,12 @@ const router = createRouter({
           name: 'admin-users',
           component: () => import('@/views/admin/AdminUsersView.vue'),
           meta: { roles: ['ADMIN'], title: '用户管理' },
+        },
+        {
+          path: 'solutions',
+          name: 'admin-solutions',
+          component: () => import('@/views/admin/AdminSolutionsView.vue'),
+          meta: { roles: ['ADMIN'], title: '题解管理' },
         },
         {
           path: 'submissions',

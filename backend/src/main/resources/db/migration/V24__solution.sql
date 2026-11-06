@@ -1,0 +1,21 @@
+CREATE TABLE `solution` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '题解 ID',
+    `question_type` VARCHAR(8) NOT NULL COMMENT '关联题型：ALGO/DB',
+    `question_id` BIGINT NOT NULL COMMENT '关联题目 ID',
+    `author_id` BIGINT NOT NULL COMMENT '作者用户 ID',
+    `title` VARCHAR(80) NOT NULL COMMENT '题解标题',
+    `content_md` MEDIUMTEXT NOT NULL COMMENT '原始 Markdown 正文',
+    `status` VARCHAR(16) NOT NULL DEFAULT 'PUBLISHED' COMMENT 'PUBLISHED/HIDDEN',
+    `version` BIGINT NOT NULL DEFAULT 1 COMMENT '乐观锁版本',
+    `client_request_id` VARCHAR(64) NOT NULL COMMENT '创建幂等键',
+    `request_hash` CHAR(64) NOT NULL COMMENT '创建请求摘要，不随编辑变化',
+    `last_management_reason` VARCHAR(200) DEFAULT NULL COMMENT '最近一次隐藏原因',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `deleted_at` DATETIME DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_solution_author_request` (`author_id`, `client_request_id`),
+    KEY `idx_solution_question_visibility` (`question_type`, `question_id`, `status`, `deleted_at`, `created_at`, `id`),
+    KEY `idx_solution_author_created` (`author_id`, `deleted_at`, `created_at`, `id`),
+    KEY `idx_solution_admin_updated` (`deleted_at`, `updated_at`, `id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户题解';

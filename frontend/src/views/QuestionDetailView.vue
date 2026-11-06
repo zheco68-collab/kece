@@ -10,6 +10,7 @@ import type { Question } from '@/types'
 import { DIFFICULTY_LABELS as difficultyLabels } from '@/utils/submission'
 import { copyToClipboard } from '@/utils/clipboard'
 import { fetchUserInfo } from '@/utils/userCache'
+import QuestionSolutionList from '@/components/solutions/QuestionSolutionList.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,6 +26,7 @@ const isSolved = ref(false)
 const authorName = ref('')
 const authorAvatarUrl = ref<string | null>(null)
 const showTags = ref(false)
+const activeContent = ref<'problem' | 'solutions'>('problem')
 
 watch(id, () => {
   showTags.value = false
@@ -243,16 +245,17 @@ onMounted(async () => {
       </header>
 
       <!-- 题面正文卡片 -->
-      <article class="q-body-card card">
+      <article v-if="activeContent === 'problem'" class="q-body-card card">
         <div class="card-section-head">
           <span class="sec-title">题目描述</span>
+          <button class="solution-switch" type="button" @click="activeContent = 'solutions'">题解 →</button>
         </div>
         <!-- eslint-disable-next-line vue/no-v-html -- 内容已由 renderMarkdown 清洗 -->
         <div class="prose" v-html="descriptionHtml"></div>
       </article>
 
       <!-- 样例测试数据卡片 -->
-      <section v-if="question.sampleTestCases?.length" class="q-samples-card card">
+      <section v-if="activeContent === 'problem' && question.sampleTestCases?.length" class="q-samples-card card">
         <div class="card-section-head">
           <span class="sec-title">样例测试数据</span>
           <span class="sec-count">共 {{ question.sampleTestCases.length }} 组公开样例</span>
@@ -291,6 +294,10 @@ onMounted(async () => {
           </div>
         </div>
       </section>
+      <div v-if="activeContent === 'solutions'" class="solution-content-wrap">
+        <div class="solution-context-head"><span>题目描述</span><button class="solution-switch" type="button" @click="activeContent = 'problem'">← 返回题目描述</button></div>
+        <QuestionSolutionList question-type="ALGO" :question-id="id" />
+      </div>
     </template>
   </div>
 </template>
@@ -303,6 +310,10 @@ onMounted(async () => {
   flex-direction: column;
   gap: 20px;
 }
+.solution-switch { display:inline-flex; align-items:center; min-height:28px; padding:0; border:0; border-bottom:1px solid transparent; border-radius:0; background:transparent; color:var(--ink-secondary); font-size:13px; font-weight:600; cursor:pointer; }
+.solution-switch:hover { border-bottom-color:var(--ink); color:var(--ink); }
+.solution-content-wrap { display:flex; flex-direction:column; gap:10px; }
+.solution-context-head { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border:1px solid var(--line); background:var(--surface); font-size:15px; font-weight:700; }
 
 /* 状态加载卡片 */
 .state-card {

@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kece.solution.mapper.SolutionMapper">
+
+    <resultMap id="SolutionMap" type="com.kece.solution.entity.Solution">
+        <id column="id" property="id"/>
+        <result column="question_type" property="questionType"/>
+        <result column="question_id" property="questionId"/>
+        <result column="author_id" property="authorId"/>
+        <result column="title" property="title"/>
+        <result column="content_md" property="contentMd"/>
+        <result column="status" property="status"/>
+        <result column="version" property="version"/>
+        <result column="client_request_id" property="clientRequestId"/>
+        <result column="request_hash" property="requestHash"/>
+        <result column="last_management_reason" property="lastManagementReason"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="deleted_at" property="deletedAt"/>
+    </resultMap>
+
+    <sql id="baseColumns">
+        s.id, s.question_type, s.question_id, s.author_id, s.title, s.content_md, s.status,
+        s.version, s.client_request_id, s.request_hash, s.last_management_reason,
+        s.created_at, s.updated_at, s.deleted_at
+    </sql>
+
+    <sql id="questionJoins">
+        LEFT JOIN `question` q ON s.question_type = 'ALGO' AND q.id = s.question_id
+        LEFT JOIN `db_question` d ON s.question_type = 'DB' AND d.id = s.question_id
+    </sql>
+
+    <sql id="publicQuestionCondition">
+        ((s.question_type = 'ALGO' AND q.status = 1) OR (s.question_type = 'DB' AND d.status = 1))
+    </sql>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO `solution`
+            (question_type, question_id, author_id, title, content_md, status, version,
+             client_request_id, request_hash, last_management_reason)
+        VALUES
+            (#{questionType}, #{questionId}, #{authorId}, #{title}, #{contentMd}, #{status}, #{version},
+             #{clientRequestId}, #{requestHash}, #{lastManagementReason})
+    </insert>
+
+    <select id="findById" resultMap="SolutionMap">
+        SELECT <include refid="baseColumns"/> FROM `solution` s WHERE s.id = #{id}
+    </select>
+
+    <select id="findByAuthorAndRequestId" resultMap="SolutionMap">
+        SELECT <include refid="baseColumns"/> FROM `solution` s
+        WHERE s.author_id = #{authorId} AND s.client_request_id = #{clientRequestId}
+    </select>
+
+    <select id="findPublicPage" resultMap="SolutionMap">
+        SELECT <include refid="baseColumns"/> FROM `solution` s
+        <include refid="questionJoins"/>
+        WHERE s.deleted_at IS NULL AND s.status = 'PUBLISHED'
+          AND <include refid="publicQuestionCondition"/>
+          AND s.question_type = #{questionType} AND s.question_id = #{questionId}
+        ORDER BY s.created_at DESC, s.id DESC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <select id="countPublic" resultType="long">
+        SELECT COUNT(*) FROM `solution` s
+        <include refid="questionJoins"/>
+        WHERE s.deleted_at IS NULL AND s.status = 'PUBLISHED'
+          AND <include refid="publicQuestionCondition"/>
+          AND s.question_type = #{questionType} AND s.question_id = #{questionId}
+    </select>
+
+    <select id="findMinePage" resultMap="SolutionMap">
+        SELECT <include refid="baseColumns"/> FROM `solution` s
+        WHERE s.author_id = #{authorId} AND s.deleted_at IS NULL
+        ORDER BY s.created_at DESC, s.id DESC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <select id="countMine" resultType="long">
+        SELECT COUNT(*) FROM `solution` s WHERE s.author_id = #{authorId} AND s.deleted_at IS NULL
+    </select>
+
+    <sql id="adminFilters">
+        <where>
+            s.deleted_at IS NULL
+            <if test="keyword != null and keyword != ''">
+                AND (s.title LIKE CONCAT('%', #{keyword}, '%') OR u.username LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="questionId != null">AND s.question_id = #{questionId}</if>
+            <if test="questionType != null and questionType != ''">AND s.question_type = #{questionType}</if>
+            <if test="status != null and status != ''">AND s.status = #{status}</if>
+        </where>
+    </sql>
+
+    <select id="findAdminPage" resultMap="SolutionMap">
+        SELECT <include refid="baseColumns"/> FROM `solution` s
+        INNER JOIN `user` u ON u.id = s.author_id
+        <include refid="adminFilters"/>
+        ORDER BY s.updated_at DESC, s.id DESC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <select id="countAdmin" resultType="long">
+        SELECT COUNT(*) FROM `solution` s
+        INNER JOIN `user` u ON u.id = s.author_id
+        <include refid="adminFilters"/>
+    </select>
+
+    <update id="updateContentIfVersion">
+        UPDATE `solution`
+        SET title = #{title}, content_md = #{contentMd}, version = version + 1
+        WHERE id = #{id} AND author_id = #{authorId} AND version = #{version} AND deleted_at IS NULL
+    </update>
+
+    <update id="updateStatusIfVersion">
+        UPDATE `solution`
+        SET status = #{status}, last_management_reason = #{reason}, version = version + 1
+        WHERE id = #{id} AND version = #{version} AND deleted_at IS NULL
+    </update>
+
+    <update id="softDeleteIfVersion">
+        UPDATE `solution`
+        SET deleted_at = CURRENT_TIMESTAMP, version = version + 1
+        WHERE id = #{id} AND version = #{version} AND deleted_at IS NULL
+    </update>
+</mapper>

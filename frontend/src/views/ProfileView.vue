@@ -24,6 +24,7 @@ import type {
   SubmissionStatus,
 } from '@/types'
 import { LANGUAGE_LABELS, STATUS_ABBR, statusTone } from '@/utils/submission'
+import { solutionApi, type SolutionListItem } from '@/api/solution'
 
 const route = useRoute()
 const userStore = useUserStore()
@@ -59,7 +60,7 @@ const exams = ref<UserExamRecord[]>([])
 const examsLoading = ref(true)
 
 // ---- 提交记录整合模块 ----
-type TabKey = 'code' | 'database' | 'objective'
+type TabKey = 'code' | 'database' | 'objective' | 'solutions'
 const activeTab = ref<TabKey>('code')
 const pageSize = 10
 
@@ -86,6 +87,11 @@ const objList = ref<ObjectiveSubmissionRecord[]>([])
 const objTotal = ref(0)
 const objLoading = ref(false)
 const objSelected = ref<ObjectiveSubmissionRecord | null>(null)
+
+const solutionPage = ref(1)
+const solutionList = ref<SolutionListItem[]>([])
+const solutionTotal = ref(0)
+const solutionLoading = ref(false)
 
 // 状态筛选选项
 const codeStatusFilters: Array<{ value: SubmissionStatus | ''; label: string }> = [
@@ -312,12 +318,28 @@ async function loadObjSubmissions() {
   }
 }
 
+async function loadSolutions() {
+  if (!isSelf.value) return
+  solutionLoading.value = true
+  try {
+    const result = await solutionApi.listMine({ page: solutionPage.value, size: pageSize })
+    solutionList.value = result.list
+    solutionTotal.value = result.total
+  } catch {
+    solutionList.value = []
+    solutionTotal.value = 0
+  } finally {
+    solutionLoading.value = false
+  }
+}
+
 function switchTab(t: TabKey) {
   if (activeTab.value === t) return
   activeTab.value = t
   if (t === 'code' && codeList.value.length === 0 && !codeLoading.value) loadCodeSubmissions()
   if (t === 'database' && dbList.value.length === 0 && !dbLoading.value) loadDbSubmissions()
   if (t === 'objective' && objList.value.length === 0 && !objLoading.value) loadObjSubmissions()
+  if (t === 'solutions' && solutionList.value.length === 0 && !solutionLoading.value) loadSolutions()
 }
 
 function loadAllData() {
@@ -327,6 +349,7 @@ function loadAllData() {
   loadCodeSubmissions()
   loadDbSubmissions()
   loadObjSubmissions()
+  loadSolutions()
 }
 
 watch(
@@ -335,6 +358,7 @@ watch(
     codePage.value = 1
     dbPage.value = 1
     objPage.value = 1
+    solutionPage.value = 1
     loadAllData()
   },
 )
@@ -377,6 +401,7 @@ function applyTabFromRoute() {
   const tab = route.query.tab
   if (tab === 'database') activeTab.value = 'database'
   else if (tab === 'objective') activeTab.value = 'objective'
+  else if (tab === 'solutions' && isSelf.value) activeTab.value = 'solutions'
   else if (tab === 'code') activeTab.value = 'code'
 
   if (tab) {
@@ -622,7 +647,7 @@ onMounted(() => {
                 {{ isSelf ? '我的提交记录' : (profile?.username || '用户') + ' 的提交记录' }}
               </h3>
               <span class="block-counter mono">
-                {{ activeTab === 'code' ? codeTotal : activeTab === 'database' ? dbTotal : objTotal }} 条
+                {{ activeTab === 'code' ? codeTotal : activeTab === 'database' ? dbTotal : activeTab === 'objective' ? objTotal : solutionTotal }} 条
               </span>
             </div>
             <span class="block-sub">算法题代码、数据库 SQL 与客观题作答的全量评测历史</span>
@@ -649,7 +674,7 @@ onMounted(() => {
               </option>
             </select>
             <select
-              v-else
+              v-else-if="activeTab === 'objective'"
               v-model="objStatus"
               class="status-select mono"
             >
@@ -672,6 +697,16 @@ onMounted(() => {
             <span class="tab-count mono">{{ codeTotal }}</span>
           </button>
           <button
+            v-if="isSelf"
+            type="button"
+            class="tab-btn"
+            :class="{ active: activeTab === 'solutions' }"
+            @click="switchTab('solutions')"
+          >
+            <span>我的题解</span>
+            <span class="tab-count mono">{{ solutionTotal }}</span>
+          </button>
+          <button
             type="button"
             class="tab-btn"
             :class="{ active: activeTab === 'database' }"
@@ -692,7 +727,15 @@ onMounted(() => {
         </div>
 
         <!-- Tab 1: 编程题表格 -->
-        <template v-if="activeTab === 'code'">
+        <template v-if="activeTab === 'solutions'">
+          <div v-if="solutionLoading" class="block-loading muted"><div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载我的题解…</p></div>
+          <div v-else-if="solutionList.length === 0" class="empty-block"><span class="empty-text">还没有发布题解</span></div>
+          <div v-else class="table-responsive">
+            <table class="timeline-table"><thead><tr><th>题解标题</th><th>关联题目</th><th>状态</th><th>最后更新</th><th>操作</th></tr></thead><tbody><tr v-for="item in solutionList" :key="item.id"><td class="q-title-col"><RouterLink :to="`/solutions/${item.id}`" class="q-link">{{ item.title }}</RouterLink></td><td>{{ item.questionType === 'DB' ? 'DB' : '算法' }} #{{ item.questionId }} · {{ item.questionTitle }}</td><td><span class="status-badge" :class="item.status === 'PUBLISHED' ? 'status-accepted' : 'status-pending'">{{ item.status === 'PUBLISHED' ? '公开' : '已隐藏' }}</span></td><td class="mono date-cell">{{ formatTime(item.updatedAt) }}</td><td><RouterLink :to="`/solutions/${item.id}/edit`" class="detail-action">编辑</RouterLink></td></tr></tbody></table>
+            <div v-if="solutionTotal > pageSize" class="pagination-bar"><button class="btn btn-ghost btn-sm" type="button" :disabled="solutionPage <= 1" @click="solutionPage--; loadSolutions()">上一页</button><span class="page-indicator mono">第 {{ solutionPage }} / {{ Math.ceil(solutionTotal / pageSize) }} 页</span><button class="btn btn-ghost btn-sm" type="button" :disabled="solutionPage >= Math.ceil(solutionTotal / pageSize)" @click="solutionPage++; loadSolutions()">下一页</button></div>
+          </div>
+        </template>
+        <template v-else-if="activeTab === 'code'">
           <div v-if="codeLoading" class="block-loading muted">
             <div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载编程题提交…</p>
           </div>

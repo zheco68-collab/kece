@@ -8,6 +8,7 @@ import type { DbQuestion, DbQuestionType } from '@/types'
 import DbSchemaViewer from '@/components/DbSchemaViewer.vue'
 import DbSampleViewer from '@/components/DbSampleViewer.vue'
 import { fetchUserInfo } from '@/utils/userCache'
+import QuestionSolutionList from '@/components/solutions/QuestionSolutionList.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,6 +22,7 @@ const error = ref('')
 const isSolved = ref(false)
 const authorName = ref('')
 const authorAvatarUrl = ref<string | null>(null)
+const activeContent = ref<'problem' | 'solutions'>('problem')
 
 const typeLabels: Record<DbQuestionType, string> = {
   SELECT: 'SELECT 查询',
@@ -198,26 +200,27 @@ onMounted(async () => {
       </header>
 
       <!-- 题面正文卡片 -->
-      <article class="q-body-card card">
+      <article v-if="activeContent === 'problem'" class="q-body-card card">
         <div class="card-section-head">
           <span class="sec-title">题目要求与说明</span>
+          <button class="solution-switch" type="button" @click="activeContent = 'solutions'">题解 →</button>
         </div>
         <!-- eslint-disable-next-line vue/no-v-html -- 内容已由 renderMarkdown 清洗 -->
         <div class="prose" v-html="descriptionHtml"></div>
       </article>
 
       <!-- 数据库表结构字典 (支持字典视图/DDL切换) -->
-      <DbSchemaViewer :schema-sql="question.schemaSql" />
+      <DbSchemaViewer v-if="activeContent === 'problem'" :schema-sql="question.schemaSql" />
 
       <!-- 样例初始数据 (支持数据表格视图/SQL切换) -->
       <DbSampleViewer
-        v-if="sampleCases.length"
+        v-if="activeContent === 'problem' && sampleCases.length"
         :sample-cases="sampleCases"
         :schema-sql="question.schemaSql"
       />
 
       <!-- 评测规范卡片 -->
-      <section class="spec-card card">
+      <section v-if="activeContent === 'problem'" class="spec-card card">
         <div class="card-section-head">
           <span class="sec-title">评测与比对规范</span>
         </div>
@@ -242,6 +245,10 @@ onMounted(async () => {
           </div>
         </div>
       </section>
+      <div v-if="activeContent === 'solutions'" class="solution-content-wrap">
+        <div class="solution-context-head"><span>题目要求与说明</span><button class="solution-switch" type="button" @click="activeContent = 'problem'">← 返回题目描述</button></div>
+        <QuestionSolutionList question-type="DB" :question-id="id" />
+      </div>
     </template>
   </div>
 </template>
@@ -254,6 +261,10 @@ onMounted(async () => {
   flex-direction: column;
   gap: 20px;
 }
+.solution-switch { display:inline-flex; align-items:center; min-height:28px; padding:0; border:0; border-bottom:1px solid transparent; border-radius:0; background:transparent; color:var(--ink-secondary); font-size:13px; font-weight:600; cursor:pointer; }
+.solution-switch:hover { border-bottom-color:var(--ink); color:var(--ink); }
+.solution-content-wrap { display:flex; flex-direction:column; gap:10px; }
+.solution-context-head { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border:1px solid var(--line); background:var(--surface); font-size:15px; font-weight:700; }
 
 /* 状态加载卡片 */
 .state-card {

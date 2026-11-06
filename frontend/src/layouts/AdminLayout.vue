@@ -25,6 +25,7 @@ const navSections: NavSection[] = [
   { path: '/admin/practices', label: '随堂课练', icon: 'practice' },
   { path: '/admin/submissions', label: '提交监控', icon: 'monitor' },
   { path: '/admin/announcements', label: '公告管理', icon: 'announcement' },
+  { path: '/admin/solutions', label: '题解管理', icon: 'solution', adminOnly: true },
   { path: '/admin/users', label: '用户管理', icon: 'users', adminOnly: true },
 ]
 
@@ -105,6 +106,12 @@ function logout() {
           <svg v-else-if="s.icon === 'announcement'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
             <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          <svg v-else-if="s.icon === 'solution'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="8" y1="13" x2="16" y2="13" />
+            <line x1="8" y1="17" x2="13" y2="17" />
           </svg>
           <!-- 用户管理图标 -->
           <svg v-else-if="s.icon === 'users'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
