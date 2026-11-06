@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { examApi, type SessionEnter, type ExamStudentInfo } from '@/api/exam'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
+import { useCountdown } from '@/shared/composables/useCountdown'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,8 +26,14 @@ const studentForm = ref<ExamStudentInfo>({
   className: '',
 })
 
-let timer: number | null = null
-const remainingSec = ref<number | null>(null)
+const { remainingSec, isUrgent, start: startCountdown } = useCountdown({
+  onExpire: () => {
+    if (enter.value && enter.value.status !== 'ENDED') {
+      enter.value.status = 'ENDED'
+      info('考试时间已截止')
+    }
+  },
+})
 
 const objectiveQuestions = computed(() => {
   if (!enter.value) return []
@@ -115,11 +122,7 @@ async function fetchEnter() {
   try {
     const res = await examApi.enter(examId.value)
     enter.value = res
-    if (res.status === 'ENDED') {
-      remainingSec.value = 0
-    } else if (res.remainingSeconds !== undefined && res.remainingSeconds !== null) {
-      remainingSec.value = res.remainingSeconds
-    }
+    startCountdown(res.status === 'ENDED' ? null : res.remainingSeconds)
     if (res.studentInfo) {
       studentForm.value = {
         realName: res.studentInfo.realName || '',
@@ -132,7 +135,7 @@ async function fetchEnter() {
     if (res.requireStudentInfo && !res.hasFilledStudentInfo) {
       showStudentModal.value = true
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : '加载考试失败'
     if (msg.includes('已交卷')) {
       info('您已交卷，正在前往成绩战报…')
@@ -170,18 +173,6 @@ async function saveStudentInfoAction() {
   }
 }
 
-function startCountdown() {
-  timer = window.setInterval(() => {
-    if (remainingSec.value !== null && remainingSec.value > 0) {
-      remainingSec.value--
-      if (remainingSec.value === 0 && enter.value) {
-        enter.value.status = 'ENDED'
-        info('考试时间已截止')
-      }
-    }
-  }, 1000)
-}
-
 async function handleSubmitExam() {
   const ok = await confirm({
     title: '确认提交整场考试',
@@ -205,11 +196,6 @@ async function handleSubmitExam() {
 
 onMounted(async () => {
   await fetchEnter()
-  startCountdown()
-})
-
-onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
 })
 </script>
 
@@ -242,7 +228,7 @@ onBeforeUnmount(() => {
             v-if="enter.durationMinutes > 0"
             class="countdown-badge"
             :class="{
-              urgent: (remainingSec ?? 100) < 300 && enter.status !== 'ENDED',
+              urgent: isUrgent && enter.status !== 'ENDED',
               ended: enter.status === 'ENDED'
             }"
           >

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { databaseApi } from '@/api/database'
 import { examApi, type ExamSessionQuestion, type SessionEnter } from '@/api/exam'
-import type { DbQuestion, Submission, SubmissionStatus } from '@/types'
-import { STATUS_ABBR, statusTone } from '@/utils/submission'
+import { useSubmissionMonitor } from '@/features/judging/composables/useSubmissionMonitor'
+import type { DbQuestion, SubmissionStatus } from '@/types'
+import { STATUS_ABBR, isTerminal, statusTone } from '@/utils/submission'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,29 +16,22 @@ const submissionId = computed(() => Number(route.params.submissionId))
 
 const enter = ref<SessionEnter | null>(null)
 const examQuestion = ref<ExamSessionQuestion | null>(null)
-const submission = ref<Submission | null>(null)
 const question = ref<DbQuestion | null>(null)
-const loading = ref(true)
-const error = ref('')
-let pollTimer: number | null = null
+const examError = ref('')
 
-const TERMINAL_STATUSES: SubmissionStatus[] = [
-  'ACCEPTED',
-  'WRONG_ANSWER',
-  'TIME_LIMIT_EXCEEDED',
-  'MEMORY_LIMIT_EXCEEDED',
-  'RUNTIME_ERROR',
-  'COMPILE_ERROR',
-  'SYSTEM_ERROR',
-]
-
-function isTerminal(status: SubmissionStatus): boolean {
-  return TERMINAL_STATUSES.includes(status)
-}
-
-const isPolling = computed(() => {
-  return submission.value != null && !isTerminal(submission.value.status)
+const {
+  result: submission,
+  polling: isPolling,
+  error: submitError,
+} = useSubmissionMonitor({
+  submissionId,
+  fetcher: (id) => databaseApi.getSubmission(id),
+  isTerminal: (s) => isTerminal(s.status),
+  intervalMs: 1000,
 })
+
+const loading = computed(() => (!submission.value || !enter.value) && !error.value)
+const error = computed(() => submitError.value || examError.value)
 
 const progressPercent = computed(() => {
   const p = submission.value?.progress
@@ -106,68 +100,45 @@ const diffReports = computed(() =>
   reports.value.filter((r) => r.expectedRaw != null || r.actualRaw != null),
 )
 
-function startPolling(subId: number) {
-  stopPolling()
-  pollTimer = window.setInterval(async () => {
-    try {
-      const s = await databaseApi.getSubmission(subId)
-      submission.value = s
-      if (isTerminal(s.status)) {
-        stopPolling()
-      }
-    } catch {
-      stopPolling()
-    }
-  }, 1000)
-}
-
-function stopPolling() {
-  if (pollTimer != null) {
-    window.clearInterval(pollTimer)
-    pollTimer = null
-  }
-}
-
-async function loadData() {
-  loading.value = true
-  error.value = ''
+async function loadExamData() {
   try {
-    const res = await examApi.enter(examId.value)
-    enter.value = res
-
-    const eq = res.questions.find((item) => item.id === examQuestionId.value)
+    const e = await examApi.enter(examId.value)
+    enter.value = e
+    const eq = e.questions.find((q: ExamSessionQuestion) => q.id === examQuestionId.value)
     if (eq) {
       examQuestion.value = eq
-      question.value = await databaseApi.detail(eq.questionId)
+      try {
+        question.value = await databaseApi.detail(eq.questionId)
+      } catch {
+        /* 忽略 */
+      }
     }
-
-    const s = await databaseApi.getSubmission(submissionId.value)
-    submission.value = s
-
-    if (!isTerminal(s.status)) {
-      startPolling(submissionId.value)
-    }
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : '获取数据库测评结果失败'
-  } finally {
-    loading.value = false
+  } catch (err: unknown) {
+    examError.value = err instanceof Error ? err.message : '加载考试会话失败'
   }
 }
 
 function reEdit() {
-  router.push(`/exams/${examId.value}/db-question/${examQuestionId.value}/submit`)
+  router.push({
+    name: 'exam-db-question-submit',
+    params: { id: examId.value, examQuestionId: examQuestionId.value },
+  })
 }
 
 function backToQuestion() {
-  router.push(`/exams/${examId.value}/db-question/${examQuestionId.value}`)
+  router.push({
+    name: 'exam-db-question',
+    params: { id: examId.value, examQuestionId: examQuestionId.value },
+  })
 }
 
 function backToExam() {
-  router.push(`/exams/${examId.value}`)
+  router.push({ name: 'exam-session', params: { id: examId.value } })
 }
 
-onMounted(loadData)
-onBeforeUnmount(stopPolling)
+onMounted(() => {
+  loadExamData()
+})
 </script>
 
 <template>

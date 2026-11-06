@@ -6,7 +6,8 @@ import { ApiError } from '@/api/request'
 import FormField from '@/components/FormField.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import { useToast } from '@/composables/useToast'
-import type { Difficulty, TestCase } from '@/types'
+import { formatTestCaseBytes, useQuestionTestCases } from '@/features/questions/composables/useQuestionTestCases'
+import type { Difficulty } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -140,150 +141,34 @@ const formErrors = reactive({
   languages: '',
 })
 
-const testCaseCount = ref(0)
-const sampleCasesCount = ref(0)
-const totalDataBytes = ref(0)
-const testCases = ref<TestCase[]>([])
-const loadingCases = ref(false)
-const togglingCaseId = ref<number | null>(null)
-const settingSamples = ref(false)
-
-function formatBytes(bytes?: number): string {
-  if (!bytes || bytes <= 0) return '0 B'
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
-}
-
-async function loadTestCases() {
-  if (!questionId.value) return
-  loadingCases.value = true
-  try {
-    const list = await questionApi.listTestCases(questionId.value)
-    testCases.value = list || []
-    testCaseCount.value = testCases.value.length
-    sampleCasesCount.value = testCases.value.filter((c) => c.isSample === 1).length
-  } catch (err) {
-    console.error('加载测试点列表失败', err)
-  } finally {
-    loadingCases.value = false
-  }
-}
-
-async function toggleSample(item: TestCase) {
-  if (!questionId.value || togglingCaseId.value !== null) return
-  const targetSample = item.isSample === 1 ? false : true
-  togglingCaseId.value = item.id
-  try {
-    await questionApi.toggleTestCaseSample(questionId.value, item.id, targetSample)
-    item.isSample = targetSample ? 1 : 0
-    sampleCasesCount.value = testCases.value.filter((c) => c.isSample === 1).length
-    toast.success(`测试点 #${item.caseNum} 已${targetSample ? '设为' : '取消'}公开样例`)
-  } catch (err: any) {
-    toast.error(err.message || '修改样例状态失败')
-  } finally {
-    togglingCaseId.value = null
-  }
-}
-
-async function applySamplePreset(preset: 'first1' | 'first2' | 'all' | 'none') {
-  if (!questionId.value || testCases.value.length === 0 || settingSamples.value) return
-  settingSamples.value = true
-  let targetIds: number[] = []
-  if (preset === 'first1') {
-    targetIds = [testCases.value[0].id]
-  } else if (preset === 'first2') {
-    targetIds = testCases.value.slice(0, 2).map((c) => c.id)
-  } else if (preset === 'all') {
-    targetIds = testCases.value.map((c) => c.id)
-  } else if (preset === 'none') {
-    targetIds = []
-  }
-  try {
-    await questionApi.setSampleCaseIds(questionId.value, targetIds)
-    const targetSet = new Set(targetIds)
-    testCases.value.forEach((c) => {
-      c.isSample = targetSet.has(c.id) ? 1 : 0
-    })
-    sampleCasesCount.value = targetIds.length
-    toast.success('样例设置已生效')
-  } catch (err: any) {
-    toast.error(err.message || '更新样例设置失败')
-  } finally {
-    settingSamples.value = false
-  }
-}
-
-// === Zip 批量导入/导出状态与方法 ===
-const showZipModal = ref(false)
-const zipFile = ref<File | null>(null)
-const zipReplace = ref(true)
-const zipFirstAsSample = ref(true)
-const zipUploading = ref(false)
-const isZipDragOver = ref(false)
-
-function openZipModal() {
-  if (!questionId.value) {
-    toast.error('请先保存题目基本信息后再导入测试集 Zip')
-    return
-  }
-  zipFile.value = null
-  showZipModal.value = true
-}
-
-function handleZipFileSelect(e: Event) {
-  const target = e.target as HTMLInputElement
-  if (target.files && target.files.length > 0) {
-    zipFile.value = target.files[0]
-  }
-}
-
-function handleZipDrop(e: DragEvent) {
-  isZipDragOver.value = false
-  if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-    const f = e.dataTransfer.files[0]
-    if (f.name.toLowerCase().endsWith('.zip')) {
-      zipFile.value = f
-    } else {
-      toast.error('仅支持上传 .zip 格式的压缩包')
-    }
-  }
-}
-
-async function submitZipImport() {
-  if (!zipFile.value || !questionId.value || zipUploading.value) return
-  zipUploading.value = true
-  try {
-    const imported = await questionApi.importTestCasesZip(
-      questionId.value,
-      zipFile.value,
-      zipReplace.value,
-      zipFirstAsSample.value
-    )
-    toast.success(`成功导入 ${imported.length} 组测试点！`)
-    showZipModal.value = false
-    await loadQuestion()
-  } catch (err: any) {
-    toast.error(err instanceof ApiError ? err.message : (err?.message || 'Zip 导入失败，请检查文件格式或网络连接'))
-  } finally {
-    zipUploading.value = false
-  }
-}
-
-const zipExporting = ref(false)
-
-async function exportZip() {
-  if (!questionId.value || zipExporting.value) return
-  zipExporting.value = true
-  try {
-    await questionApi.exportTestCasesZip(questionId.value)
-    toast.success('测试点 Zip 导出成功')
-  } catch (err: any) {
-    toast.error(err.message || '导出 Zip 失败，请检查登录状态')
-  } finally {
-    zipExporting.value = false
-  }
-}
+const {
+  testCaseCount,
+  sampleCasesCount,
+  totalDataBytes,
+  testCases,
+  loadingCases,
+  togglingCaseId,
+  settingSamples,
+  showZipModal,
+  zipFile,
+  zipReplace,
+  zipFirstAsSample,
+  zipUploading,
+  isZipDragOver,
+  zipExporting,
+  refresh: refreshTestCases,
+  toggleSample,
+  applySamplePreset,
+  openZipModal,
+  handleZipFileSelect,
+  handleZipDrop,
+  submitZipImport,
+  exportZip,
+} = useQuestionTestCases({
+  questionId,
+  notify: toast,
+  onImportComplete: loadQuestion,
+})
 
 async function loadQuestion() {
   if (!questionId.value) return
@@ -303,11 +188,7 @@ async function loadQuestion() {
     } else {
       selectedLanguages.value = ['cpp', 'java', 'python', 'arkts']
     }
-    const summary = await questionApi.getTestCaseSummary(questionId.value)
-    testCaseCount.value = summary.totalCount || 0
-    sampleCasesCount.value = summary.sampleCount || 0
-    totalDataBytes.value = summary.totalBytes || 0
-    await loadTestCases()
+    await refreshTestCases()
   } catch (e) {
     pageError.value = e instanceof ApiError ? e.message : '加载失败，请稍后重试'
   } finally {
@@ -560,7 +441,7 @@ onMounted(() => {
           <div class="testcase-meta-line">
             <span>托管测试点：<strong>{{ testCaseCount }}</strong> 组</span>
             <span>公开样例：<strong>{{ sampleCasesCount }}</strong> 组</span>
-            <span v-if="totalDataBytes > 0">数据总体积：<strong>{{ formatBytes(totalDataBytes) }}</strong></span>
+            <span v-if="totalDataBytes > 0">数据总体积：<strong>{{ formatTestCaseBytes(totalDataBytes) }}</strong></span>
           </div>
           <p class="muted testcase-desc">
             测试点数据已统一由服务器文件系统直接托管。为提升后台响应与编辑性能，页面不展示详细用例文本；如需查看或编辑测试用例，请点击右上角「导出 Zip」下载数据包在本地查看，编辑后点击「导入 Zip」重新上传即可。
@@ -640,7 +521,7 @@ onMounted(() => {
                     {{ tc.isSample === 1 ? '公开样例' : '私有评测点' }}
                   </span>
                   <span class="sample-item-size muted">
-                    {{ formatBytes(tc.inputSize) }} / {{ formatBytes(tc.outputSize) }}
+                    {{ formatTestCaseBytes(tc.inputSize) }} / {{ formatTestCaseBytes(tc.outputSize) }}
                   </span>
                 </div>
 
@@ -699,7 +580,7 @@ onMounted(() => {
                 <div class="drop-hint muted">支持包含 .in 与 .out 测试数据的 .zip 压缩包</div>
               </div>
               <div v-else class="file-selected-box">
-                <span class="file-name">{{ zipFile.name }} ({{ formatBytes(zipFile.size) }})</span>
+                <span class="file-name">{{ zipFile.name }} ({{ formatTestCaseBytes(zipFile.size) }})</span>
                 <button class="btn btn-ghost btn-xs" type="button" @click.stop="zipFile = null">
                   重新选择
                 </button>

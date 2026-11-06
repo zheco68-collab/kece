@@ -494,7 +494,10 @@ onMounted(async () => {
             <div class="line-numbers mono" aria-hidden="true">
               <span v-for="n in totalLines" :key="n">{{ n }}</span>
             </div>
-            <pre class="code-view"><template v-if="!hasTriggeredScroll"><span class="waiting-hint mono">// 终端待命中 · 滚动进入视口自动启动沙箱...</span></template><template v-else><code v-html="highlightedCode"></code><span class="terminal-cursor" :class="{ typing: isTyping }"></span></template></pre>
+            <pre class="code-view"><template v-if="!hasTriggeredScroll"><span class="waiting-hint mono">// 终端待命中 · 滚动进入视口自动启动沙箱...</span></template><template v-else>
+              <!-- eslint-disable-next-line vue/no-v-html -- highlightedCode is Prism output from static local demo strings. -->
+              <code v-html="highlightedCode"></code><span class="terminal-cursor" :class="{ typing: isTyping }"></span>
+            </template></pre>
           </div>
         </div>
 

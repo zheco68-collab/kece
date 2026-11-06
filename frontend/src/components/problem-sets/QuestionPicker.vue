@@ -1,72 +1,64 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { adminApi } from '@/api/admin'
-import { ApiError } from '@/api/request'
+import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import Pagination from '@/components/Pagination.vue'
+import { useQuestionCandidates } from '@/shared/composables/useQuestionCandidates'
 import QuestionBadge from './QuestionBadge.vue'
 import type { QuestionCandidate } from './types'
 
 const props = defineProps<{ category: string; sectionNumber: number; selectedKeys: string[] }>()
 const emit = defineEmits<{ select: [question: QuestionCandidate] }>()
-const keyword = ref('')
-const page = ref(1)
-const size = 12
-const total = ref(0)
-const items = ref<QuestionCandidate[]>([])
-const loading = ref(true)
-const error = ref('')
+
 const expanded = ref(new Set<number>())
 const selected = computed(() => new Set(props.selectedKeys))
 const categoryName = computed(() => ({ ALGO: '算法编程题', DB: '数据库 SQL 题', OBJECTIVE: '标准客观题' })[props.category] || '题目')
-let requestId = 0
+
+const {
+  keyword,
+  page,
+  size,
+  total,
+  candidates: items,
+  loading,
+  error,
+  load,
+  cleanup,
+} = useQuestionCandidates({
+  category: toRef(props, 'category'),
+  defaultSize: 12,
+})
+
 let timer: ReturnType<typeof setTimeout> | undefined
 
-async function load() {
-  clearTimeout(timer)
-  const request = ++requestId
-  loading.value = true
-  error.value = ''
-  expanded.value.clear()
-  try {
-    const input = keyword.value.trim()
-    const match = /^#?([1-9]\d*)$/.exec(input)
-    const id = match ? Number(match[1]) : undefined
-    if (id !== undefined && !Number.isSafeInteger(id)) throw new Error('题号超出有效范围')
-    const params = { id, keyword: id === undefined ? input || undefined : undefined, page: page.value, size }
-    let result: { list: QuestionCandidate[]; total: number }
-    if (props.category === 'ALGO') {
-      const response = await adminApi.listQuestions(params)
-      result = { total: response.total, list: response.list.map(q => ({ questionType: 'ALGO', questionId: q.id, title: q.title, difficulty: q.difficulty })) }
-    } else if (props.category === 'DB') {
-      const response = await adminApi.listDbQuestions(params)
-      result = { total: response.total, list: response.list.map(q => ({ questionType: 'DB', questionId: q.id, title: q.title, difficulty: q.type })) }
-    } else {
-      const response = await adminApi.listObjectiveQuestions(params)
-      result = { total: response.total, list: response.list.map(q => ({ questionType: 'OBJECTIVE', questionId: q.id, title: q.content || `客观题 #${q.id}`, difficulty: q.type })) }
-    }
-    if (request !== requestId) return
-    items.value = result.list
-    total.value = result.total
-  } catch (cause) {
-    if (request !== requestId) return
-    error.value = cause instanceof ApiError || cause instanceof Error ? cause.message : '检索失败，请重试'
-    items.value = []
-  } finally {
-    if (request === requestId) loading.value = false
-  }
-}
-
 watch(keyword, () => {
-  requestId++
   loading.value = true
   page.value = 1
   clearTimeout(timer)
-  timer = setTimeout(load, 300)
+  timer = setTimeout(() => {
+    expanded.value.clear()
+    void load()
+  }, 300)
 })
-watch(() => props.category, () => { page.value = 1; load() }, { immediate: true })
-function goPage(value: number) { page.value = value; load() }
-function togglePreview(id: number) { if (expanded.value.has(id)) expanded.value.delete(id); else expanded.value.add(id) }
-onBeforeUnmount(() => { requestId++; clearTimeout(timer) })
+
+watch(() => props.category, () => {
+  page.value = 1
+  expanded.value.clear()
+  void load()
+}, { immediate: true })
+
+function goPage(value: number) {
+  expanded.value.clear()
+  void load(undefined, value)
+}
+
+function togglePreview(id: number) {
+  if (expanded.value.has(id)) expanded.value.delete(id)
+  else expanded.value.add(id)
+}
+
+onBeforeUnmount(() => {
+  clearTimeout(timer)
+  cleanup()
+})
 </script>
 
 <template>
@@ -81,7 +73,7 @@ onBeforeUnmount(() => { requestId++; clearTimeout(timer) })
 
     <div class="picker-results" :aria-busy="loading">
       <div v-if="loading" class="picker-state" role="status">正在加载题目…</div>
-      <div v-else-if="error" class="picker-state" role="alert">{{ error }}<button class="btn btn-ghost" type="button" @click="load">重试</button></div>
+      <div v-else-if="error" class="picker-state" role="alert">{{ error }}<button class="btn btn-ghost" type="button" @click="load()">重试</button></div>
       <div v-else-if="items.length === 0" class="picker-state">没有找到题目，请换个题号或关键词。</div>
       <div v-else class="candidate-list">
         <article v-for="item in items" :key="`${item.questionType}-${item.questionId}`" class="candidate-row">

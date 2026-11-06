@@ -1109,6 +1109,7 @@ onMounted(() => {
           </div>
 
           <div class="modal-body obj-modal-body">
+            <!-- eslint-disable-next-line vue/no-v-html -- renderMarkdown sanitizes question Markdown with DOMPurify. -->
             <div class="obj-content-box prose" v-html="renderMarkdown(objSelected.questionContent)"></div>
             <div class="obj-answer-details mono">
               <div class="ans-row">

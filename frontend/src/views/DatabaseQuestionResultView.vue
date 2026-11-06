@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { databaseApi } from '@/api/database'
-import type { DbQuestion, Submission, SubmissionStatus } from '@/types'
-import { STATUS_ABBR, statusTone } from '@/utils/submission'
+import { useSubmissionMonitor } from '@/features/judging/composables/useSubmissionMonitor'
+import { useQuestionNavContext } from '@/features/questions/composables/useQuestionNavContext'
+import type { DbQuestion, SubmissionStatus } from '@/types'
+import { STATUS_ABBR, isTerminal, statusTone } from '@/utils/submission'
 
 const route = useRoute()
 const router = useRouter()
 
 const submissionId = computed(() => {
-  return Number(route.params.submissionId || route.params.id)
+  const raw = route.params.submissionId || route.params.id
+  return raw ? Number(raw) : null
 })
 
 const questionId = computed(() => {
@@ -22,29 +25,35 @@ const questionId = computed(() => {
   return 0
 })
 
-const submission = ref<Submission | null>(null)
 const question = ref<DbQuestion | null>(null)
-const loading = ref(true)
-const error = ref('')
-let pollTimer: number | null = null
+const { setId: fromSetId, practiceCode, contextQuery } = useQuestionNavContext()
 
-const TERMINAL_STATUSES: SubmissionStatus[] = [
-  'ACCEPTED',
-  'WRONG_ANSWER',
-  'TIME_LIMIT_EXCEEDED',
-  'MEMORY_LIMIT_EXCEEDED',
-  'RUNTIME_ERROR',
-  'COMPILE_ERROR',
-  'SYSTEM_ERROR',
-]
-
-function isTerminal(status: SubmissionStatus): boolean {
-  return TERMINAL_STATUSES.includes(status)
-}
-
-const isPolling = computed(() => {
-  return submission.value != null && !isTerminal(submission.value.status)
+const {
+  result: submission,
+  polling: isPolling,
+  error,
+} = useSubmissionMonitor({
+  submissionId,
+  fetcher: (id) => databaseApi.getSubmission(id),
+  isTerminal: (s) => isTerminal(s.status),
+  intervalMs: 1000,
 })
+
+const loading = computed(() => !submission.value && !error.value)
+
+watch(
+  questionId,
+  async (newQId) => {
+    if (newQId > 0) {
+      try {
+        question.value = await databaseApi.detail(newQId, practiceCode.value || undefined)
+      } catch {
+        /* 忽略 */
+      }
+    }
+  },
+  { immediate: true },
+)
 
 const progressPercent = computed(() => {
   const p = submission.value?.progress
@@ -113,77 +122,8 @@ const diffReports = computed(() =>
   reports.value.filter((r) => r.expectedRaw != null || r.actualRaw != null),
 )
 
-function startPolling(subId: number) {
-  stopPolling()
-  pollTimer = window.setInterval(async () => {
-    try {
-      const s = await databaseApi.getSubmission(subId)
-      submission.value = s
-      if (isTerminal(s.status)) stopPolling()
-    } catch {
-      stopPolling()
-    }
-  }, 1000)
-}
-
-function stopPolling() {
-  if (pollTimer != null) {
-    window.clearInterval(pollTimer)
-    pollTimer = null
-  }
-}
-
-async function loadData() {
-  loading.value = true
-  error.value = ''
-  try {
-    const s = await databaseApi.getSubmission(submissionId.value)
-    submission.value = s
-
-    if (!isTerminal(s.status)) {
-      startPolling(submissionId.value)
-    }
-
-    if (questionId.value > 0) {
-      try {
-        question.value = await databaseApi.detail(questionId.value, practiceCode.value || undefined)
-      } catch {
-        /* 忽略 */
-      }
-    }
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : '获取评测结果失败'
-  } finally {
-    loading.value = false
-  }
-}
-
-const fromSetId = computed(() => {
-  const s = route.query.setId
-  return s ? String(s) : null
-})
-
-const practiceCode = computed(() => {
-  const c = route.query.practiceCode
-  return c ? String(c).toUpperCase() : null
-})
-
-const pqId = computed(() => {
-  const p = route.query.pqId
-  return p ? String(p) : null
-})
-
 function buildContextQuery(): Record<string, string> | undefined {
-  const query: Record<string, string> = {}
-  if (fromSetId.value) {
-    query.setId = fromSetId.value
-    if (route.query.itemId) query.itemId = String(route.query.itemId)
-  }
-  if (practiceCode.value) {
-    query.practiceCode = practiceCode.value
-    if (pqId.value) query.pqId = pqId.value
-  }
-  return Object.keys(query).length ? query : undefined
+  return Object.keys(contextQuery.value).length ? contextQuery.value : undefined
 }
 
 function reEdit() {
@@ -211,9 +151,6 @@ function backToPractice() {
     router.push(`/practice/${practiceCode.value}`)
   }
 }
-
-onMounted(loadData)
-onBeforeUnmount(stopPolling)
 </script>
 
 <template>

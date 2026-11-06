@@ -48,8 +48,12 @@ function sessionStatusClass(status: string | null): string {
   return 'status-upcoming';
 }
 
-function exportBlankDoc(examId: number) {
-  examApi.downloadWord(examId);
+async function exportBlankDoc(examId: number) {
+  try {
+    await examApi.downloadWord(examId);
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '导出空白试卷失败，请重试');
+  }
 }
 
 const exportingBatchExamId = ref<number | null>(null);
@@ -60,8 +64,8 @@ async function handleExportBatchDoc(examId: number, examTitle: string) {
   try {
     await examApi.downloadBatchWord(examId);
     toast.success(`考试「${examTitle}」学生试卷导出成功！`);
-  } catch (e: any) {
-    toast.error(e?.message || '批量导出试卷失败，请稍后重试');
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '批量导出试卷失败，请稍后重试');
   } finally {
     exportingBatchExamId.value = null;
   }

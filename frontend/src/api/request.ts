@@ -14,14 +14,16 @@ export interface ApiResponse<T = unknown> {
   timestamp: number
 }
 
-/** 携带业务错误码的异常，供调用方按 code 区分处理。 */
+/** 携带业务错误码与 HTTP 状态码的异常，供调用方按 code / status 区分处理。 */
 export class ApiError extends Error {
   code: number
+  status?: number
 
-  constructor(code: number, message: string) {
+  constructor(code: number, message: string, status?: number) {
     super(message)
     this.name = 'ApiError'
     this.code = code
+    this.status = status
   }
 }
 
@@ -30,33 +32,133 @@ const request: AxiosInstance = axios.create({
   timeout: 15000,
 })
 
+// 跨 Tab 登出广播机制
+export const authChannel =
+  typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('kece_auth_channel') : null
+
+export function notifyCrossTabLogout(): void {
+  try {
+    authChannel?.postMessage({ type: 'LOGOUT' })
+  } catch {
+    // 忽略不支持或已关闭错误
+  }
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('kece:logout_event', String(Date.now()))
+    }
+  } catch {
+    // 忽略存储限制错误
+  }
+}
+
 // 请求拦截：附加 JWT
 request.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const userStore = useUserStore()
-    if (userStore.token) {
-      config.headers.Authorization = `Bearer ${userStore.token}`
+    try {
+      const userStore = useUserStore()
+      if (userStore.token) {
+        config.headers.Authorization = `Bearer ${userStore.token}`
+      }
+    } catch {
+      // 允许在 store 初始化前或纯环境测试中降级
     }
     return config
   },
   (error) => Promise.reject(error),
 )
 
-// 无感刷新令牌控制状态与并发队列
-let isRefreshing = false
-let refreshSubscribers: Array<(token: string) => void> = []
+// Single-flight 刷新状态锁与等待者队列
+let refreshPromise: Promise<string> | null = null
+let refreshSubscribers: Array<{
+  resolve: (token: string) => void
+  reject: (err: unknown) => void
+}> = []
 
-function onRefreshed(newToken: string) {
-  refreshSubscribers.forEach((cb) => cb(newToken))
-  refreshSubscribers = []
-}
+async function getValidAccessToken(refreshToken: string): Promise<string> {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const refreshRes = await axios.post<ApiResponse<AuthResult>>(
+          '/api/v1/auth/refresh',
+          { refreshToken },
+          { timeout: 10000 },
+        )
+        if (refreshRes.data?.code === 200 && refreshRes.data.data?.token) {
+          const newAuth = refreshRes.data.data
+          try {
+            const userStore = useUserStore()
+            userStore.setAuth(newAuth)
+          } catch {
+            // store 未激活时忽略
+          }
+          const newToken = newAuth.token
+          refreshSubscribers.forEach((cb) => cb.resolve(newToken))
+          return newToken
+        }
+        const err = new ApiError(
+          refreshRes.data?.code || 4002,
+          refreshRes.data?.message || '会话已过期，请重新登录',
+          refreshRes.status,
+        )
+        throw err
+      } catch (err) {
+        refreshSubscribers.forEach((cb) => cb.reject(err))
+        try {
+          const userStore = useUserStore()
+          userStore.clearAuth()
+        } catch {
+          // store 未激活时忽略
+        }
+        notifyCrossTabLogout()
+        throw err
+      } finally {
+        refreshSubscribers = []
+        refreshPromise = null
+      }
+    })()
+    return refreshPromise
+  }
 
-function onRefreshFailed() {
-  refreshSubscribers = []
+  return new Promise((resolve, reject) => {
+    refreshSubscribers.push({ resolve, reject })
+  })
 }
 
 interface CustomRequestConfig extends AxiosRequestConfig {
   _retry?: boolean
+}
+
+async function handleTokenExpiredRetry(originalConfig: CustomRequestConfig): Promise<unknown> {
+  let refreshToken: string | null = null
+  try {
+    const userStore = useUserStore()
+    refreshToken = userStore.refreshToken
+  } catch {
+    // 忽略
+  }
+
+  const isAuthUrl =
+    !!originalConfig.url &&
+    (originalConfig.url.includes('/auth/login') ||
+      originalConfig.url.includes('/auth/register') ||
+      originalConfig.url.includes('/auth/refresh'))
+
+  if (!refreshToken || isAuthUrl || originalConfig._retry) {
+    try {
+      const userStore = useUserStore()
+      userStore.clearAuth()
+    } catch {
+      // 忽略
+    }
+    notifyCrossTabLogout()
+    throw new ApiError(4002, '登录已过期，请重新登录')
+  }
+
+  originalConfig._retry = true
+  const newToken = await getValidAccessToken(refreshToken)
+  originalConfig.headers = originalConfig.headers ?? {}
+  originalConfig.headers.Authorization = `Bearer ${newToken}`
+  return request(originalConfig)
 }
 
 // 响应拦截：解包统一响应体与自动刷新 Token
@@ -68,74 +170,12 @@ request.interceptors.response.use(
         return body.data as never
       }
 
-      const originalConfig = response.config as CustomRequestConfig
-
-      // 4002 代表 Token 过期或未登录
       if (body.code === 4002) {
-        const userStore = useUserStore()
-        const isAuthUrl =
-          originalConfig.url?.includes('/auth/login') ||
-          originalConfig.url?.includes('/auth/register') ||
-          originalConfig.url?.includes('/auth/refresh')
-
-        if (!userStore.refreshToken || isAuthUrl || originalConfig._retry) {
-          userStore.clearAuth()
-          return Promise.reject(new ApiError(body.code, body.message || '登录已过期，请重新登录'))
-        }
-
-        originalConfig._retry = true
-
-        if (!isRefreshing) {
-          isRefreshing = true
-          try {
-            // 使用原生 axios 请求 refresh 接口，避免拦截器死循环
-            const refreshRes = await axios.post<ApiResponse<AuthResult>>(
-              '/api/v1/auth/refresh',
-              {
-                refreshToken: userStore.refreshToken,
-              },
-              { timeout: 10000 },
-            )
-
-            if (refreshRes.data?.code === 200 && refreshRes.data.data) {
-              const newAuth = refreshRes.data.data
-              userStore.setAuth(newAuth)
-              onRefreshed(newAuth.token)
-
-              originalConfig.headers = originalConfig.headers ?? {}
-              originalConfig.headers.Authorization = `Bearer ${newAuth.token}`
-              return (await request(originalConfig)) as never
-            } else {
-              userStore.clearAuth()
-              onRefreshFailed()
-              return Promise.reject(
-                new ApiError(refreshRes.data?.code || 4002, refreshRes.data?.message || '会话已过期'),
-              )
-            }
-          } catch (err) {
-            userStore.clearAuth()
-            onRefreshFailed()
-            return Promise.reject(err)
-          } finally {
-            isRefreshing = false
-          }
-        }
-
-        // 正在刷新中，加入等待队列
-        return new Promise((resolve, reject) => {
-          refreshSubscribers.push(async (newToken: string) => {
-            try {
-              originalConfig.headers = originalConfig.headers ?? {}
-              originalConfig.headers.Authorization = `Bearer ${newToken}`
-              resolve(await request(originalConfig))
-            } catch (err) {
-              reject(err)
-            }
-          })
-        })
+        const originalConfig = response.config as CustomRequestConfig
+        return (await handleTokenExpiredRetry(originalConfig)) as never
       }
 
-      return Promise.reject(new ApiError(body.code, body.message || '请求失败'))
+      return Promise.reject(new ApiError(body.code, body.message || '请求失败', response.status))
     }
     return response.data as never
   },
@@ -144,45 +184,23 @@ request.interceptors.response.use(
     const responseData = error?.response?.data
     const status = error?.response?.status
 
-    // 如果后端携带 ApiResponse 结构
+    const is4002 =
+      (responseData && typeof responseData === 'object' && responseData.code === 4002) ||
+      status === 401
+
+    if (is4002 && originalConfig && !originalConfig._retry) {
+      return (await handleTokenExpiredRetry(originalConfig)) as never
+    }
+
     if (responseData && typeof responseData === 'object' && 'code' in responseData) {
-      if (responseData.code === 4002 && originalConfig && !originalConfig._retry) {
-        const userStore = useUserStore()
-        if (userStore.refreshToken && !originalConfig.url?.includes('/auth/')) {
-          originalConfig._retry = true
-          if (!isRefreshing) {
-            isRefreshing = true
-            try {
-              const refreshRes = await axios.post<ApiResponse<AuthResult>>(
-                '/api/v1/auth/refresh',
-                {
-                  refreshToken: userStore.refreshToken,
-                },
-                { timeout: 10000 },
-              )
-              if (refreshRes.data?.code === 200 && refreshRes.data.data) {
-                const newAuth = refreshRes.data.data
-                userStore.setAuth(newAuth)
-                onRefreshed(newAuth.token)
-                originalConfig.headers = originalConfig.headers ?? {}
-                originalConfig.headers.Authorization = `Bearer ${newAuth.token}`
-                return (await request(originalConfig)) as never
-              }
-            } catch {
-              userStore.clearAuth()
-              onRefreshFailed()
-            } finally {
-              isRefreshing = false
-            }
-          }
-        }
-      }
-      return Promise.reject(new ApiError(responseData.code, responseData.message || '服务器业务异常'))
+      return Promise.reject(
+        new ApiError(responseData.code, responseData.message || '服务器业务异常', status),
+      )
     }
 
     const code = status ?? 5000
     const message = error?.message || '网络连接异常，请检查网络'
-    return Promise.reject(new ApiError(code, message))
+    return Promise.reject(new ApiError(code, message, status))
   },
 )
 

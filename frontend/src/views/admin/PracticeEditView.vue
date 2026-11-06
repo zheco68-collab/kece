@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { adminApi } from '@/api/admin'
 import { practiceApi } from '@/api/practice'
 import { ApiError } from '@/api/request'
+import Pagination from '@/components/Pagination.vue'
 import { useToast } from '@/composables/useToast'
+import { useQuestionCandidates } from '@/shared/composables/useQuestionCandidates'
 import { useUserStore } from '@/stores/user'
-import type { DbQuestion, ObjectiveQuestion, Question } from '@/types'
 import type { PracticeQuestionItem } from '@/types/practice'
 
 const route = useRoute()
@@ -18,7 +18,6 @@ const userStore = useUserStore()
 const isAdmin = computed(() => userStore.hasRole('ADMIN'))
 
 const submitting = ref(false)
-const listLoading = ref(false)
 const pageError = ref('')
 
 const form = reactive({
@@ -50,10 +49,20 @@ const batchPracScore = ref(20)
 // ---- 题库选取 ----
 type PickTab = 'SINGLE' | 'JUDGE' | 'MULTIPLE' | 'FILL' | 'DB' | 'ALGO' | 'ALL_OBJ'
 const tab = ref<PickTab>('SINGLE')
-const tabKeyword = ref('')
-const algoList = ref<Question[]>([])
-const dbList = ref<DbQuestion[]>([])
-const objList = ref<ObjectiveQuestion[]>([])
+const {
+  keyword: tabKeyword,
+  page: candidatePage,
+  size: candidatePageSize,
+  total: candidateTotal,
+  candidates,
+  loading: listLoading,
+  error: candidateError,
+  load: loadCandidates,
+  cleanup: cleanupCandidates,
+} = useQuestionCandidates({
+  category: tab,
+  defaultSize: 20,
+})
 
 const typeTabs: Array<{ value: PickTab; label: string }> = [
   { value: 'SINGLE', label: '单选题' },
@@ -85,25 +94,7 @@ function getItemBadge(diffOrType?: string, qType?: 'ALGO' | 'DB' | 'OBJECTIVE') 
 }
 
 async function loadSource() {
-  listLoading.value = true
-  try {
-    const keyword = tabKeyword.value.trim() || undefined
-    if (tab.value === 'ALGO') {
-      algoList.value = (await adminApi.listQuestions({ keyword, page: 1, size: 100 })).list
-    } else if (tab.value === 'DB') {
-      dbList.value = (await adminApi.listDbQuestions({ keyword, page: 1, size: 100 })).list
-    } else if (tab.value === 'ALL_OBJ') {
-      objList.value = (await adminApi.listObjectiveQuestions({ keyword, page: 1, size: 100 })).list
-    } else {
-      objList.value = (
-        await adminApi.listObjectiveQuestions({ type: tab.value, keyword, page: 1, size: 100 })
-      ).list
-    }
-  } catch {
-    pageError.value = '加载题库失败，请稍后重试'
-  } finally {
-    listLoading.value = false
-  }
+  await loadCandidates(tab.value, 1)
 }
 
 let tabKeywordTimer: ReturnType<typeof setTimeout> | null = null
@@ -112,6 +103,11 @@ watch(tabKeyword, () => {
   tabKeywordTimer = setTimeout(loadSource, 260)
 })
 watch(tab, loadSource)
+
+onBeforeUnmount(() => {
+  if (tabKeywordTimer !== null) clearTimeout(tabKeywordTimer)
+  cleanupCandidates()
+})
 
 interface SourceRowItem {
   id: number
@@ -123,36 +119,21 @@ interface SourceRowItem {
 }
 
 function sourceRows(): SourceRowItem[] {
-  if (tab.value === 'ALGO') {
-    return algoList.value.map((q) => ({
-      id: q.id,
-      label: q.title,
-      type: 'ALGO',
-      difficulty: q.difficulty || 'MEDIUM',
-      defaultScore: 20,
-    }))
-  }
-  if (tab.value === 'DB') {
-    return dbList.value.map((q) => ({
-      id: q.id,
-      label: q.title,
-      type: 'DB',
-      difficulty: q.type || 'SELECT',
-      defaultScore: 20,
-    }))
-  }
-  return objList.value.map((q) => {
-    const text = q.content.length > 56 ? `${q.content.slice(0, 56)}…` : q.content
-    const defaultScore = q.score || (q.type === 'JUDGE' ? 2 : 5)
-    return {
-      id: q.id,
-      label: text,
-      type: 'OBJECTIVE',
-      objectiveType: q.type as 'SINGLE' | 'MULTIPLE' | 'JUDGE' | 'FILL',
-      difficulty: q.type || 'SINGLE',
-      defaultScore,
-    }
-  })
+  return candidates.value.map((candidate) => ({
+    id: candidate.id,
+    label:
+      candidate.type === 'OBJECTIVE' && candidate.title.length > 56
+        ? `${candidate.title.slice(0, 56)}…`
+        : candidate.title,
+    type: candidate.type,
+    objectiveType: candidate.subType,
+    difficulty: candidate.difficulty || candidate.subType || 'MEDIUM',
+    defaultScore: candidate.defaultScore ?? (candidate.subType === 'JUDGE' ? 2 : 5),
+  }))
+}
+
+function goCandidatePage(nextPage: number) {
+  void loadCandidates(undefined, nextPage)
 }
 
 function isSelected(row: SourceRowItem): boolean {
@@ -504,6 +485,10 @@ onMounted(async () => {
           <span class="loading-spin"></span>
           <span>正在加载题库…</span>
         </div>
+        <div v-else-if="candidateError" class="loading-box muted">
+          <span>{{ candidateError }}</span>
+          <button type="button" class="btn btn-ghost btn-sm" @click="loadSource">重试</button>
+        </div>
         <ul v-else class="bank-list">
           <li
             v-for="row in sourceRows()"
@@ -543,6 +528,15 @@ onMounted(async () => {
             }}
           </li>
         </ul>
+        <Pagination
+          v-if="candidateTotal > candidatePageSize"
+          compact
+          :page="candidatePage"
+          :size="candidatePageSize"
+          :total="candidateTotal"
+          :disabled="listLoading"
+          @update:page="goCandidatePage"
+        />
       </section>
 
       <!-- 右栏：实时试卷结构预览与赋分台 -->

@@ -17,6 +17,31 @@ import { LANGUAGE_LABELS, STATUS_ABBR, statusTone } from '@/utils/submission';
 type TabKey = 'code' | 'database' | 'objective';
 type CorrectFilter = '' | '1' | '0';
 
+/**
+ * 三类提交列表共享的展示契约。专有字段保持可选，避免因切换标签把不同
+ * API 行数组退化为 any；打开详情时再通过类型守卫收窄为对应的完整记录。
+ */
+type SubmissionTableRow = {
+  submissionId: number;
+  userId: number;
+  username: string;
+  questionId: number;
+  questionTitle: string | null;
+  score: number | null;
+  createdAt: string;
+  status?: string;
+  language?: string;
+  codeContent?: string;
+  timeUsedMs?: number | null;
+  memoryUsedKb?: number | null;
+  sqlContent?: string;
+  type?: string;
+  answer?: string;
+  correct?: number;
+  correctAnswer?: string;
+  fullScore?: number | null;
+};
+
 const activeTab = ref<TabKey>('code');
 const size = 20;
 
@@ -108,7 +133,7 @@ const currentColumns = () =>
     : activeTab.value === 'database'
       ? dbColumns
       : objColumns;
-const currentRows = () =>
+const currentRows = (): SubmissionTableRow[] =>
   activeTab.value === 'code'
     ? codeRows.value
     : activeTab.value === 'database'
@@ -281,7 +306,7 @@ const OBJECTIVE_TYPE_LABELS: Record<string, string> = {
   FILL: '填空',
 };
 
-function formatMemory(kb: number | null): string {
+function formatMemory(kb: number | null | undefined): string {
   if (kb == null) return '-';
   if (kb < 1024) return `${kb}KB`;
   const mb = kb / 1024;
@@ -296,7 +321,7 @@ const REJUDGE_HINT =
   '重判将使用题目当前的数据（用例/时限/答案），结果可能与原结果不同；已通过的标记会暂时消失。确认重判？';
 
 /** 单条重判：按当前 tab 调用对应接口，成功刷新列表。 */
-async function rejudgeRow(row: CodeSubmissionRow | DbSubmissionRow | ObjectiveSubmissionRow) {
+async function rejudgeRow(row: SubmissionTableRow) {
   const ok = await confirm({ title: '重判该提交', message: REJUDGE_HINT, confirmText: '重判' });
   if (!ok) return;
   try {
@@ -371,14 +396,42 @@ async function copyText(text: string) {
   }
 }
 
-function openViewModal(row: CodeSubmissionRow | DbSubmissionRow | ObjectiveSubmissionRow) {
-  if (activeTab.value === 'code') {
-    selectedCodeRow.value = row as CodeSubmissionRow;
-  } else if (activeTab.value === 'database') {
-    selectedDbRow.value = row as DbSubmissionRow;
-  } else {
-    selectedObjRow.value = row as ObjectiveSubmissionRow;
+function isCodeSubmissionRow(row: SubmissionTableRow): row is CodeSubmissionRow {
+  return (
+    typeof row.language === 'string' &&
+    typeof row.codeContent === 'string' &&
+    typeof row.status === 'string' &&
+    typeof row.memoryUsedKb === 'number'
+  );
+}
+
+function isDbSubmissionRow(row: SubmissionTableRow): row is DbSubmissionRow {
+  return typeof row.sqlContent === 'string' && typeof row.status === 'string';
+}
+
+function isObjectiveSubmissionRow(row: SubmissionTableRow): row is ObjectiveSubmissionRow {
+  return (
+    typeof row.type === 'string' &&
+    typeof row.correct === 'number' &&
+    typeof row.answer === 'string' &&
+    typeof row.correctAnswer === 'string'
+  );
+}
+
+function openViewModal(row: SubmissionTableRow) {
+  if (activeTab.value === 'code' && isCodeSubmissionRow(row)) {
+    selectedCodeRow.value = row;
+    return;
   }
+  if (activeTab.value === 'database' && isDbSubmissionRow(row)) {
+    selectedDbRow.value = row;
+    return;
+  }
+  if (activeTab.value === 'objective' && isObjectiveSubmissionRow(row)) {
+    selectedObjRow.value = row;
+    return;
+  }
+  error('提交记录类型不匹配，请刷新页面后重试');
 }
 
 onMounted(() => {
@@ -471,11 +524,11 @@ onBeforeUnmount(() => {
       <template #cell-status="{ row }">
         <span
           class="status-badge clickable"
-          :class="statusTone(row.status as SubmissionStatus)"
+          :class="statusTone((row.status ?? 'SYSTEM_ERROR') as SubmissionStatus)"
           :title="activeTab === 'code' ? '点击查看代码' : '点击查看 SQL'"
           @click="openViewModal(row)"
         >
-          {{ STATUS_ABBR[row.status as SubmissionStatus] ?? row.status }}
+          {{ STATUS_ABBR[(row.status ?? 'SYSTEM_ERROR') as SubmissionStatus] ?? row.status ?? '—' }}
         </span>
       </template>
       <template #cell-score="{ row }">
@@ -488,7 +541,7 @@ onBeforeUnmount(() => {
         <span class="mono">{{ formatMemory(row.memoryUsedKb) }}</span>
       </template>
       <template #cell-language="{ row }">
-        <span>{{ LANGUAGE_LABELS[row.language] ?? row.language }}</span>
+        <span>{{ LANGUAGE_LABELS[row.language ?? ''] ?? row.language ?? '—' }}</span>
       </template>
       <template #cell-correct="{ row }">
         <span
@@ -501,7 +554,7 @@ onBeforeUnmount(() => {
         </span>
       </template>
       <template #cell-type="{ row }">
-        <span>{{ OBJECTIVE_TYPE_LABELS[row.type] ?? row.type }}</span>
+        <span>{{ OBJECTIVE_TYPE_LABELS[row.type ?? ''] ?? row.type ?? '—' }}</span>
       </template>
       <template #cell-questionTitle="{ row }">
         <span class="q-title">{{ row.questionTitle || '—' }}</span>

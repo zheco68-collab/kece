@@ -194,11 +194,7 @@ onMounted(loadDetail)
             <h1 class="set-title">{{ detail.title }}</h1>
             <div v-if="detail.subtitle" class="set-subtitle">{{ detail.subtitle }}</div>
             <!-- eslint-disable-next-line vue/no-v-html -- 内容已由 renderMarkdown 清洗 -->
-            <div
-              v-if="detail.description"
-              class="set-desc markdown-body"
-              v-html="descriptionHtml"
-            ></div>
+            <div v-if="detail.description" class="set-desc markdown-body" v-html="descriptionHtml"></div>
 
             <div v-if="detail.tags && detail.tags.length > 0" class="tag-row">
               <span v-for="t in detail.tags" :key="t" class="tag-chip"># {{ t }}</span>

@@ -6,6 +6,8 @@ import { questionApi } from '@/api/question'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import CodeEditor from '@/components/CodeEditor.vue'
+import { useCodeDraft } from '@/features/questions/composables/useCodeDraft'
+import { useUserStore } from '@/stores/user'
 import type { Question } from '@/types'
 import {
   DIFFICULTY_LABELS as difficultyLabels,
@@ -17,6 +19,7 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 const { info, success, error: toastError } = useToast()
 const { confirm } = useConfirm()
 
@@ -42,13 +45,21 @@ const codes = ref<Record<string, string>>({ ...TEMPLATES })
 const submitting = ref(false)
 const submitError = ref('')
 
-function getDraftKey(lang: string) {
+function getLegacyDraftKey(lang: string) {
   return `kece:exam_code:${examId.value}_${examQuestionId.value}_${lang}`
+}
+
+function draftStore(lang: string) {
+  const owner = userStore.userInfo?.id ?? 'anonymous'
+  return useCodeDraft({
+    targetKey: `kece:draft:${owner}:exam-algorithm:${examId.value}:${examQuestionId.value}:${lang}`,
+    legacyKeys: [getLegacyDraftKey(lang)],
+  })
 }
 
 function restoreDrafts() {
   for (const lang of SUPPORTED_LANGUAGES) {
-    const saved = localStorage.getItem(getDraftKey(lang))
+    const saved = draftStore(lang).getDraft()
     if (saved) {
       codes.value[lang] = saved
     }
@@ -77,7 +88,7 @@ watch(
   () => [codes.value[language.value], language.value],
   ([newCode, currLang]) => {
     if (newCode && currLang) {
-      localStorage.setItem(getDraftKey(currLang), newCode)
+      draftStore(currLang).saveDraft(newCode)
     }
   },
 )
@@ -92,7 +103,7 @@ async function resetTemplate() {
   })
   if (ok) {
     codes.value[language.value] = TEMPLATES[language.value] ?? ''
-    localStorage.removeItem(getDraftKey(language.value))
+    draftStore(language.value).clearDraft()
     info('已重置为初始模板')
   }
 }

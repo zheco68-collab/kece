@@ -1,6 +1,6 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends object">
 import { computed } from 'vue'
-import type { CSSProperties } from 'vue'
+import type { CSSProperties, VNodeChild } from 'vue'
 
 interface DataTableColumn {
   key: string
@@ -9,10 +9,15 @@ interface DataTableColumn {
   align?: 'left' | 'center' | 'right'
 }
 
+interface DataTableSlotProps<Row extends object> {
+  row: Row
+  index: number
+}
+
 const props = withDefaults(
   defineProps<{
     columns: DataTableColumn[]
-    rows: readonly any[]
+    rows: readonly T[]
     rowKey?: string
     loading?: boolean
     emptyText?: string
@@ -21,12 +26,12 @@ const props = withDefaults(
 )
 
 /**
- * 行类型交给使用方决定，这里用 any[] 承载，插槽作用域经 defineSlots 声明。
+ * 行类型由使用方的 rows 推导，插槽作用域保持同一行类型。
  * 单元格插槽名为 cell-<column.key>，提供时覆盖默认的 row[key] 渲染。
  */
 const slots = defineSlots<{
-  [key: `cell-${string}`]: (props: { row: any; index: number }) => any
-  actions?: (props: { row: any; index: number }) => any
+  [key: `cell-${string}`]: (props: DataTableSlotProps<T>) => VNodeChild
+  actions?: (props: DataTableSlotProps<T>) => VNodeChild
 }>()
 
 const colSpan = computed(() => props.columns.length + (slots.actions ? 1 : 0))
@@ -37,6 +42,17 @@ function columnStyle(col: DataTableColumn): CSSProperties {
 
 function cellStyle(col: DataTableColumn): CSSProperties {
   return { textAlign: col.align }
+}
+
+function cellValue(row: T, key: string): unknown {
+  return row[key as keyof T]
+}
+
+function rowKeyValue(row: T, rowKey: string, fallback: number): PropertyKey {
+  const value = cellValue(row, rowKey)
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'symbol'
+    ? value
+    : fallback
 }
 </script>
 
@@ -57,9 +73,9 @@ function cellStyle(col: DataTableColumn): CSSProperties {
           <td :colspan="colSpan" class="state-cell state-empty">{{ emptyText }}</td>
         </tr>
         <template v-else>
-          <tr v-for="(row, index) in rows" :key="row[rowKey] ?? index">
+          <tr v-for="(row, index) in rows" :key="rowKeyValue(row, rowKey, index)">
             <td v-for="col in columns" :key="col.key" :style="cellStyle(col)">
-              <slot :name="`cell-${col.key}`" :row="row" :index="index">{{ row[col.key] }}</slot>
+              <slot :name="`cell-${col.key}`" :row="row" :index="index">{{ cellValue(row, col.key) }}</slot>
             </td>
             <td v-if="slots.actions">
               <slot name="actions" :row="row" :index="index" />

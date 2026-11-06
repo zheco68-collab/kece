@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { adminApi } from '@/api/admin'
 import { databaseApi } from '@/api/database'
@@ -8,6 +8,7 @@ import DataTable from '@/components/DataTable.vue'
 import Pagination from '@/components/Pagination.vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { usePagedQuery } from '@/shared/composables/usePagedQuery'
 import { useUserStore } from '@/stores/user'
 import type { DbQuestionType } from '@/types'
 
@@ -33,13 +34,6 @@ const keyword = ref('')
 const typeFilter = ref<TypeFilter>('')
 const statusFilter = ref<StatusFilter>('')
 const createdByInput = ref('')
-const page = ref(1)
-const size = 20
-
-const rows = ref<DbQuestionRow[]>([])
-const total = ref(0)
-const loading = ref(false)
-const loadError = ref('')
 
 const TYPE_LABELS: Record<DbQuestionType, string> = {
   SELECT: '查询',
@@ -67,51 +61,41 @@ const columns = [
   { key: 'createdAt', label: '创建时间', width: '170px' },
 ]
 
-async function load() {
-  loading.value = true
-  loadError.value = ''
-  try {
+const {
+  page,
+  size,
+  list: rows,
+  total,
+  loading,
+  error: loadError,
+  load,
+  reset,
+} = usePagedQuery<DbQuestionRow>({
+  defaultSize: 20,
+  immediate: true,
+  fetcher: async ({ page, size }) => {
     const createdByRaw = createdByInput.value.trim()
     const createdByNum = createdByRaw === '' ? NaN : Number(createdByRaw)
-    const res = await adminApi.listDbQuestions({
+    return adminApi.listDbQuestions({
       type: typeFilter.value || undefined,
       keyword: keyword.value.trim() || undefined,
       status: statusFilter.value === '' ? undefined : Number(statusFilter.value),
       createdBy: Number.isFinite(createdByNum) ? createdByNum : undefined,
-      page: page.value,
+      page,
       size,
     })
-    rows.value = res.list
-    total.value = res.total
-  } catch (e) {
-    loadError.value = e instanceof ApiError ? e.message : '请求失败，请稍后重试'
-  } finally {
-    loading.value = false
-  }
-}
+  },
+})
 
-/** 筛选变化时回到第一页再加载；已在第一页则手动触发。 */
-function resetAndLoad() {
-  if (page.value === 1) {
-    load()
-  } else {
-    page.value = 1
-  }
-}
-
-// 关键词与创建人输入防抖 300ms，避免每次击键都发请求；下拉筛选变化直接触发。
+// 关键词与创建人输入防抖 300ms，下拉筛选变化直接重置并加载
 let filterTimer: ReturnType<typeof setTimeout> | null = null
 
 watch([keyword, createdByInput], () => {
   if (filterTimer !== null) clearTimeout(filterTimer)
-  filterTimer = setTimeout(resetAndLoad, 300)
+  filterTimer = setTimeout(reset, 300)
 })
 
-watch([typeFilter, statusFilter], resetAndLoad)
-
-watch(page, () => {
-  load()
-})
+watch([typeFilter, statusFilter], reset)
 
 /** 创建时间：ISO 串截取前 19 位并把 T 换成空格，得到 "YYYY-MM-DD HH:mm:ss"。 */
 function formatTime(iso: string): string {
@@ -138,10 +122,6 @@ async function removeQuestion(row: DbQuestionRow) {
     toast.error(e instanceof ApiError ? e.message : '删除失败')
   }
 }
-
-onMounted(() => {
-  load()
-})
 
 onBeforeUnmount(() => {
   if (filterTimer !== null) clearTimeout(filterTimer)
@@ -213,7 +193,7 @@ onBeforeUnmount(() => {
       </template>
     </DataTable>
 
-    <Pagination v-model:page="page" :size="size" :total="total" />
+    <Pagination :page="page" :size="size" :total="total" @update:page="load" />
   </div>
 </template>
 

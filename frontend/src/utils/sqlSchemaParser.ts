@@ -397,6 +397,19 @@ export interface ParsedResultSet {
   rows: string[][]
 }
 
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function parseJsonColumn(column: unknown): { name: string; type?: string } {
+  if (typeof column === 'string') return { name: column }
+  if (!isJsonRecord(column)) return { name: '' }
+  return {
+    name: typeof column.name === 'string' ? column.name : '',
+    type: typeof column.type === 'string' ? column.type : undefined,
+  }
+}
+
 /**
  * 解析各种格式的期望输出结果集（支持 JSON 结果集、Markdown 管道表格、制表符表格）
  */
@@ -406,14 +419,11 @@ export function parseExpectedOutput(raw?: string | null): ParsedResultSet | null
 
   // 1. JSON 格式: {"columns":[{"name":"id","type":"INT"}],"rows":[["1"]]}
   try {
-    const obj = JSON.parse(trimmed)
-    if (obj && Array.isArray(obj.columns) && Array.isArray(obj.rows)) {
+    const obj: unknown = JSON.parse(trimmed)
+    if (isJsonRecord(obj) && Array.isArray(obj.columns) && Array.isArray(obj.rows)) {
       return {
-        columns: obj.columns.map((c: any) => ({
-          name: typeof c === 'string' ? c : c.name || '',
-          type: typeof c === 'object' && c.type ? c.type : undefined,
-        })),
-        rows: obj.rows.map((row: any[]) => row.map((cell) => String(cell))),
+        columns: obj.columns.map(parseJsonColumn),
+        rows: obj.rows.filter(Array.isArray).map((row) => row.map((cell) => String(cell))),
       }
     }
   } catch {

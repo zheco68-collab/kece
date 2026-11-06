@@ -1,4 +1,5 @@
 import { http } from './request'
+import { downloadFile } from '@/shared/http/download'
 import type {
   CreatePracticeRequest,
   PracticeDetail,
@@ -80,27 +81,9 @@ export const practiceApi = {
     http.delete<void>(`/practice/${id}`),
 
   exportCsv: async (id: number, accessCode?: string) => {
-    const blob = await http.get<Blob>(`/practice/admin/${id}/export-csv`, {
-      responseType: 'blob',
+    await downloadFile({
+      url: `/api/v1/practice/admin/${id}/export-csv`,
+      defaultFilename: `practice_scores_${accessCode || id}_${Date.now()}.csv`,
     })
-    if (blob.type === 'application/json') {
-      const text = await blob.text()
-      let msg = '导出成绩单失败'
-      try {
-        const parsed = JSON.parse(text)
-        msg = parsed?.message || msg
-      } catch {
-        // ignore
-      }
-      throw new Error(msg)
-    }
-    const blobUrl = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = blobUrl
-    a.download = `practice_scores_${accessCode || id}_${Date.now()}.csv`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    window.URL.revokeObjectURL(blobUrl)
   },
 }

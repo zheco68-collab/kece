@@ -8,6 +8,15 @@ import { useUserStore } from '@/stores/user'
 import { copyToClipboard } from '@/utils/clipboard'
 import { renderMarkdown } from '@/utils/markdown'
 import { LANGUAGE_LABELS } from '@/utils/submission'
+import { useCountdown } from '@/shared/composables/useCountdown'
+import {
+  isObjectiveOptionSelected,
+  normalizeJudgeAnswer,
+  objectiveOptionLetter,
+  objectiveOptionText,
+  parseMultipleAnswer,
+  toggleMultipleAnswer,
+} from '@/features/questions/lib/objectiveAnswer'
 import type {
   PracticeDetail,
   PracticeObjectiveQuestion,
@@ -41,10 +50,14 @@ const collapsedSections = ref<Record<string, boolean>>({
 const isAnonymous = ref(false)
 
 // 倒计时与状态轮询
-let countdownTimer: number | null = null
 let scoreboardPollTimer: number | null = null
-let pendingJudgePollTimer: number | null = null
-const remainingSec = ref<number | null>(null)
+let pendingJudgeTimer: ReturnType<typeof setTimeout> | null = null
+let isPendingPolling = false
+const { remainingSec, start: startCountdown } = useCountdown({
+  onExpire: () => {
+    if (detail.value) detail.value.status = 'ENDED'
+  },
+})
 
 // 客观题内联抽屉状态
 const objectiveDrawerVisible = ref(false)
@@ -152,18 +165,6 @@ function plainStemPreview(raw: string): string {
     .trim()
 }
 
-function stripOptionPrefix(opt: string): string {
-  return (opt || '').replace(/^[A-Za-z][.、)）:：]\s*/, '').trim()
-}
-
-function normalizeJudgeValue(val?: string | null): '对' | '错' | null {
-  if (!val) return null
-  const v = val.trim().toUpperCase()
-  if (['对', 'TRUE', 'T', '1', '正确', 'YES', '√', '✓'].includes(v)) return '对'
-  if (['错', 'FALSE', 'F', '0', '错误', 'NO', '×', '✕', '✗'].includes(v)) return '错'
-  return null
-}
-
 function getObjectivePill(type?: string) {
   const t = (type || 'SINGLE').toUpperCase()
   if (t === 'MULTIPLE') return { label: '多选题', cls: 'pill-multiple' }
@@ -234,20 +235,47 @@ function getPracticalCtaText(q: PracticePracticalQuestion): string {
   return q.questionType === 'DB' ? '进入实操' : '进入编程'
 }
 
+function stopPendingJudgePolling() {
+  if (pendingJudgeTimer) {
+    clearTimeout(pendingJudgeTimer)
+    pendingJudgeTimer = null
+  }
+  isPendingPolling = false
+}
+
 function syncPendingJudgePolling() {
   const hasPending = (detail.value?.practicalQuestions ?? []).some((q) =>
     isPendingStatus(q.userStatus),
   )
   if (hasPending && activeTab.value === 'questions') {
-    if (!pendingJudgePollTimer) {
-      pendingJudgePollTimer = window.setInterval(() => {
-        fetchDetail(true)
-      }, 2500)
+    if (!isPendingPolling) {
+      isPendingPolling = true
+      scheduleNextPendingPoll()
     }
-  } else if (pendingJudgePollTimer) {
-    clearInterval(pendingJudgePollTimer)
-    pendingJudgePollTimer = null
+  } else {
+    stopPendingJudgePolling()
   }
+}
+
+function scheduleNextPendingPoll() {
+  if (!isPendingPolling) return
+  pendingJudgeTimer = setTimeout(async () => {
+    if (!isPendingPolling) return
+    try {
+      await fetchDetail(true)
+    } finally {
+      if (isPendingPolling) {
+        const stillPending = (detail.value?.practicalQuestions ?? []).some((q) =>
+          isPendingStatus(q.userStatus),
+        )
+        if (stillPending && activeTab.value === 'questions') {
+          scheduleNextPendingPoll()
+        } else {
+          stopPendingJudgePolling()
+        }
+      }
+    }
+  }, 2500)
 }
 
 async function fetchDetail(silent = false) {
@@ -255,13 +283,7 @@ async function fetchDetail(silent = false) {
   try {
     const res = await practiceApi.detail(code.value)
     detail.value = res
-    if (res.status === 'ENDED') {
-      remainingSec.value = 0
-    } else if (res.durationMinutes === 0) {
-      remainingSec.value = null
-    } else if (res.remainingSeconds !== undefined && res.remainingSeconds !== null) {
-      remainingSec.value = res.remainingSeconds
-    }
+    startCountdown(res.status === 'ENDED' || res.durationMinutes === 0 ? null : res.remainingSeconds)
     if (res.objectiveQuestions) {
       for (const q of res.objectiveQuestions) {
         if (q.userAnswer != null && q.userAnswer !== '') {
@@ -296,10 +318,10 @@ async function fetchScoreboard(silent = false) {
     const res = await practiceApi.scoreboard(code.value)
     scoreboard.value = res
     if (res.status === 'ENDED') {
-      remainingSec.value = 0
+      startCountdown(null)
       if (detail.value) detail.value.status = 'ENDED'
     } else if (res.remainingSeconds !== undefined && res.remainingSeconds !== null) {
-      remainingSec.value = res.remainingSeconds
+      startCountdown(res.remainingSeconds)
     }
   } catch (e) {
     if (!silent) toastError(e instanceof Error ? e.message : '加载实时成绩榜失败')
@@ -311,28 +333,13 @@ async function fetchScoreboard(silent = false) {
 function switchTab(tab: 'questions' | 'scoreboard') {
   activeTab.value = tab
   if (tab === 'scoreboard') {
-    if (pendingJudgePollTimer) {
-      clearInterval(pendingJudgePollTimer)
-      pendingJudgePollTimer = null
-    }
+    stopPendingJudgePolling()
     fetchScoreboard()
     startScoreboardPolling()
   } else {
     stopScoreboardPolling()
     fetchDetail()
   }
-}
-
-function startCountdown() {
-  countdownTimer = window.setInterval(() => {
-    if (detail.value?.durationMinutes === 0) return
-    if (remainingSec.value !== null && remainingSec.value > 0) {
-      remainingSec.value--
-      if (remainingSec.value === 0 && detail.value) {
-        detail.value.status = 'ENDED'
-      }
-    }
-  }, 1000)
 }
 
 function startScoreboardPolling() {
@@ -371,10 +378,7 @@ function openObjectiveDrawer(q: PracticeObjectiveQuestion) {
   const saved = objectiveAnswers.value[q.practiceQuestionId] ?? q.userAnswer ?? ''
   const qType = (q.type || 'SINGLE').toUpperCase()
   if (qType === 'MULTIPLE') {
-    multiDraft.value = saved
-      .split(',')
-      .map((s) => s.trim().toUpperCase())
-      .filter(Boolean)
+    multiDraft.value = parseMultipleAnswer(saved)
   } else if (qType === 'FILL') {
     fillDraft.value = saved
   }
@@ -389,35 +393,28 @@ function closeObjectiveDrawer() {
 function isSingleSelected(optIdx: number): boolean {
   const q = currentObjectiveQuestion.value
   if (!q) return false
-  const letter = String.fromCharCode(65 + optIdx)
+  const letter = objectiveOptionLetter(optIdx)
   const saved = (objectiveAnswers.value[q.practiceQuestionId] ?? q.userAnswer ?? '')
     .trim()
     .toUpperCase()
-  return saved === letter
+  return isObjectiveOptionSelected(saved, letter, q.type)
 }
 
 function isJudgeSelected(target: '对' | '错'): boolean {
   const q = currentObjectiveQuestion.value
   if (!q) return false
   const saved = objectiveAnswers.value[q.practiceQuestionId] ?? q.userAnswer ?? ''
-  return normalizeJudgeValue(saved) === target
+  return normalizeJudgeAnswer(saved) === target
 }
 
 function isMultiOptionChecked(optIdx: number): boolean {
-  const letter = String.fromCharCode(65 + optIdx)
+  const letter = objectiveOptionLetter(optIdx)
   return multiDraft.value.includes(letter)
 }
 
 function toggleMultiOption(optIdx: number) {
   if (isAnswerReadonly.value) return
-  const letter = String.fromCharCode(65 + optIdx)
-  const idx = multiDraft.value.indexOf(letter)
-  if (idx >= 0) {
-    multiDraft.value.splice(idx, 1)
-  } else {
-    multiDraft.value.push(letter)
-    multiDraft.value.sort()
-  }
+  multiDraft.value = toggleMultipleAnswer(multiDraft.value, objectiveOptionLetter(optIdx))
 }
 
 async function persistObjectiveAnswer(answerValue: string) {
@@ -543,12 +540,10 @@ function formatScoreboardStudent(row: { userId: number; username: string }): str
 
 onMounted(() => {
   fetchDetail()
-  startCountdown()
 })
 
 onBeforeUnmount(() => {
-  if (countdownTimer) clearInterval(countdownTimer)
-  if (pendingJudgePollTimer) clearInterval(pendingJudgePollTimer)
+  stopPendingJudgePolling()
   stopScoreboardPolling()
 })
 </script>
@@ -1177,8 +1172,8 @@ onBeforeUnmount(() => {
               @click="toggleMultiOption(optIdx)"
             >
               <span class="opt-check mono">{{ isMultiOptionChecked(optIdx) ? '✓' : '' }}</span>
-              <span class="opt-label mono">{{ String.fromCharCode(65 + optIdx) }}</span>
-              <span class="opt-text">{{ stripOptionPrefix(opt) }}</span>
+              <span class="opt-label mono">{{ objectiveOptionLetter(optIdx) }}</span>
+              <span class="opt-text">{{ objectiveOptionText(opt) }}</span>
             </div>
 
             <div v-if="!isAnswerReadonly" class="drawer-inline-save">
@@ -1235,8 +1230,8 @@ onBeforeUnmount(() => {
               }"
               @click="selectSingleOption(optIdx)"
             >
-              <span class="opt-label mono">{{ String.fromCharCode(65 + optIdx) }}</span>
-              <span class="opt-text">{{ stripOptionPrefix(opt) }}</span>
+              <span class="opt-label mono">{{ objectiveOptionLetter(optIdx) }}</span>
+              <span class="opt-text">{{ objectiveOptionText(opt) }}</span>
             </div>
           </div>
 

@@ -6,7 +6,24 @@ import { useUserStore } from '@/stores/user'
 
 const mockPush = vi.fn()
 let currentRoutePath = '/'
-let currentRouteQuery: Record<string, any> = {}
+type MockQueryValue = string | string[] | null | undefined
+type MockQuery = Record<string, MockQueryValue>
+type MockRouteTarget = { path?: string; query?: MockQuery }
+type MockRouterLinkInstance = { to?: string | MockRouteTarget }
+
+let currentRouteQuery: MockQuery = {}
+
+function toQueryString(query: MockQuery): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(query)) {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => params.append(key, entry))
+    } else if (value != null) {
+      params.set(key, value)
+    }
+  }
+  return params.toString()
+}
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({
@@ -24,13 +41,13 @@ vi.mock('vue-router', () => ({
     name: 'RouterLink',
     props: ['to'],
     computed: {
-      resolvedHref(this: any): string {
+      resolvedHref(this: MockRouterLinkInstance): string {
         const to = this.to
         if (typeof to === 'string') return to
         if (!to) return ''
         const path = to.path || ''
         if (to.query && Object.keys(to.query).length > 0) {
-          const qs = new URLSearchParams(to.query).toString()
+          const qs = toQueryString(to.query)
           return `${path}?${qs}`
         }
         return path

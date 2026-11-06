@@ -4,6 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { examApi, type ExamSessionQuestion, type SessionEnter } from '@/api/exam'
 import { renderMarkdown } from '@/utils/markdown'
 import { useToast } from '@/composables/useToast'
+import { useCountdown } from '@/shared/composables/useCountdown'
+import {
+  isObjectiveOptionSelected,
+  objectiveOptionLetter,
+  objectiveOptionText,
+  updateObjectiveAnswer,
+} from '@/features/questions/lib/objectiveAnswer'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,9 +25,12 @@ const saveSuccess = ref(false)
 // 用户的作答映射: key = examQuestionId, value = 答案字符串
 const userAnswers = ref<Record<number, string>>({})
 
-let timer: number | null = null
 let autoSaveTimer: number | null = null
-const remainingSec = ref<number | null>(null)
+const { remainingSec, isUrgent, start: startCountdown } = useCountdown({
+  onExpire: () => {
+    if (enter.value) enter.value.status = 'ENDED'
+  },
+})
 
 const formattedRemaining = computed(() => {
   if (remainingSec.value === null) return '--:--'
@@ -104,37 +114,10 @@ const answeredCount = computed(() => {
   return Object.values(userAnswers.value).filter((v) => v && v.trim().length > 0).length
 })
 
-function optionLetter(index: number | string): string {
-  return String.fromCharCode(65 + Number(index))
-}
-
-function optionText(option: string): string {
-  return option.replace(/^[A-Za-z][.、)）:：]\s*/, '')
-}
-
-function isSelected(qId: number, letter: string, type: string | null): boolean {
-  const current = userAnswers.value[qId] || ''
-  if (type === 'SINGLE' || type === 'JUDGE') {
-    return current === letter
-  }
-  const set = current.split(',').filter(Boolean)
-  return set.includes(letter)
-}
-
 function selectOption(qId: number, letter: string, type: string | null) {
   if (enter.value?.status === 'ENDED') return
 
-  if (type === 'SINGLE' || type === 'JUDGE') {
-    userAnswers.value[qId] = letter
-  } else {
-    // MULTIPLE
-    const current = (userAnswers.value[qId] || '').split(',').filter(Boolean)
-    if (current.includes(letter)) {
-      userAnswers.value[qId] = current.filter((l) => l !== letter).sort().join(',')
-    } else {
-      userAnswers.value[qId] = [...current, letter].sort().join(',')
-    }
-  }
+  userAnswers.value[qId] = updateObjectiveAnswer(userAnswers.value[qId], letter, type)
 
   triggerAutoSave(qId, userAnswers.value[qId])
 }
@@ -169,11 +152,7 @@ async function loadData() {
   try {
     const res = await examApi.enter(examId.value)
     enter.value = res
-    if (res.status === 'ENDED') {
-      remainingSec.value = 0
-    } else if (res.remainingSeconds !== undefined && res.remainingSeconds !== null) {
-      remainingSec.value = res.remainingSeconds
-    }
+    startCountdown(res.status === 'ENDED' ? null : res.remainingSeconds)
 
     // 恢复用户历史填写的答案
     const initialAnswers: Record<number, string> = {}
@@ -220,24 +199,11 @@ async function handleSaveAll() {
   }
 }
 
-function startCountdown() {
-  timer = window.setInterval(() => {
-    if (remainingSec.value !== null && remainingSec.value > 0) {
-      remainingSec.value--
-      if (remainingSec.value === 0 && enter.value) {
-        enter.value.status = 'ENDED'
-      }
-    }
-  }, 1000)
-}
-
 onMounted(async () => {
   await loadData()
-  startCountdown()
 })
 
 onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
   if (autoSaveTimer) clearTimeout(autoSaveTimer)
 })
 </script>
@@ -252,7 +218,7 @@ onBeforeUnmount(() => {
         </button>
         <div class="header-right">
           <span class="code-pill">赛制: {{ enter?.mode }}</span>
-          <div v-if="enter?.durationMinutes" class="cd-box" :class="{ urgent: (remainingSec ?? 100) < 300 }">
+          <div v-if="enter?.durationMinutes" class="cd-box" :class="{ urgent: isUrgent }">
             <span class="cd-time">⏱ {{ formattedRemaining }}</span>
           </div>
         </div>
@@ -334,6 +300,7 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- 题干 Markdown 渲染 -->
+          <!-- eslint-disable-next-line vue/no-v-html -- renderMarkdown sanitizes question Markdown with DOMPurify. -->
           <div class="q-content markdown-body" v-html="renderMarkdown(q.content || '')"></div>
 
           <!-- 判断题作答区域 (仅 对 / 错) -->
@@ -366,14 +333,14 @@ onBeforeUnmount(() => {
               v-for="(opt, optIdx) in (q.options || [])"
               :key="optIdx"
               class="option-row"
-              :class="{ active: isSelected(q.id, optionLetter(optIdx), q.objectiveType) }"
-              @click="selectOption(q.id, optionLetter(optIdx), q.objectiveType)"
+              :class="{ active: isObjectiveOptionSelected(userAnswers[q.id], objectiveOptionLetter(optIdx), q.objectiveType) }"
+              @click="selectOption(q.id, objectiveOptionLetter(optIdx), q.objectiveType)"
             >
               <div class="letter-box">
-                {{ optionLetter(optIdx) }}
+                {{ objectiveOptionLetter(optIdx) }}
               </div>
               <div class="option-text">
-                {{ optionText(opt) }}
+                {{ objectiveOptionText(opt) }}
               </div>
             </div>
           </div>

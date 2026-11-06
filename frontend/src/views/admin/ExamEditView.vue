@@ -1,15 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { examApi } from '@/api/exam';
-import { adminApi } from '@/api/admin';
 import { ApiError } from '@/api/request';
 import FormField from '@/components/FormField.vue';
+import Pagination from '@/components/Pagination.vue';
 import { useToast } from '@/composables/useToast';
+import { useQuestionCandidates } from '@/shared/composables/useQuestionCandidates';
 import { useUserStore } from '@/stores/user';
-import type { Question } from '@/types';
-import type { DbQuestion } from '@/types';
-import type { ObjectiveQuestion } from '@/types';
 
 const route = useRoute();
 const router = useRouter();
@@ -55,11 +53,6 @@ const formErrors = reactive({ title: '', questions: '' });
 // ---- 题库分类选取 ----
 type PickTab = 'ALGO' | 'DB' | 'SINGLE' | 'JUDGE' | 'MULTIPLE' | 'FILL' | 'ALL_OBJ';
 const tab = ref<PickTab>('SINGLE');
-const tabKeyword = ref('');
-const algoList = ref<Question[]>([]);
-const dbList = ref<DbQuestion[]>([]);
-const objList = ref<ObjectiveQuestion[]>([]);
-const listLoading = ref(false);
 
 const typeTabs: Array<{ value: PickTab; label: string }> = [
   { value: 'SINGLE', label: '单选题' },
@@ -71,23 +64,23 @@ const typeTabs: Array<{ value: PickTab; label: string }> = [
   { value: 'ALL_OBJ', label: '全部客观题' },
 ];
 
+const {
+  keyword: tabKeyword,
+  page: candidatePage,
+  size: candidatePageSize,
+  total: candidateTotal,
+  candidates,
+  loading: listLoading,
+  error: candidateError,
+  load: loadCandidates,
+  cleanup: cleanupCandidates,
+} = useQuestionCandidates({
+  category: tab,
+  defaultSize: 20,
+});
+
 async function loadSource() {
-  listLoading.value = true;
-  try {
-    const keyword = tabKeyword.value.trim() || undefined;
-    if (tab.value === 'ALGO') {
-      algoList.value = (await adminApi.listQuestions({ keyword, page: 1, size: 100 })).list;
-    } else if (tab.value === 'DB') {
-      dbList.value = (await adminApi.listDbQuestions({ keyword, page: 1, size: 100 })).list;
-    } else if (tab.value === 'ALL_OBJ') {
-      objList.value = (await adminApi.listObjectiveQuestions({ keyword, page: 1, size: 100 })).list;
-    } else {
-      // 独立单选、判断、多选、填空题型过滤
-      objList.value = (await adminApi.listObjectiveQuestions({ type: tab.value, keyword, page: 1, size: 100 })).list;
-    }
-  } finally {
-    listLoading.value = false;
-  }
+  await loadCandidates(tab.value, 1);
 }
 
 let tabKeywordTimer: ReturnType<typeof setTimeout> | null = null;
@@ -97,52 +90,61 @@ watch(tabKeyword, () => {
 });
 watch(tab, loadSource);
 
+onBeforeUnmount(() => {
+  if (tabKeywordTimer !== null) clearTimeout(tabKeywordTimer);
+  cleanupCandidates();
+});
+
 interface SourceRowItem {
   id: number;
   label: string;
-  type: string;
-  objectiveType?: 'SINGLE' | 'MULTIPLE' | 'JUDGE' | 'FILL';
+  type: SelectedQuestion['questionType'];
+  objectiveType?: SelectedQuestion['objectiveType'];
   defaultScore: number;
   tagText: string;
   tagClass: string;
 }
 
 function sourceRows(): SourceRowItem[] {
-  if (tab.value === 'ALGO') {
-    return algoList.value.map((q) => ({
-      id: q.id,
-      label: q.title,
-      type: 'ALGO',
-      defaultScore: 20,
-      tagText: '算法',
-      tagClass: 'badge-algo',
-    }));
-  }
-  if (tab.value === 'DB') {
-    return dbList.value.map((q) => ({
-      id: q.id,
-      label: q.title,
-      type: 'DB',
-      defaultScore: 20,
-      tagText: 'SQL',
-      tagClass: 'badge-db',
-    }));
-  }
-  return objList.value.map((q) => {
-    const text = q.content.length > 50 ? `${q.content.slice(0, 50)}…` : q.content;
-    const typeLabel = q.type === 'SINGLE' ? '单选' : q.type === 'JUDGE' ? '判断' : q.type === 'MULTIPLE' ? '多选' : '填空';
-    const tagClass = `badge-${q.type.toLowerCase()}`;
-    const defaultScore = q.score || (q.type === 'JUDGE' ? 2 : 5);
+  return candidates.value.map((c) => {
+    if (c.type === 'ALGO') {
+      return {
+        id: c.id,
+        label: c.title,
+        type: 'ALGO',
+        defaultScore: 20,
+        tagText: '算法',
+        tagClass: 'badge-algo',
+      };
+    }
+    if (c.type === 'DB') {
+      return {
+        id: c.id,
+        label: c.title,
+        type: 'DB',
+        defaultScore: 20,
+        tagText: 'SQL',
+        tagClass: 'badge-db',
+      };
+    }
+    const typeLabel = c.subType === 'SINGLE' ? '单选' : c.subType === 'JUDGE' ? '判断' : c.subType === 'MULTIPLE' ? '多选' : '填空';
+    const tagClass = `badge-${(c.subType || '').toLowerCase()}`;
+    const defaultScore = c.defaultScore ?? (c.subType === 'JUDGE' ? 2 : 5);
+    const text = c.title.length > 50 ? `${c.title.slice(0, 50)}…` : c.title;
     return {
-      id: q.id,
+      id: c.id,
       label: text,
       type: 'OBJECTIVE',
-      objectiveType: q.type as any,
+      objectiveType: c.subType,
       defaultScore,
       tagText: typeLabel,
       tagClass,
     };
   });
+}
+
+function goCandidatePage(nextPage: number) {
+  void loadCandidates(undefined, nextPage);
 }
 
 function isSelected(questionId: number): boolean {
@@ -435,6 +437,7 @@ onMounted(async () => {
         </div>
 
         <div v-if="listLoading" class="state-card"><div class="loading-spinner"></div><p class="muted">正在加载题库…</p></div>
+        <div v-else-if="candidateError" class="state-card"><p class="submit-error">{{ candidateError }}</p><button class="btn btn-ghost btn-sm" type="button" @click="loadSource">重试</button></div>
         <ul v-else class="source-list">
           <li v-for="row in sourceRows()" :key="`${tab}-${row.id}`" class="source-row">
             <span class="type-pill" :class="row.tagClass">{{ row.tagText }}</span>
@@ -453,6 +456,15 @@ onMounted(async () => {
             {{ isAdmin ? '该分类暂无可选题' : '暂无可用题目（教师仅可选择本人创建的题目）' }}
           </li>
         </ul>
+        <Pagination
+          v-if="candidateTotal > candidatePageSize"
+          compact
+          :page="candidatePage"
+          :size="candidatePageSize"
+          :total="candidateTotal"
+          :disabled="listLoading"
+          @update:page="goCandidatePage"
+        />
       </div>
 
       <div class="chosen card">

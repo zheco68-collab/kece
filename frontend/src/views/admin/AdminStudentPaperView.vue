@@ -85,8 +85,12 @@ const sections = computed<SectionGroup[]>(() => {
   return res;
 });
 
-function exportWord() {
-  examApi.downloadWord(examId.value, userId.value);
+async function exportWord() {
+  try {
+    await examApi.downloadWord(examId.value, userId.value);
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '导出学生答卷失败，请重试');
+  }
 }
 
 function printPdf() {
@@ -260,6 +264,7 @@ onMounted(load);
             <template v-if="q.questionType === 'OBJECTIVE'">
               <div class="q-title">
                 <span class="q-seq-no">{{ qIdx + 1 }}、</span>
+                <!-- eslint-disable-next-line vue/no-v-html -- formatObjectiveTitle escapes all API text before composing its controlled markup. -->
                 <span class="q-title-html" v-html="formatObjectiveTitle(q)"></span>
                 <span v-if="q.isCorrect" class="ans-eval eval-ac">[✔ 得满分: {{ q.studentScore ?? q.fullScore }}分]</span>
                 <span v-else-if="(q.studentScore ?? 0) > 0" class="ans-eval eval-partial">[◐ 得{{ q.studentScore }}/{{ q.fullScore }}分，正确答案: {{ q.standardAnswer }}]</span>

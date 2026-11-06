@@ -77,8 +77,8 @@ async function handleBatchExportAll() {
   try {
     await examApi.downloadBatchWord(examId.value);
     toast.success('全场学生答卷 ZIP 打包完成并开始下载！');
-  } catch (e: any) {
-    toast.error(e?.message || '批量导出失败，请重试');
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '批量导出失败，请重试');
   } finally {
     exportingBatch.value = false;
   }
@@ -94,8 +94,8 @@ async function handleBatchExportSelected() {
   try {
     await examApi.downloadBatchWord(examId.value, selectedUserIds.value);
     toast.success(`选中的 ${selectedUserIds.value.length} 份学生答卷导出成功！`);
-  } catch (e: any) {
-    toast.error(e?.message || '批量导出失败，请重试');
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '批量导出失败，请重试');
   } finally {
     exportingBatch.value = false;
   }
@@ -119,20 +119,36 @@ function formatTime(iso: string | null | undefined): string {
   return iso ? iso.slice(0, 16).replace('T', ' ') : '—';
 }
 
-function exportBlankWord() {
-  examApi.downloadWord(examId.value);
+async function exportBlankWord() {
+  try {
+    await examApi.downloadWord(examId.value);
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '导出空白试卷失败，请重试');
+  }
 }
 
-function exportBlankPdf() {
-  examApi.openPrintPdf(examId.value);
+async function exportBlankPdf() {
+  try {
+    await examApi.openPrintPdf(examId.value);
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '打开 PDF 预览失败，请重试');
+  }
 }
 
-function exportStudentWord(userId: number) {
-  examApi.downloadWord(examId.value, userId);
+async function exportStudentWord(userId: number) {
+  try {
+    await examApi.downloadWord(examId.value, userId);
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '导出学生试卷失败，请重试');
+  }
 }
 
-function exportStudentPdf(userId: number) {
-  examApi.openPrintPdf(examId.value, userId);
+async function exportStudentPdf(userId: number) {
+  try {
+    await examApi.openPrintPdf(examId.value, userId);
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '打开学生 PDF 预览失败，请重试');
+  }
 }
 
 function viewStudentPaper(userId: number) {

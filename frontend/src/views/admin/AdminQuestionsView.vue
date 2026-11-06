@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { adminApi } from '@/api/admin'
 import { questionApi } from '@/api/question'
@@ -8,6 +8,7 @@ import DataTable from '@/components/DataTable.vue'
 import Pagination from '@/components/Pagination.vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { usePagedQuery } from '@/shared/composables/usePagedQuery'
 import { useUserStore } from '@/stores/user'
 import type { Difficulty } from '@/types'
 
@@ -34,14 +35,6 @@ const questionIdInput = ref('')
 const difficultyFilter = ref<DifficultyFilter>('')
 const statusFilter = ref<StatusFilter>('')
 const createdByInput = ref('')
-const page = ref(1)
-const size = 20
-
-const rows = ref<QuestionRow[]>([])
-const total = ref(0)
-const loading = ref(false)
-const loadError = ref('')
-let requestSequence = 0
 
 const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   EASY: '简单',
@@ -71,66 +64,47 @@ const columns = [
   { key: 'createdAt', label: '创建时间', width: '170px' },
 ]
 
-async function load() {
-  const sequence = ++requestSequence
-  loading.value = true
-  loadError.value = ''
-  try {
+const {
+  page,
+  size,
+  list: rows,
+  total,
+  loading,
+  error: loadError,
+  load,
+  reset,
+} = usePagedQuery<QuestionRow>({
+  defaultSize: 20,
+  immediate: true,
+  fetcher: async ({ page, size }) => {
     const questionIdRaw = questionIdInput.value.trim()
     const questionId = questionIdRaw === '' ? undefined : Number(questionIdRaw)
     if (questionIdRaw !== '' && (!/^[1-9]\d*$/.test(questionIdRaw) || !Number.isSafeInteger(questionId))) {
-      rows.value = []
-      total.value = 0
-      loadError.value = '请输入有效的题目 ID'
-      return
+      throw new Error('请输入有效的题目 ID')
     }
     const createdByRaw = createdByInput.value.trim()
     const createdByNum = createdByRaw === '' ? NaN : Number(createdByRaw)
-    const res = await adminApi.listQuestions({
+    return adminApi.listQuestions({
       id: questionId,
       keyword: keyword.value.trim() || undefined,
       difficulty: difficultyFilter.value || undefined,
       status: statusFilter.value === '' ? undefined : Number(statusFilter.value),
       createdBy: Number.isFinite(createdByNum) ? createdByNum : undefined,
-      page: page.value,
+      page,
       size,
     })
-    if (sequence === requestSequence) {
-      rows.value = res.list
-      total.value = res.total
-    }
-  } catch (e) {
-    if (sequence === requestSequence) {
-      loadError.value = e instanceof ApiError ? e.message : '请求失败，请稍后重试'
-    }
-  } finally {
-    if (sequence === requestSequence) loading.value = false
-  }
-}
+  },
+})
 
-/** 筛选变化时回到第一页再加载；已在第一页则手动触发。 */
-function resetAndLoad() {
-  if (filterTimer !== null) clearTimeout(filterTimer)
-  if (page.value === 1) {
-    load()
-  } else {
-    page.value = 1
-  }
-}
-
-// 关键词与创建人输入防抖 300ms，避免每次击键都发请求；下拉筛选变化直接触发。
+// 关键词与创建人输入防抖 300ms，下拉筛选变化直接重置并加载
 let filterTimer: ReturnType<typeof setTimeout> | null = null
 
 watch([keyword, questionIdInput, createdByInput], () => {
   if (filterTimer !== null) clearTimeout(filterTimer)
-  filterTimer = setTimeout(resetAndLoad, 300)
+  filterTimer = setTimeout(reset, 300)
 })
 
-watch([difficultyFilter, statusFilter], resetAndLoad)
-
-watch(page, () => {
-  load()
-})
+watch([difficultyFilter, statusFilter], reset)
 
 /** 创建时间：ISO 串截取前 19 位并把 T 换成空格，得到 "YYYY-MM-DD HH:mm:ss"。 */
 function formatTime(iso: string): string {
@@ -157,10 +131,6 @@ async function removeQuestion(row: QuestionRow) {
     toast.error(e instanceof ApiError ? e.message : '删除失败')
   }
 }
-
-onMounted(() => {
-  load()
-})
 
 onBeforeUnmount(() => {
   if (filterTimer !== null) clearTimeout(filterTimer)
@@ -240,7 +210,7 @@ onBeforeUnmount(() => {
       </template>
     </DataTable>
 
-    <Pagination v-model:page="page" :size="size" :total="total" />
+    <Pagination :page="page" :size="size" :total="total" @update:page="load" />
   </div>
 </template>
 

@@ -7,10 +7,13 @@ import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import CodeEditor from '@/components/CodeEditor.vue'
 import DbSchemaViewer from '@/components/DbSchemaViewer.vue'
+import { useCodeDraft } from '@/features/questions/composables/useCodeDraft'
+import { useUserStore } from '@/stores/user'
 import type { DbQuestion, DbQuestionType } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 const { info, success, error: toastError } = useToast()
 const { confirm } = useConfirm()
 
@@ -34,12 +37,20 @@ const showSchema = ref(true)
 const submitting = ref(false)
 const submitError = ref('')
 
-function getDraftKey() {
+function getLegacyDraftKey() {
   return `kece:exam_sql:${examId.value}_${examQuestionId.value}`
 }
 
+function draftStore() {
+  const owner = userStore.userInfo?.id ?? 'anonymous'
+  return useCodeDraft({
+    targetKey: `kece:draft:${owner}:exam-sql:${examId.value}:${examQuestionId.value}`,
+    legacyKeys: [getLegacyDraftKey()],
+  })
+}
+
 function restoreDraft() {
-  const saved = localStorage.getItem(getDraftKey())
+  const saved = draftStore().getDraft()
   if (saved) {
     sql.value = saved
   }
@@ -52,7 +63,7 @@ function restoreDraft() {
 
 watch(sql, (newVal) => {
   if (newVal) {
-    localStorage.setItem(getDraftKey(), newVal)
+    draftStore().saveDraft(newVal)
   }
 })
 
@@ -66,7 +77,7 @@ async function resetTemplate() {
   })
   if (ok) {
     sql.value = DEFAULT_SQL
-    localStorage.removeItem(getDraftKey())
+    draftStore().clearDraft()
     info('已重置为初始 SQL 模板')
   }
 }

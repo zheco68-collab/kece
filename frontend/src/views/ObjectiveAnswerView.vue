@@ -6,6 +6,11 @@ import { renderMarkdown } from '@/utils/markdown'
 import { STATUS_ABBR, statusTone } from '@/utils/submission'
 import { useUserStore } from '@/stores/user'
 import { fetchUserInfo } from '@/utils/userCache'
+import {
+  objectiveOptionLetter,
+  objectiveOptionText,
+  toggleMultipleAnswer,
+} from '@/features/questions/lib/objectiveAnswer'
 import type {
   AnswerResult,
   ObjectiveQuestion,
@@ -57,14 +62,6 @@ const resultStatus = computed<SubmissionStatus>(() =>
   result.value?.correct ? 'ACCEPTED' : 'WRONG_ANSWER',
 )
 
-function optionLetter(index: number): string {
-  return String.fromCharCode(65 + index)
-}
-
-function optionText(option: string): string {
-  return option.replace(/^[A-Za-z][.、)）:：]\s*/, '')
-}
-
 function isSingle(q: ObjectiveQuestion): boolean {
   return q.type === 'SINGLE'
 }
@@ -78,11 +75,7 @@ function isFill(q: ObjectiveQuestion): boolean {
 }
 
 function toggleOption(letter: string) {
-  if (selected.value.includes(letter)) {
-    selected.value = selected.value.filter((l) => l !== letter)
-  } else {
-    selected.value = [...selected.value, letter].sort()
-  }
+  selected.value = toggleMultipleAnswer(selected.value, letter)
 }
 
 async function submit() {
@@ -194,23 +187,23 @@ onMounted(async () => {
           v-for="(opt, i) in question.options"
           :key="i"
           class="option"
-          :class="{ selected: selected.includes(optionLetter(i)) }"
+          :class="{ selected: selected.includes(objectiveOptionLetter(i)) }"
         >
           <input
             v-if="isSingle(question)"
             type="radio"
             name="option"
-            :checked="selected[0] === optionLetter(i)"
-            @change="selected = [optionLetter(i)]"
+            :checked="selected[0] === objectiveOptionLetter(i)"
+            @change="selected = [objectiveOptionLetter(i)]"
           />
           <input
             v-else
             type="checkbox"
-            :checked="selected.includes(optionLetter(i))"
-            @change="toggleOption(optionLetter(i))"
+            :checked="selected.includes(objectiveOptionLetter(i))"
+            @change="toggleOption(objectiveOptionLetter(i))"
           />
-          <span class="option-letter">{{ optionLetter(i) }}</span>
-          <span class="option-text">{{ optionText(opt) }}</span>
+          <span class="option-letter">{{ objectiveOptionLetter(i) }}</span>
+          <span class="option-text">{{ objectiveOptionText(opt) }}</span>
         </label>
       </div>
 

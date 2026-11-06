@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { submissionApi } from '@/api/submission'
 import { questionApi } from '@/api/question'
 import { examApi, type ExamSessionQuestion, type SessionEnter } from '@/api/exam'
-import type { Question, Submission, SubmissionStatus, TestCaseReport } from '@/types'
-import { STATUS_ABBR, formatMemory, statusTone } from '@/utils/submission'
+import { useSubmissionMonitor } from '@/features/judging/composables/useSubmissionMonitor'
+import type { Question, SubmissionStatus, TestCaseReport } from '@/types'
+import { STATUS_ABBR, formatMemory, isTerminal, statusTone } from '@/utils/submission'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,29 +17,22 @@ const submissionId = computed(() => Number(route.params.submissionId))
 
 const enter = ref<SessionEnter | null>(null)
 const examQuestion = ref<ExamSessionQuestion | null>(null)
-const submission = ref<Submission | null>(null)
 const question = ref<Question | null>(null)
-const loading = ref(true)
-const error = ref('')
-let pollTimer: number | null = null
+const examError = ref('')
 
-const TERMINAL_STATUSES: SubmissionStatus[] = [
-  'ACCEPTED',
-  'WRONG_ANSWER',
-  'TIME_LIMIT_EXCEEDED',
-  'MEMORY_LIMIT_EXCEEDED',
-  'RUNTIME_ERROR',
-  'COMPILE_ERROR',
-  'SYSTEM_ERROR',
-]
-
-function isTerminal(status: SubmissionStatus): boolean {
-  return TERMINAL_STATUSES.includes(status)
-}
-
-const isPolling = computed(() => {
-  return submission.value != null && !isTerminal(submission.value.status)
+const {
+  result: submission,
+  polling: isPolling,
+  error: submitError,
+} = useSubmissionMonitor({
+  submissionId,
+  fetcher: (id) => submissionApi.get(id),
+  isTerminal: (s) => isTerminal(s.status),
+  intervalMs: 1000,
 })
+
+const loading = computed(() => (!submission.value || !enter.value) && !error.value)
+const error = computed(() => submitError.value || examError.value)
 
 const progressPercent = computed(() => {
   const p = submission.value?.progress
@@ -56,72 +50,44 @@ function statusClass(status: SubmissionStatus): string {
   return 'running'
 }
 
-function startPolling(subId: number) {
-  stopPolling()
-  pollTimer = window.setInterval(async () => {
-    try {
-      const s = await submissionApi.get(subId)
-      submission.value = s
-      if (isTerminal(s.status)) {
-        stopPolling()
-      }
-    } catch {
-      stopPolling()
-    }
-  }, 1000)
-}
-
-function stopPolling() {
-  if (pollTimer != null) {
-    window.clearInterval(pollTimer)
-    pollTimer = null
-  }
-}
-
-async function loadData() {
-  loading.value = true
-  error.value = ''
+async function loadExamData() {
   try {
-    const res = await examApi.enter(examId.value)
-    enter.value = res
-
-    const eq = res.questions.find((item) => item.id === examQuestionId.value)
+    const e = await examApi.enter(examId.value)
+    enter.value = e
+    const eq = e.questions.find((q: ExamSessionQuestion) => q.id === examQuestionId.value)
     if (eq) {
       examQuestion.value = eq
-      question.value = await questionApi.detail(eq.questionId)
+      try {
+        question.value = await questionApi.detail(eq.questionId)
+      } catch {
+        /* 忽略题目详情拉取失败 */
+      }
     }
-
-    const s = await submissionApi.get(submissionId.value)
-    submission.value = s
-
-    if (!isTerminal(s.status)) {
-      startPolling(submissionId.value)
-    }
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : '获取评测结果失败'
-  } finally {
-    loading.value = false
+  } catch (err: unknown) {
+    examError.value = err instanceof Error ? err.message : '加载考试会话失败'
   }
 }
 
 function reEdit() {
-  router.push(`/exams/${examId.value}/question/${examQuestionId.value}/submit`)
+  router.push({
+    name: 'exam-question-submit',
+    params: { id: examId.value, examQuestionId: examQuestionId.value },
+  })
 }
 
 function backToQuestion() {
-  router.push(`/exams/${examId.value}/question/${examQuestionId.value}`)
+  router.push({
+    name: 'exam-question',
+    params: { id: examId.value, examQuestionId: examQuestionId.value },
+  })
 }
 
 function backToExam() {
-  router.push(`/exams/${examId.value}`)
+  router.push({ name: 'exam-session', params: { id: examId.value } })
 }
 
 onMounted(() => {
-  loadData()
-})
-
-onBeforeUnmount(() => {
-  stopPolling()
+  loadExamData()
 })
 </script>
 
