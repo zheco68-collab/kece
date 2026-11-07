@@ -451,6 +451,7 @@ onMounted(load);
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
 }
 .btn-icon {
   width: 16px;
@@ -521,9 +522,11 @@ onMounted(load);
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 .search-box .search {
-  width: 320px;
+  width: min(320px, 100%);
 }
 .count-tag {
   font-size: 13px;
@@ -573,7 +576,7 @@ onMounted(load);
   color: #2b8a3e;
   background: #ebfbee;
   padding: 2px 8px;
-  border-radius: 2px;
+  border-radius: 0;
 }
 .status-submitted {
   background: #ebfbee;

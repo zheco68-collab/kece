@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   listAdminProblemSets,
@@ -103,36 +103,37 @@ async function removeSet(row: ProblemSetSummary) {
 }
 
 onMounted(load)
+onBeforeUnmount(() => {
+  if (keywordTimer !== null) clearTimeout(keywordTimer)
+})
 </script>
 
 <template>
   <div class="admin-problem-sets container">
-    <h1 class="page-title">题集管理</h1>
+    <header class="page-header">
+      <div><h1 class="page-title">题集管理</h1><p class="page-description">组织章节与题目，为学习安排清晰的练习路径。</p></div>
+      <button class="btn btn-primary btn-create" type="button" @click="router.push('/admin/problem-sets/new')">新建题集</button>
+    </header>
 
     <!-- 顶部紧凑单行工具栏：搜索、题型筛选、新建题集靠右 -->
     <div class="toolbar">
-      <input
+      <label class="filter-field"><span>题集名称</span><input
         v-model="keyword"
         class="input search"
         type="text"
         placeholder="搜索题集标题或描述…"
-      />
-      <select v-model="categoryFilter" class="input filter-select">
+      /></label>
+      <label class="filter-field"><span>题型</span><select v-model="categoryFilter" class="input filter-select">
         <option value="">全部题型</option>
         <option value="ALGO">算法编程 (ALGO)</option>
         <option value="DB">数据库 SQL (DB)</option>
         <option value="OBJECTIVE">标准客观 (OBJECTIVE)</option>
-      </select>
-      <button
-        class="btn btn-primary btn-create"
-        type="button"
-        @click="router.push('/admin/problem-sets/new')"
-      >
-        + 新建题集
-      </button>
+      </select></label>
+      <button class="btn btn-ghost reset-button" type="button" @click="keyword = ''; categoryFilter = ''">重置筛选</button>
     </div>
 
-    <p v-if="loadError" class="submit-error">{{ loadError }}</p>
+    <div v-if="loadError" class="submit-error" role="alert">{{ loadError }} <button type="button" class="retry-button" @click="load">重试</button></div>
+    <div class="list-heading"><h2>题集列表</h2><span>共 {{ total }} 个题集</span></div>
 
     <DataTable
       :columns="columns"
@@ -209,22 +210,34 @@ onMounted(load)
 
 <style scoped>
 .admin-problem-sets {
-  padding-top: 16px;
+  padding-top: 28px;
+  padding-bottom: 48px;
 }
+.page-header { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:24px; flex-wrap:wrap; }
+.page-description { margin:0; color:var(--ink-secondary); font-size:14px; }
 
 .page-title {
-  margin: 16px 0 8px;
-  font-size: 22px;
-  font-weight: 600;
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 700;
 }
+.filter-field { display:flex; flex-direction:column; gap:7px; font-size:13px; font-weight:600; color:var(--ink-secondary); }
+.filter-field .input { min-height:40px; background:#fff; font-weight:400; }
+.reset-button { min-height:40px; background:#fff; }
+.list-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:0 0 12px; }
+.list-heading h2 { margin:0; font-size:16px; }
+.list-heading span { color:var(--ink-secondary); font-size:13px; }
+.retry-button { border:0; background:none; color:inherit; cursor:pointer; text-decoration:underline; }
 
-/* 顶部紧凑单行工具栏：搜索框、题型选择器，新建按钮靠右对齐 */
 .toolbar {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 16px 0 20px;
-  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 16px;
+  margin: 0 0 24px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  flex-wrap: wrap;
 }
 
 .search {
@@ -240,18 +253,17 @@ onMounted(load)
 }
 
 .btn-create {
-  margin-left: auto;
-  height: 38px;
+  min-height: 40px;
   padding: 0 18px;
   font-size: 14px;
   font-weight: 600;
   flex-shrink: 0;
 }
 
-/* 表格布局：100% 宽度固定排版，彻底消除横向滚动条与各单元格多余省略号 */
 :deep(.data-table) {
   table-layout: fixed;
   width: 100%;
+  min-width: 920px;
 }
 
 :deep(.data-table th),
@@ -261,7 +273,7 @@ onMounted(load)
 }
 
 :deep(.data-table-wrap) {
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 :deep(.data-table th:last-child),

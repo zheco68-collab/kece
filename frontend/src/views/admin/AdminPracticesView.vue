@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { practiceApi } from '@/api/practice'
 import { ApiError } from '@/api/request'
@@ -131,6 +131,9 @@ async function removePractice(row: PracticeSummary) {
 }
 
 onMounted(load)
+onBeforeUnmount(() => {
+  if (keywordTimer !== null) clearTimeout(keywordTimer)
+})
 </script>
 
 <template>
@@ -138,9 +141,7 @@ onMounted(load)
     <div class="page-head">
       <div class="head-left">
         <h1 class="page-title">随堂课练管理</h1>
-        <p class="muted head-sub">
-          管理本课程发起的课堂随堂测验 · 支持口令分发、实时考务监控与动态编辑
-        </p>
+        <p class="muted head-sub">发起课堂练习，查看作答进度与成绩。</p>
       </div>
       <button
         class="btn btn-primary btn-create"
@@ -204,7 +205,9 @@ onMounted(load)
       </button>
     </div>
 
-    <p v-if="loadError" class="submit-error">{{ loadError }}</p>
+    <div v-if="loadError" class="submit-error" role="alert">{{ loadError }} <button type="button" class="retry-button" @click="load">重试</button></div>
+
+    <div class="list-heading"><h2>课练列表</h2><span>共 {{ total }} 场课练</span></div>
 
     <DataTable
       :columns="columns"
@@ -215,20 +218,21 @@ onMounted(load)
     >
       <!-- 房间口令 -->
       <template #cell-accessCode="{ row }">
-        <span
+        <button
           class="access-code-pill mono"
           :class="{ 'is-ended': row.status === 'ENDED' }"
+          type="button"
           title="点击复制口令"
           @click="copyCode(row.accessCode)"
         >
           {{ row.accessCode }} ⧉
-        </span>
+        </button>
       </template>
 
       <!-- 课练主题与说明 -->
       <template #cell-title="{ row }">
         <div class="title-cell">
-          <span class="title-text" :title="row.title" @click="openOverview(row)">{{ row.title }}</span>
+          <button class="title-text" type="button" :title="row.title" @click="openOverview(row)">{{ row.title }}</button>
           <span v-if="row.description" class="desc-text" :title="row.description">{{ row.description }}</span>
         </div>
       </template>
@@ -344,6 +348,10 @@ onMounted(load)
   margin: 0;
   font-size: 13.5px;
 }
+.list-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:0 0 12px; }
+.list-heading h2 { margin:0; font-size:16px; }
+.list-heading span { color:var(--ink-secondary); font-size:13px; }
+.retry-button { border:0; background:none; color:inherit; cursor:pointer; text-decoration:underline; }
 
 .btn-create {
   height: 36px;
@@ -436,6 +444,7 @@ onMounted(load)
   letter-spacing: 0.8px;
   border-radius: 0;
   cursor: pointer;
+  border: 0;
   transition: opacity 0.15s ease;
 }
 .access-code-pill.is-ended {
@@ -452,6 +461,10 @@ onMounted(load)
   min-width: 0;
 }
 .title-text {
+  border: 0;
+  padding: 0;
+  background: none;
+  text-align: left;
   font-size: 13.5px;
   font-weight: 600;
   color: var(--ink);

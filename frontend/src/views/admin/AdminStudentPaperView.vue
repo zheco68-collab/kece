@@ -349,7 +349,7 @@ v-if="q.options && q.options.length && (q.objectiveType === 'SINGLE' || q.object
 
 .paper-toolbar {
   position: sticky;
-  top: 0;
+  top: 58px;
   z-index: 100;
   background: #ffffff;
   border-bottom: 1px solid #ced4da;
@@ -360,10 +360,13 @@ v-if="q.options && q.options.length && (q.objectiveType === 'SINGLE' || q.object
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 .toolbar-right {
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
 }
 .icon {
   width: 16px;

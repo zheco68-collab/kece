@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kece.admin.mapper.AdminOverviewMapper">
+    <select id="listActivities" resultType="com.kece.admin.mapper.AdminOverviewMapper$ActivityRow">
+        WITH activities AS (
+            SELECT 'EXAM' AS kind, e.id, e.title, e.start_time, e.end_time,
+                   CASE
+                       WHEN e.end_time &lt;= #{now} THEN 'ENDED'
+                       WHEN e.start_time &lt;= #{now} THEN 'ACTIVE'
+                       WHEN e.start_time &lt; #{upcomingEnd}
+                            AND (e.end_time IS NULL OR e.end_time &gt; e.start_time) THEN 'UPCOMING'
+                   END AS bucket
+            FROM exam e
+            WHERE e.status = 1 AND e.session_status != 'CANCELLED'
+              AND (e.end_time IS NULL OR e.end_time &gt;= #{recentStart})
+              <if test="ownerId != null">AND e.created_by = #{ownerId}</if>
+            UNION ALL
+            SELECT 'PRACTICE', p.id, p.title, p.start_time, p.end_time,
+                   CASE
+                       WHEN p.end_time &lt;= #{now} THEN 'ENDED'
+                       WHEN p.status = 'ACTIVE' AND p.start_time &lt;= #{now} THEN 'ACTIVE'
+                   END
+            FROM lesson_practice p
+            WHERE p.status IN ('ACTIVE', 'ENDED')
+              AND (p.end_time IS NULL OR p.end_time &gt;= #{recentStart})
+              <if test="ownerId != null">AND p.teacher_id = #{ownerId}</if>
+        ),
+        ranked AS (
+            SELECT activities.*,
+                   COUNT(*) OVER (PARTITION BY bucket) AS bucket_size,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY bucket
+                       ORDER BY CASE WHEN bucket = 'ACTIVE' AND end_time IS NULL THEN 1 ELSE 0 END,
+                                CASE WHEN bucket = 'ACTIVE' THEN end_time END,
+                                CASE WHEN bucket = 'UPCOMING' THEN start_time END,
+                                CASE WHEN bucket = 'ENDED' THEN end_time END DESC,
+                                kind, id
+                   ) AS row_num
+            FROM activities
+            WHERE bucket IS NOT NULL
+        )
+        SELECT bucket, kind, id, title, start_time, end_time, bucket_size,
+               CASE WHEN kind = 'PRACTICE' THEN
+                    (SELECT COUNT(*) FROM lesson_practice_member m WHERE m.practice_id = ranked.id)
+               END AS member_count
+        FROM ranked
+        WHERE row_num &lt;= 5
+        ORDER BY bucket, row_num
+    </select>
+
+    <select id="countSubmissionDays" resultType="com.kece.admin.mapper.AdminOverviewMapper$SubmissionDay">
+        WITH clock AS (
+            SELECT 28800 + TIMESTAMPDIFF(SECOND, NOW(), UTC_TIMESTAMP()) AS to_beijing
+        ), per_type AS (
+            SELECT DATE(TIMESTAMPADD(SECOND, clock.to_beijing, s.created_at)) AS submission_date,
+                   COUNT(*) AS algo_count, 0 AS db_count
+            FROM submission s
+            <if test="ownerId != null">
+                INNER JOIN question q ON q.id = s.question_id AND q.created_by = #{ownerId}
+            </if>
+            CROSS JOIN clock
+            WHERE s.created_at &gt;= TIMESTAMPADD(SECOND, -clock.to_beijing, #{from})
+              AND s.created_at &lt; TIMESTAMPADD(SECOND, -clock.to_beijing, #{until})
+            GROUP BY submission_date
+            UNION ALL
+            SELECT DATE(TIMESTAMPADD(SECOND, clock.to_beijing, s.created_at)) AS submission_date,
+                   0, COUNT(*)
+            FROM db_submission s
+            <if test="ownerId != null">
+                INNER JOIN db_question q ON q.id = s.question_id AND q.created_by = #{ownerId}
+            </if>
+            CROSS JOIN clock
+            WHERE s.created_at &gt;= TIMESTAMPADD(SECOND, -clock.to_beijing, #{from})
+              AND s.created_at &lt; TIMESTAMPADD(SECOND, -clock.to_beijing, #{until})
+            GROUP BY submission_date
+        )
+        SELECT submission_date AS date, SUM(algo_count) AS algo_count, SUM(db_count) AS db_count
+        FROM per_type
+        GROUP BY submission_date
+    </select>
+</mapper>

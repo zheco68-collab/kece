@@ -6,6 +6,7 @@ import { databaseApi } from '@/api/database'
 import { ApiError } from '@/api/request'
 import DataTable from '@/components/DataTable.vue'
 import Pagination from '@/components/Pagination.vue'
+import QuestionListShell from '@/components/admin/QuestionListShell.vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { usePagedQuery } from '@/shared/composables/usePagedQuery'
@@ -97,6 +98,13 @@ watch([keyword, createdByInput], () => {
 
 watch([typeFilter, statusFilter], reset)
 
+function clearFilters() {
+  keyword.value = ''
+  typeFilter.value = ''
+  statusFilter.value = ''
+  createdByInput.value = ''
+}
+
 /** 创建时间：ISO 串截取前 19 位并把 T 换成空格，得到 "YYYY-MM-DD HH:mm:ss"。 */
 function formatTime(iso: string): string {
   return iso ? iso.slice(0, 19).replace('T', ' ') : '—'
@@ -129,11 +137,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="admin container">
-    <h1 class="page-title">数据库题管理</h1>
-
-    <div class="filter-bar card">
-      <label class="filter">
+  <QuestionListShell title="数据库题管理" description="管理 SQL 题目、题型与公开状态。" :total="total" @reset="clearFilters">
+    <template #action>
+      <RouterLink class="btn btn-primary" to="/admin/db-questions/new">新建数据库题</RouterLink>
+    </template>
+    <template #filters>
+      <label class="filter-field"><span>题目标题</span><input v-model="keyword" class="input keyword-input" type="search" placeholder="输入标题关键词" /></label>
+      <label class="filter-field">
         <span class="filter-label">题型</span>
         <select v-model="typeFilter" class="input">
           <option v-for="t in typeOptions" :key="t.value || 'all'" :value="t.value">
@@ -141,8 +151,7 @@ onBeforeUnmount(() => {
           </option>
         </select>
       </label>
-      <input v-model="keyword" class="input keyword-input" type="search" placeholder="标题关键词" />
-      <label class="filter">
+      <label class="filter-field">
         <span class="filter-label">状态</span>
         <select v-model="statusFilter" class="input">
           <option v-for="s in statusOptions" :key="s.value || 'all'" :value="s.value">
@@ -150,7 +159,7 @@ onBeforeUnmount(() => {
           </option>
         </select>
       </label>
-      <label v-if="userStore.hasRole('ADMIN')" class="filter">
+      <label v-if="userStore.hasRole('ADMIN')" class="filter-field">
         <span class="filter-label">出题人</span>
         <input
           v-model="createdByInput"
@@ -159,12 +168,9 @@ onBeforeUnmount(() => {
           placeholder="创建人 ID"
         />
       </label>
-      <RouterLink class="btn btn-primary btn-sm new-btn" to="/admin/db-questions/new">
-        新建
-      </RouterLink>
-    </div>
+    </template>
 
-    <p v-if="loadError" class="submit-error">{{ loadError }}</p>
+    <p v-if="loadError" class="submit-error" role="alert">{{ loadError }} <button class="retry-button" type="button" @click="load()">重试</button></p>
 
     <DataTable :columns="columns" :rows="rows" :loading="loading">
       <template #cell-type="{ row }">
@@ -194,70 +200,19 @@ onBeforeUnmount(() => {
     </DataTable>
 
     <Pagination :page="page" :size="size" :total="total" @update:page="load" />
-  </div>
+  </QuestionListShell>
 </template>
 
 <style scoped>
-.admin {
-  padding-top: 32px;
-}
-.page-title {
-  margin: 28px 0 16px;
-  font-size: 22px;
-  font-weight: 600;
-}
-.filter-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px 20px;
-  padding: 16px;
-  margin-bottom: 24px;
-}
-.keyword-input {
-  max-width: 280px;
-}
-.filter {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.filter-label {
-  color: var(--ink-secondary);
-  font-size: 14px;
-  white-space: nowrap;
-}
-.filter select {
-  width: 120px;
-}
-.creator-input {
-  width: 140px;
-}
-.new-btn {
-  margin-left: auto;
-}
-.submit-error {
-  margin: 0 0 16px;
-}
-/* 状态徽章配色与 AdminUsersView 的启用/禁用徽章保持一致。 */
-.status-enabled {
-  background: var(--success-bg);
-  color: var(--success);
-}
-.status-disabled {
-  background: var(--danger-bg);
-  color: var(--danger);
-}
-.time {
-  color: var(--ink-tertiary);
-  font-size: 13px;
-}
-.row-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.btn-danger {
-  color: var(--danger);
-}
+.keyword-input { width: 240px; max-width: 100%; }
+.creator-input { width: 160px; max-width: 100%; }
+.filter-field select { min-width: 150px; }
+.filter-label { color: #555; font-size: 14px; }
+.submit-error { margin: 16px 24px; color: var(--danger); }
+.retry-button { color: inherit; background: none; border: 0; padding: 4px 8px; text-decoration: underline; cursor: pointer; }
+.status-enabled { background: var(--success-bg); color: var(--success); }
+.status-disabled { background: var(--danger-bg); color: var(--danger); }
+.time { color: #555; font-size: 13px; }
+.row-actions { display: flex; align-items: center; gap: 8px; }
+.btn-danger { color: var(--danger); }
 </style>

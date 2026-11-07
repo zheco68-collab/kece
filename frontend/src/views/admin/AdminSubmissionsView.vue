@@ -445,7 +445,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="admin container">
-    <h1 class="page-title">提交监控</h1>
+    <header class="page-header"><h1 class="page-title">提交监控</h1><p>按题型检索提交，查看作答详情与评测状态。</p></header>
 
     <div class="tabs">
       <button class="tab" :class="{ active: activeTab === 'code' }" @click="switchTab('code')">
@@ -699,6 +699,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.page-header { margin: 28px 0 24px; }
+.page-header .page-title { margin: 0 0 8px; font-size: 24px; }
+.page-header p { margin: 0; color: var(--ink-secondary); font-size: 14px; }
+.filter-bar { flex-wrap: wrap; }
 .admin {
   padding-top: 32px;
 }

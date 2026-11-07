@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   listAdminAnnouncements,
@@ -100,6 +100,7 @@ async function handleToggleTop(row: AnnouncementItem) {
   try {
     await toggleAdminAnnouncementTop(row.id, next)
     row.isTop = next
+    row.isPinned = next
     toast.success(next ? `已将「${row.title}」设为置顶` : `已取消「${row.title}」的置顶`)
   } catch (e) {
     toast.error(e instanceof ApiError ? e.message : '切换置顶状态失败')
@@ -136,6 +137,7 @@ async function removeAnnouncement(row: AnnouncementItem) {
 }
 
 onMounted(load)
+onBeforeUnmount(() => { if (keywordTimer !== null) clearTimeout(keywordTimer) })
 </script>
 
 <template>
@@ -144,7 +146,7 @@ onMounted(load)
     <div class="page-header">
       <div class="header-titles">
         <h1 class="page-title">公告管理</h1>
-        <span class="page-subtitle">// ANNOUNCEMENT OPERATIONS</span>
+        <p class="page-subtitle">发布、编辑并管理平台公告。</p>
       </div>
       <button
         class="btn btn-primary btn-create"
@@ -162,11 +164,12 @@ onMounted(load)
           v-model="keyword"
           class="input search-input"
           type="text"
+          aria-label="搜索公告标题或内容"
           placeholder="搜索公告标题或内容关键字…"
         />
       </div>
       <div class="filter-box">
-        <select v-model="statusFilter" class="input filter-select">
+        <select v-model="statusFilter" class="input filter-select" aria-label="公告状态">
           <option value="">全部状态</option>
           <option value="PUBLISHED">已公开</option>
           <option value="DRAFT">草稿/已下架</option>
@@ -175,7 +178,9 @@ onMounted(load)
     </div>
 
     <!-- 错误横幅 -->
-    <p v-if="loadError" class="submit-error">{{ loadError }}</p>
+    <p v-if="loadError" class="submit-error" role="alert">{{ loadError }} <button type="button" @click="load">重试</button></p>
+
+    <div class="results-heading"><strong>公告列表</strong><span>共 {{ total }} 条</span></div>
 
     <!-- 数据表格 -->
     <DataTable
@@ -187,13 +192,14 @@ onMounted(load)
     >
       <template #cell-title="{ row }">
         <div class="title-cell">
-          <span
+          <button
             class="title-text"
+            type="button"
             :title="row.title"
             @click="router.push(`/admin/announcements/${row.id}/edit`)"
           >
             {{ row.title }}
-          </span>
+          </button>
           <span v-if="row.summary" class="summary-hint" :title="row.summary">
             {{ row.summary }}
           </span>
@@ -265,35 +271,34 @@ onMounted(load)
 
 <style scoped>
 .admin-announcements {
-  padding-top: 16px;
-  padding-bottom: 48px;
+  padding-top: 0;
+  padding-bottom: 32px;
+  max-width: none;
 }
 
 .page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 16px 0 20px;
+  margin: 0 0 24px;
+  gap: 16px;
 }
 
 .header-titles {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
+  display: block;
 }
 
 .page-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--ink);
 }
 
 .page-subtitle {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink-tertiary);
-  letter-spacing: 0.5px;
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--ink-secondary);
 }
 
 .btn-create {
@@ -308,8 +313,16 @@ onMounted(load)
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  background: #fff;
 }
+.results-heading { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; background: #fff; border: 1px solid var(--line); border-bottom: 0; font-size: 15px; }
+.results-heading span { color: var(--ink-secondary); font-size: 13px; }
+.submit-error { margin: 0 0 16px; padding: 10px 12px; color: var(--danger); border: 1px solid var(--danger); background: #fff; }
+.submit-error button { border: 0; background: transparent; color: inherit; text-decoration: underline; cursor: pointer; }
+.admin-announcements :is(input,select,button):focus-visible { outline: 2px solid #111; outline-offset: 2px; }
 
 .search-box {
   flex: 1;
@@ -342,6 +355,10 @@ onMounted(load)
 }
 
 .title-text {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
   font-weight: 600;
   color: var(--ink);
   cursor: pointer;
@@ -349,7 +366,7 @@ onMounted(load)
 }
 
 .title-text:hover {
-  color: #1677ff;
+  text-decoration: underline;
 }
 
 .summary-hint {
@@ -463,5 +480,10 @@ onMounted(load)
 .action-btn.btn-danger:hover {
   background: var(--danger-bg);
   border-color: var(--danger);
+}
+@media (max-width: 560px) {
+  .page-header { align-items: flex-start; flex-direction: column; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .filter-box { width: 100%; }
 }
 </style>

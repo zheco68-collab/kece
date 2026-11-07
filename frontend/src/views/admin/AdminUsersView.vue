@@ -219,10 +219,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="admin container">
-    <h1 class="page-title">用户管理</h1>
+    <header class="page-header"><h1 class="page-title">用户管理</h1><p>查看用户信息，管理账号状态和角色。</p></header>
 
     <div class="filter-bar card">
-      <input v-model="keyword" class="input keyword-input" type="search" placeholder="用户名 / 邮箱" />
+      <input v-model="keyword" class="input keyword-input" type="search" aria-label="搜索用户名或邮箱" placeholder="用户名 / 邮箱" />
       <label class="filter">
         <span class="filter-label">角色</span>
         <select v-model="roleFilter" class="input">
@@ -241,7 +241,9 @@ onBeforeUnmount(() => {
       </label>
     </div>
 
-    <p v-if="loadError" class="submit-error">{{ loadError }}</p>
+    <p v-if="loadError" class="submit-error" role="alert">{{ loadError }} <button type="button" @click="load">重试</button></p>
+
+    <div class="results-heading"><strong>用户列表</strong><span>共 {{ total }} 条</span></div>
 
     <DataTable :columns="columns" :rows="rows" :loading="loading">
       <template #cell-email="{ row }">
@@ -257,6 +259,7 @@ onBeforeUnmount(() => {
             class="input role-select"
             :value="row.roles[0] ?? 'USER'"
             :disabled="isSelf(row)"
+            :aria-label="`修改 ${row.username} 的角色`"
             @change="onRoleChange(row, $event)"
           >
             <option value="USER">用户</option>
@@ -335,23 +338,28 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .admin {
-  padding-top: 32px;
+  padding-top: 0;
 }
+.page-header { margin: 0 0 24px; }
 .page-title {
-  margin: 28px 0 16px;
-  font-size: 22px;
-  font-weight: 600;
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 700;
 }
+.page-header p { margin: 0; color: var(--ink-secondary); font-size: 14px; }
 .filter-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px 20px;
   padding: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
+  background: #fff;
 }
 .keyword-input {
-  max-width: 280px;
+  max-width: 360px;
+  min-width: 0;
+  height: 40px;
 }
 .filter {
   display: flex;
@@ -365,10 +373,19 @@ onBeforeUnmount(() => {
 }
 .filter select {
   width: 120px;
+  height: 40px;
 }
+.results-heading { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; background: #fff; border: 1px solid var(--line); border-bottom: 0; font-size: 15px; }
+.results-heading span { color: var(--ink-secondary); font-size: 13px; }
 .submit-error {
   margin: 0 0 16px;
+  padding: 10px 12px;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  background: #fff;
 }
+.submit-error button { border: 0; background: transparent; color: inherit; text-decoration: underline; cursor: pointer; }
+.admin :is(input,select,button):focus-visible, .pwd-overlay :is(input,button):focus-visible { outline: 2px solid #111; outline-offset: 2px; }
 .role-cell {
   display: flex;
   align-items: center;
@@ -412,6 +429,11 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+@media (max-width: 560px) {
+  .keyword-input { max-width: none; width: 100%; }
+  .filter { flex: 1 1 140px; }
+  .filter select { flex: 1; min-width: 0; }
 }
 .pwd-overlay {
   position: fixed;

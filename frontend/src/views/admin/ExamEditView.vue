@@ -343,13 +343,14 @@ onMounted(async () => {
 
 <template>
   <div class="exam-edit container">
-    <h1 class="page-title">{{ isEdit ? '编辑试卷' : '新建试卷' }}</h1>
+    <div class="page-header"><div><h1 class="page-title">{{ isEdit ? '编辑试卷' : '新建试卷' }}</h1><p class="page-description">设置考试信息、选择题目并配置分值。</p></div><button class="btn btn-ghost" type="button" @click="router.push('/admin/exams')">返回考试列表</button></div>
 
     <div v-if="loading" class="state-card card"><div class="loading-spinner"></div><p class="muted">正在加载试卷配置…</p></div>
     <p v-else-if="pageError" class="submit-error">{{ pageError }}</p>
 
     <template v-else>
       <div class="form card">
+        <h2 class="section-title block-title">基本信息</h2>
         <FormField label="试卷标题" :error="formErrors.title">
           <input
             v-model="form.title"
@@ -428,12 +429,13 @@ onMounted(async () => {
             :key="t.value"
             class="tab"
             :class="{ active: tab === t.value }"
+            :aria-pressed="tab === t.value"
             type="button"
             @click="tab = t.value"
           >
             {{ t.label }}
           </button>
-          <input v-model="tabKeyword" class="input search" type="text" placeholder="搜索该题型题目…" />
+          <input v-model="tabKeyword" class="input search" type="search" aria-label="搜索当前题型题目" placeholder="输入题号或关键词搜索" />
         </div>
 
         <div v-if="listLoading" class="state-card"><div class="loading-spinner"></div><p class="muted">正在加载题库…</p></div>
@@ -480,7 +482,7 @@ onMounted(async () => {
             title="按单选、判断、多选、填空、SQL、编程规范顺序重新排布"
             @click="autoSortByExamStandards"
           >
-            ⚡ 按标准试卷顺序自动排布
+            按标准试卷顺序自动排布
           </button>
         </div>
 
@@ -500,7 +502,7 @@ onMounted(async () => {
             <span class="type-pill" :class="getSelectedBadge(s).class">{{ getSelectedBadge(s).text }}</span>
             <span class="chosen-label">{{ s.title }}</span>
             <span class="chosen-score">
-              <input v-model.number="s.score" class="input score-input" type="number" min="1" /> 分
+              <input v-model.number="s.score" class="input score-input" type="number" min="1" :aria-label="`${s.title} 的分值`" /> 分
             </span>
             <button
               class="btn btn-ghost btn-sm"
@@ -547,19 +549,24 @@ onMounted(async () => {
 
 <style scoped>
 .exam-edit {
-  padding-top: 32px;
+  width: 100%; max-width: none; min-width: 0; padding-top: 16px; padding-bottom: 48px;
 }
+.page-header { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin-bottom:24px; }
 .page-title {
-  margin: 28px 0 8px;
-  font-size: 22px;
-  font-weight: 600;
+  margin: 0 0 8px;
+  font-size: 26px;
+  font-weight: 700;
 }
+.page-description { margin:0; color:var(--ink-secondary); font-size:14px; line-height:1.6; }
 .form,
 .picker,
 .chosen {
-  padding: 16px;
-  margin-bottom: 16px;
+  padding: 22px;
+  margin-bottom: 20px;
+  background: var(--bg);
+  border: 1px solid var(--line);
 }
+.block-title { padding-bottom:16px; border-bottom:1px solid var(--line); }
 .field-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -570,7 +577,7 @@ onMounted(async () => {
 }
 .section-title {
   margin: 0 0 12px;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
 }
 .tabs {
@@ -585,7 +592,8 @@ onMounted(async () => {
   border: 1px solid var(--line);
   border-radius: var(--pill);
   background: var(--surface);
-  font-size: 13px;
+  font-size: 14px;
+  min-height: 38px;
   cursor: pointer;
 }
 .tab.active {
@@ -594,7 +602,8 @@ onMounted(async () => {
   color: #fff;
 }
 .search {
-  width: 220px;
+  width: 260px;
+  max-width: 100%;
   margin-left: auto;
 }
 .source-list,
@@ -610,8 +619,9 @@ onMounted(async () => {
 .chosen-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
-  padding: 8px 10px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
@@ -619,15 +629,15 @@ onMounted(async () => {
 .chosen-label {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.6;
+  font-size: 14px;
 }
 .chosen-order {
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: 0;
   background: var(--ink);
   color: #fff;
   display: inline-flex;
@@ -665,7 +675,7 @@ onMounted(async () => {
 }
 .scope-tip {
   display: inline-block;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   padding: 2px 8px;
   margin-left: 10px;
@@ -747,9 +757,11 @@ onMounted(async () => {
 .badge-algo { background: #e7f5ff; color: #1864ab; }
 
 .source-score-hint {
-  font-size: 11px;
-  color: #868e96;
+  font-size: 13px;
+  color: var(--ink-secondary);
   white-space: nowrap;
   flex-shrink: 0;
 }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
+@media (max-width: 700px) { .exam-edit { padding-top: 8px; } .form, .picker, .chosen { padding: 16px; } .search { width: 100%; margin-left: 0; } .source-label, .chosen-label { flex-basis: 100%; } .actions { flex-wrap:wrap; } }
 </style>

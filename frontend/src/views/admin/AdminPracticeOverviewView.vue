@@ -632,6 +632,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .status-indicator {
   display: inline-flex;
@@ -705,8 +706,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  animation: cardDropIn 0.44s cubic-bezier(0.25, 1.15, 0.5, 1) backwards;
-  animation-delay: calc(var(--drop-index, 0) * 45ms);
 }
 .metric-head {
   display: flex;

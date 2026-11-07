@@ -395,11 +395,12 @@ onMounted(async () => {
     <!-- 顶部紧凑基础配置栏 -->
     <div class="config-bar card">
       <div class="config-col">
-        <label class="field-label">
+        <label class="field-label" for="practice-title">
           课练标题 <span class="req">*</span>
           <span v-if="formErrors.title" class="field-err">{{ formErrors.title }}</span>
         </label>
         <input
+          id="practice-title"
           ref="titleInputRef"
           v-model="form.title"
           class="input"
@@ -407,8 +408,9 @@ onMounted(async () => {
           placeholder="例如：第04次实验课：树与二叉树专项随堂课练"
         />
 
-        <label class="field-label mt-8">课堂说明（可选）</label>
+        <label class="field-label mt-8" for="practice-description">课堂说明（可选）</label>
         <input
+          id="practice-description"
           v-model="form.description"
           class="input"
           type="text"
@@ -417,9 +419,10 @@ onMounted(async () => {
       </div>
 
       <div class="config-col">
-        <label class="field-label">课堂限时（分钟） <span class="req">*</span></label>
+        <label class="field-label" for="practice-duration">课堂限时（分钟） <span class="req">*</span></label>
         <div class="duration-row">
           <input
+            id="practice-duration"
             v-model.number="form.durationMinutes"
             class="input duration-input mono"
             type="number"
@@ -438,6 +441,7 @@ onMounted(async () => {
             type="button"
             class="preset-btn mono"
             :class="{ active: form.durationMinutes === mins }"
+            :aria-pressed="form.durationMinutes === mins"
             @click="form.durationMinutes = mins"
           >
             {{ mins === 0 ? '不限时' : `${mins}m` }}
@@ -463,6 +467,7 @@ onMounted(async () => {
               v-model="tabKeyword"
               class="input panel-search"
               type="search"
+              aria-label="搜索当前题型题目"
               placeholder="搜索当前题型题目…"
             />
           </div>
@@ -475,6 +480,7 @@ onMounted(async () => {
             type="button"
             class="type-tab-btn"
             :class="{ active: tab === t.value }"
+            :aria-pressed="tab === t.value"
             @click="tab = t.value"
           >
             {{ t.label }}
@@ -558,7 +564,7 @@ onMounted(async () => {
             title="按 01客观 → 02SQL → 03算法 标准顺序自动重排"
             @click="autoSortByStandards"
           >
-            ⚡ 标准章节排序
+            标准章节排序
           </button>
         </div>
 
@@ -583,6 +589,7 @@ onMounted(async () => {
                 v-model.number="batchObjScore"
                 type="number"
                 min="1"
+                aria-label="客观题统一分值"
                 class="batch-input mono"
               />
               <button type="button" class="batch-apply-btn" @click="applyBatchObjScore">
@@ -595,6 +602,7 @@ onMounted(async () => {
                 v-model.number="batchPracScore"
                 type="number"
                 min="1"
+                aria-label="实操题统一分值"
                 class="batch-input mono"
               />
               <button type="button" class="batch-apply-btn" @click="applyBatchPracScore">
@@ -632,6 +640,7 @@ onMounted(async () => {
                   v-model.number="s.score"
                   type="number"
                   min="1"
+                  :aria-label="`${s.title} 的分值`"
                   class="score-input mono"
                 />
                 <span class="score-unit">分</span>
@@ -641,6 +650,7 @@ onMounted(async () => {
                 type="button"
                 class="icon-op-btn"
                 title="上移"
+                :aria-label="`上移 ${s.title}`"
                 :disabled="i === 0"
                 @click="moveQuestion(i, -1)"
               >
@@ -650,6 +660,7 @@ onMounted(async () => {
                 type="button"
                 class="icon-op-btn"
                 title="下移"
+                :aria-label="`下移 ${s.title}`"
                 :disabled="i === selected.length - 1"
                 @click="moveQuestion(i, 1)"
               >
@@ -659,6 +670,7 @@ onMounted(async () => {
                 type="button"
                 class="icon-op-btn danger"
                 title="移除题目"
+                :aria-label="`移除 ${s.title}`"
                 @click="removeQuestion(i)"
               >
                 ×
@@ -673,7 +685,8 @@ onMounted(async () => {
 
 <style scoped>
 .practice-composer {
-  padding-top: 24px;
+  width: 100%; max-width: none; min-width: 0; container-type: inline-size;
+  padding-top: 16px;
   padding-bottom: 72px;
 }
 
@@ -717,7 +730,8 @@ onMounted(async () => {
 }
 .head-sub {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 14px;
+  line-height: 1.6;
 }
 .head-actions {
   display: flex;
@@ -740,10 +754,10 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 1.35fr 1fr;
   gap: 24px;
-  padding: 16px 20px;
+  padding: 22px;
   margin-bottom: 18px;
   border: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--bg);
   border-radius: 0;
 }
 .config-col {
@@ -752,7 +766,7 @@ onMounted(async () => {
   gap: 6px;
 }
 .field-label {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--ink-secondary);
 }
@@ -770,6 +784,7 @@ onMounted(async () => {
 .duration-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .duration-input {
@@ -785,8 +800,9 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 .preset-btn {
-  padding: 4px 12px;
-  font-size: 12px;
+  padding: 7px 12px;
+  min-height: 36px;
+  font-size: 13px;
   font-weight: 600;
   border: 1px solid var(--line);
   background: var(--bg);
@@ -805,11 +821,12 @@ onMounted(async () => {
 /* 左右双栏组卷工作台 */
 .composer-workbench {
   display: grid;
-  grid-template-columns: 1.18fr 1fr;
+  grid-template-columns: minmax(0, 1.18fr) minmax(0, 1fr);
   gap: 18px;
   align-items: start;
 }
 .workbench-panel {
+  min-width: 0;
   border: 1px solid var(--line);
   background: var(--surface);
   border-radius: 0;
@@ -833,15 +850,16 @@ onMounted(async () => {
 .panel-head-left {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .panel-title {
   margin: 0;
-  font-size: 14.5px;
+  font-size: 18px;
   font-weight: 700;
 }
 .scope-badge {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   padding: 1px 7px;
   background: var(--surface);
@@ -849,12 +867,13 @@ onMounted(async () => {
   color: var(--ink-secondary);
 }
 .panel-search-wrap {
-  width: 200px;
+  width: 220px;
+  max-width: 100%;
 }
 .panel-search {
   width: 100%;
-  height: 30px;
-  font-size: 12.5px;
+  min-height: 38px;
+  font-size: 14px;
 }
 
 .type-tabs-bar {
@@ -866,8 +885,9 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 .type-tab-btn {
-  padding: 4px 10px;
-  font-size: 12px;
+  padding: 7px 12px;
+  min-height: 36px;
+  font-size: 14px;
   font-weight: 500;
   border: 1px solid var(--line);
   background: var(--bg);
@@ -900,11 +920,12 @@ onMounted(async () => {
 .paper-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--line);
-  font-size: 13px;
+  font-size: 14px;
   transition: background 0.12s ease;
 }
 .bank-row {
@@ -925,6 +946,7 @@ onMounted(async () => {
 .paper-row-main {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
   flex: 1;
@@ -938,9 +960,9 @@ onMounted(async () => {
 }
 .q-label,
 .paper-title {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
   color: var(--ink);
 }
 
@@ -1013,8 +1035,9 @@ onMounted(async () => {
   color: var(--ink-tertiary);
 }
 .pick-btn {
-  padding: 3px 9px;
-  font-size: 12px;
+  padding: 7px 12px;
+  min-height: 36px;
+  font-size: 13px;
   font-weight: 600;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -1121,8 +1144,8 @@ onMounted(async () => {
   color: var(--ink-secondary);
 }
 .icon-op-btn {
-  width: 26px;
-  height: 26px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -1155,7 +1178,8 @@ onMounted(async () => {
   font-size: 13px;
 }
 
-@media (max-width: 920px) {
+button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+@container (max-width: 920px) {
   .config-bar,
   .composer-workbench {
     grid-template-columns: 1fr;
@@ -1164,4 +1188,5 @@ onMounted(async () => {
     position: static;
   }
 }
+@media (max-width: 640px) { .head-actions { width:100%; flex-wrap:wrap; } .head-actions .btn { flex:1 1 auto; } .panel-search-wrap { width:100%; } .bank-row-main, .paper-row-main { flex-basis:100%; } .bank-row-right, .paper-row-ops { margin-left:auto; } }
 </style>

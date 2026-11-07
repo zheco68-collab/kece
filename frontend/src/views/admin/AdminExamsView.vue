@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { examApi, type Exam } from '@/api/exam';
 import { ApiError } from '@/api/request';
@@ -14,7 +14,6 @@ const toast = useToast();
 
 const keyword = ref('');
 const statusFilter = ref('');
-const modeFilter = ref('');
 const page = ref(1);
 const size = 20;
 
@@ -103,7 +102,7 @@ watch(keyword, () => {
   if (keywordTimer !== null) clearTimeout(keywordTimer);
   keywordTimer = setTimeout(resetAndLoad, 300);
 });
-watch([statusFilter, modeFilter], resetAndLoad);
+watch(statusFilter, resetAndLoad);
 watch(page, () => {
   load();
 });
@@ -129,25 +128,36 @@ async function removeExam(row: Exam) {
 }
 
 onMounted(load);
+onBeforeUnmount(() => {
+  if (keywordTimer !== null) clearTimeout(keywordTimer);
+});
 </script>
 
 <template>
   <div class="admin-exams container">
-    <h1 class="page-title">考试管理</h1>
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">考试管理</h1>
+        <p class="page-description">创建考试，管理试卷并查看考生成绩。</p>
+      </div>
+      <button class="btn btn-primary create-button" type="button" @click="router.push('/admin/exams/new')">
+        新建试卷
+      </button>
+    </header>
 
-    <div class="toolbar">
-      <input v-model="keyword" class="input search" type="text" placeholder="搜索试卷标题…" />
-      <select v-model="statusFilter" class="input">
+    <div class="toolbar" aria-label="筛选考试">
+      <label class="filter-field search-field"><span>试卷标题</span><input v-model="keyword" class="input search" type="search" placeholder="输入试卷标题" /></label>
+      <label class="filter-field"><span>可见状态</span><select v-model="statusFilter" class="input">
         <option value="">全部状态</option>
         <option value="1">公开</option>
         <option value="0">私有</option>
-      </select>
-      <button class="btn btn-primary" type="button" @click="router.push('/admin/exams/new')">
-        新建试卷
-      </button>
+      </select></label>
+      <button class="btn btn-ghost reset-button" type="button" @click="keyword = ''; statusFilter = ''">重置筛选</button>
     </div>
 
-    <p v-if="loadError" class="submit-error">{{ loadError }}</p>
+    <div v-if="loadError" class="submit-error" role="alert">{{ loadError }} <button type="button" class="retry-button" @click="load">重试</button></div>
+
+    <div class="list-heading"><h2>考试列表</h2><span>共 {{ total }} 场考试</span></div>
 
     <DataTable
       :columns="columns"
@@ -221,29 +231,43 @@ onMounted(load);
 
 <style scoped>
 .admin-exams {
-  padding-top: 32px;
+  padding-top: 28px;
+  padding-bottom: 48px;
 }
+.page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; margin-bottom: 24px; flex-wrap: wrap; }
 .page-title {
-  margin: 28px 0 8px;
-  font-size: 22px;
-  font-weight: 600;
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 700;
 }
+.page-description { margin: 0; font-size: 14px; color: var(--ink-secondary); }
+.create-button { min-height: 40px; }
 .toolbar {
   display: flex;
-  gap: 10px;
-  margin: 16px 0;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  background: var(--surface);
   flex-wrap: wrap;
 }
-.search {
-  width: 240px;
-}
+.filter-field { display: flex; flex-direction: column; gap: 7px; font-size: 13px; font-weight: 600; color: var(--ink-secondary); }
+.filter-field .input { width: 180px; min-height: 40px; background: white; font-weight: 400; }
+.filter-field.search-field .input { width: 260px; }
+.reset-button { min-height: 40px; background: white; }
+.list-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:0 0 12px; }
+.list-heading h2 { margin:0; font-size:16px; }
+.list-heading span { color:var(--ink-secondary); font-size:13px; }
+.submit-error { padding:12px 16px; border:1px solid var(--danger); color:var(--danger); }
+.retry-button { border:0; background:none; color:inherit; cursor:pointer; text-decoration:underline; }
 .time {
   color: var(--ink-tertiary);
   font-size: 13px;
 }
 .mode-acm {
-  background: var(--accent-bg, #eef2ff);
-  color: #6366f1;
+  background: var(--surface);
+  color: var(--ink);
 }
 .mode-oi {
   background: var(--success-bg, #ecfdf5);
@@ -261,7 +285,7 @@ onMounted(load);
   color: var(--danger);
 }
 .btn-highlight {
-  color: #1971c2;
+  color: var(--ink);
   font-weight: 600;
 }
 .status-ended {
@@ -273,11 +297,16 @@ onMounted(load);
   color: #2b8a3e;
 }
 .status-upcoming {
-  background: #e7f5ff;
-  color: #1c7ed6;
+  background: var(--surface);
+  color: var(--ink-secondary);
 }
 .status-cancelled {
   background: #fff5f5;
   color: #fa5252;
+}
+@media (max-width: 600px) {
+  .toolbar { align-items: stretch; }
+  .filter-field, .filter-field .input, .filter-field.search-field .input { width: 100%; }
+  .reset-button { width: 100%; }
 }
 </style>

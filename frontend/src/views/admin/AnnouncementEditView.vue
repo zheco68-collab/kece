@@ -112,7 +112,7 @@ onMounted(loadDetail)
       <div class="header-left">
         <RouterLink to="/admin/announcements" class="back-link">
           <span class="back-arrow">←</span>
-          <span>返回公告运维列表</span>
+          <span>返回公告列表</span>
         </RouterLink>
         <h1 class="page-title">
           {{ isEdit ? `编辑公告 #${announcementId}` : '发布新公告' }}
@@ -140,7 +140,7 @@ onMounted(loadDetail)
     </div>
 
     <!-- 错误横幅 -->
-    <p v-if="pageError" class="submit-error">{{ pageError }}</p>
+    <p v-if="pageError" class="submit-error" role="alert">{{ pageError }}</p>
 
     <!-- 加载中 -->
     <div v-if="loading" class="state-card card">
@@ -158,8 +158,9 @@ onMounted(loadDetail)
 
         <div class="form-body">
           <div class="form-item">
-            <label class="form-label required">公告标题</label>
+            <label for="announcement-title" class="form-label required">公告标题</label>
             <input
+              id="announcement-title"
               v-model="form.title"
               class="input title-input"
               type="text"
@@ -169,11 +170,12 @@ onMounted(loadDetail)
           </div>
 
           <div class="form-item">
-            <label class="form-label">
+            <label for="announcement-summary" class="form-label">
               导读摘要
               <span class="label-hint">（1~2 行简明概述，若留空将在大厅自动提取正文首部）</span>
             </label>
             <textarea
+              id="announcement-summary"
               v-model="form.summary"
               class="summary-textarea"
               placeholder="用于在大厅看板卡片居中展示的简明导读…"
@@ -243,6 +245,13 @@ onMounted(loadDetail)
 </template>
 
 <style scoped>
+.header-actions, .form-bottom-bar, .right-buttons { flex-wrap: wrap; gap: 12px; }
+.edit-form :is(input, textarea, button):focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+@media (max-width: 700px) {
+  .edit-header { flex-direction: column; align-items: stretch; }
+  .header-actions { justify-content: flex-start; }
+  .card-head { flex-wrap: wrap; gap: 8px; }
+}
 .announcement-edit-view {
   padding-top: 20px;
   padding-bottom: 72px;

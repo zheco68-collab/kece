@@ -56,12 +56,12 @@ export const adminApi = {
     http.put<AdminUser>(`/admin/users/${id}/status`, { status }),
   resetUserPassword: (id: number, newPassword: string) =>
     http.put<void>(`/admin/users/${id}/password`, { newPassword }),
-  listQuestions: (params: AdminQuestionListParams) =>
-    http.get<PageResult<Question>>('/admin/questions', { params }),
-  listDbQuestions: (params: AdminDbQuestionListParams) =>
-    http.get<PageResult<DbQuestion>>('/admin/db-questions', { params }),
-  listObjectiveQuestions: (params: AdminObjectiveListParams) =>
-    http.get<PageResult<ObjectiveQuestion>>('/admin/objective-questions', { params }),
+  listQuestions: (params: AdminQuestionListParams, signal?: AbortSignal) =>
+    http.get<PageResult<Question>>('/admin/questions', { params, signal }),
+  listDbQuestions: (params: AdminDbQuestionListParams, signal?: AbortSignal) =>
+    http.get<PageResult<DbQuestion>>('/admin/db-questions', { params, signal }),
+  listObjectiveQuestions: (params: AdminObjectiveListParams, signal?: AbortSignal) =>
+    http.get<PageResult<ObjectiveQuestion>>('/admin/objective-questions', { params, signal }),
   listCodeSubmissions: (params: AdminSubmissionListParams) =>
     http.get<PageResult<CodeSubmissionRow>>('/admin/submissions', { params }),
   listDbSubmissions: (params: AdminSubmissionListParams) =>

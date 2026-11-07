@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -16,18 +16,36 @@ interface NavSection {
   adminOnly?: boolean
 }
 
-const navSections: NavSection[] = [
-  { path: '/admin/questions', label: '编程题管理', icon: 'code' },
-  { path: '/admin/db-questions', label: '数据库题管理', icon: 'database' },
-  { path: '/admin/objective-questions', label: '客观题管理', icon: 'checklist' },
-  { path: '/admin/problem-sets', label: '题集管理', icon: 'problemset' },
-  { path: '/admin/exams', label: '考试与组卷', icon: 'exam' },
-  { path: '/admin/practices', label: '随堂课练', icon: 'practice' },
-  { path: '/admin/submissions', label: '提交监控', icon: 'monitor' },
-  { path: '/admin/announcements', label: '公告管理', icon: 'announcement' },
-  { path: '/admin/solutions', label: '题解管理', icon: 'solution', adminOnly: true },
-  { path: '/admin/users', label: '用户管理', icon: 'users', adminOnly: true },
+interface NavGroup { label: string; items: NavSection[] }
+const navGroups: NavGroup[] = [
+  { label: '工作台', items: [
+    { path: '/admin/overview', label: '概况', icon: 'overview' },
+  ] },
+  { label: '题库管理', items: [
+    { path: '/admin/questions', label: '编程题', icon: 'code' },
+    { path: '/admin/db-questions', label: '数据库题', icon: 'database' },
+    { path: '/admin/objective-questions', label: '客观题', icon: 'checklist' },
+    { path: '/admin/problem-sets', label: '题集', icon: 'problemset' },
+  ] },
+  { label: '教学与考试', items: [
+    { path: '/admin/exams', label: '考试与组卷', icon: 'exam' },
+    { path: '/admin/practices', label: '随堂课练', icon: 'practice' },
+  ] },
+  { label: '评测与内容', items: [
+    { path: '/admin/submissions', label: '提交监控', icon: 'monitor' },
+    { path: '/admin/announcements', label: '公告管理', icon: 'announcement' },
+    { path: '/admin/solutions', label: '题解管理', icon: 'solution', adminOnly: true },
+  ] },
+  { label: '系统管理', items: [
+    { path: '/admin/users', label: '用户管理', icon: 'users', adminOnly: true },
+  ] },
 ]
+const visibleGroups = computed(() => navGroups.map(group => ({
+  ...group,
+  items: group.items.filter(item => !item.adminOnly || userStore.hasRole('ADMIN')),
+})).filter(group => group.items.length))
+const sidebarOpen = ref(false)
+watch(() => route.fullPath, () => { sidebarOpen.value = false })
 
 function isActive(path: string): boolean {
   return route.path === path || route.path.startsWith(path + '/')
@@ -44,9 +62,10 @@ function logout() {
 </script>
 
 <template>
-  <div class="admin-layout">
+  <div class="admin-layout" @keydown.esc="sidebarOpen = false">
     <!-- 左侧独立侧边栏 -->
-    <aside class="admin-sidebar">
+    <button v-if="sidebarOpen" class="sidebar-backdrop" aria-label="关闭导航菜单" @click="sidebarOpen = false"></button>
+    <aside id="admin-navigation" class="admin-sidebar" :class="{ 'is-open': sidebarOpen }">
       <div class="sidebar-header">
         <RouterLink to="/" class="brand-link" title="返回前台首页">
           <img src="/kece-logo.png" alt="KECE 课测" class="brand-logo" />
@@ -54,17 +73,21 @@ function logout() {
         <div class="console-tag">CONSOLE</div>
       </div>
 
-      <nav class="sidebar-nav">
+      <nav class="sidebar-nav" aria-label="后台管理导航">
+        <div v-for="group in visibleGroups" :key="group.label" class="nav-group">
+          <div class="nav-group-title">{{ group.label }}</div>
         <RouterLink
-          v-for="s in navSections"
-          v-show="!s.adminOnly || userStore.hasRole('ADMIN')"
+          v-for="s in group.items"
           :key="s.path"
           :to="s.path"
           class="nav-item"
           :class="{ active: isActive(s.path) }"
         >
+          <svg v-if="s.icon === 'overview'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />
+          </svg>
           <!-- 编程题图标 -->
-          <svg v-if="s.icon === 'code'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg v-else-if="s.icon === 'code'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="16 18 22 12 16 6" />
             <polyline points="8 6 2 12 8 18" />
           </svg>
@@ -75,11 +98,8 @@ function logout() {
             <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
           </svg>
           <!-- 客观题图标 -->
-          <svg v-else-if="s.icon === 'checklist'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="16" y1="13" x2="8" y2="13" />
-            <line x1="16" y1="17" x2="8" y2="17" />
+          <svg v-else-if="s.icon === 'checklist'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="m3 6 2 2 4-4M12 6h9M12 12h9M12 18h9M4 10h4v4H4zM4 16h4v4H4z" />
           </svg>
           <!-- 题集管理图标 -->
           <svg v-else-if="s.icon === 'problemset'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -107,11 +127,8 @@ function logout() {
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
             <path d="M13.73 21a2 2 0 0 1-3.46 0" />
           </svg>
-          <svg v-else-if="s.icon === 'solution'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="8" y1="13" x2="16" y2="13" />
-            <line x1="8" y1="17" x2="13" y2="17" />
+          <svg v-else-if="s.icon === 'solution'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M9 18v-1c0-1.2-.7-2.2-1.5-3a6.5 6.5 0 1 1 9 0c-.8.8-1.5 1.8-1.5 3v1zM10 22h4" />
           </svg>
           <!-- 用户管理图标 -->
           <svg v-else-if="s.icon === 'users'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -122,6 +139,7 @@ function logout() {
           </svg>
           <span class="nav-label">{{ s.label }}</span>
         </RouterLink>
+        </div>
       </nav>
 
       <!-- 侧边栏底部：用户信息与前台快捷导航 -->
@@ -159,6 +177,9 @@ function logout() {
     <div class="admin-main-container">
       <header class="admin-topbar">
         <div class="topbar-left">
+          <button class="menu-toggle" type="button" aria-controls="admin-navigation" :aria-expanded="sidebarOpen" :aria-label="sidebarOpen ? '关闭导航菜单' : '打开导航菜单'" @click="sidebarOpen = !sidebarOpen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+          </button>
           <div class="breadcrumb">
             <span class="bc-root">控制台</span>
             <span class="bc-sep">/</span>
@@ -166,10 +187,6 @@ function logout() {
           </div>
         </div>
         <div class="topbar-right">
-          <span class="system-status">
-            <span class="status-indicator"></span>
-            <span>评测集群在线</span>
-          </span>
           <RouterLink to="/" class="front-link">
             <span>前台主站</span>
             <svg class="link-arrow" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
@@ -184,7 +201,7 @@ function logout() {
       </main>
 
       <footer class="admin-footer">
-        KECE 课测 · 管理控制系统 (v0.2)
+        KECE 课测 · 管理控制台
       </footer>
     </div>
 
@@ -200,22 +217,22 @@ function logout() {
    ========================================= */
 .admin-layout {
   display: flex;
-  min-height: 100vh;
-  background: var(--bg);
+  min-height: 100dvh;
+  background: var(--surface);
 }
 
 /* =========================================
    独立左侧边栏
    ========================================= */
 .admin-sidebar {
-  width: 230px;
+  width: 236px;
   background: #ffffff;
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: 100dvh;
   flex-shrink: 0;
   z-index: 100;
 }
@@ -254,11 +271,19 @@ function logout() {
 /* 导航项目列表 */
 .sidebar-nav {
   flex: 1;
-  padding: 12px 10px;
+  padding: 12px 10px 20px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 16px;
   overflow-y: auto;
+}
+
+.nav-group { display: grid; gap: 3px; }
+.nav-group-title {
+  padding: 8px 14px 4px;
+  color: #666;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .nav-item {
@@ -267,10 +292,10 @@ function logout() {
   gap: 12px;
   padding: 10px 14px;
   color: var(--ink-secondary);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   border-radius: 0;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
   text-decoration: none;
   border-left: 3px solid transparent;
 }
@@ -390,13 +415,12 @@ function logout() {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 .admin-topbar {
-  height: 58px;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(12px);
+  min-height: 58px;
+  background: #fff;
   border-bottom: 1px solid var(--line);
   padding: 0 28px;
   display: flex;
@@ -411,8 +435,12 @@ function logout() {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: 14px;
 }
+
+.topbar-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.menu-toggle { display: none; }
+.sidebar-backdrop { display: none; }
 
 .bc-root {
   color: var(--ink-tertiary);
@@ -432,23 +460,6 @@ function logout() {
   align-items: center;
   gap: 20px;
   font-size: 13px;
-}
-
-.system-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ink-secondary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
-}
-
-.status-indicator {
-  width: 6px;
-  height: 6px;
-  background: var(--success);
-  border-radius: 0;
-  box-shadow: 0 0 6px rgba(47, 158, 68, 0.6);
 }
 
 .front-link {
@@ -478,6 +489,12 @@ function logout() {
 .admin-content {
   flex: 1;
   padding: 24px 28px 40px;
+  min-width: 0;
+}
+
+.admin-layout :is(a, button):focus-visible {
+  outline: 2px solid #111;
+  outline-offset: 2px;
 }
 
 /* 优化管理端内部的 container 布局，使其充满主工作区 */
@@ -504,34 +521,45 @@ function logout() {
 /* 移动端/窄屏响应式折叠 */
 @media (max-width: 860px) {
   .admin-sidebar {
-    width: 64px;
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100dvh;
+    width: min(280px, 85vw);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.18s ease, visibility 0.18s;
   }
-  .sidebar-header .brand-logo,
-  .console-tag,
-  .nav-label,
-  .user-block,
-  .action-btn span {
-    display: none;
+  .admin-sidebar.is-open { transform: translateX(0); visibility: visible; }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    border: 0;
+    background: rgba(0, 0, 0, 0.4);
   }
-  .sidebar-header {
+  .menu-toggle {
+    display: inline-flex;
+    align-items: center;
     justify-content: center;
-    padding: 12px 0;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 0;
+    background: #fff;
+    color: var(--ink);
+    cursor: pointer;
   }
-  .nav-item {
-    justify-content: center;
-    padding: 12px 0;
-    border-left: none;
-    border-bottom: 3px solid transparent;
-  }
-  .nav-item.active {
-    border-bottom-color: #000000;
-  }
-  .action-btn {
-    justify-content: center;
-  }
+  .menu-toggle svg { width: 20px; height: 20px; }
+  .admin-topbar { padding: 0 16px; }
   .admin-content {
     padding: 16px;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-sidebar { transition: none; }
 }
 </style>
 

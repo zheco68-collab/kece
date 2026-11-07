@@ -157,11 +157,16 @@ onMounted(() => {
 
 <template>
   <div class="admin container">
-    <RouterLink class="back" to="/admin/objective-questions">← 返回客观题管理</RouterLink>
-    <h1 class="page-title">{{ isEdit ? '编辑客观题' : '新建客观题' }}</h1>
+    <header class="edit-heading">
+      <RouterLink class="back" to="/admin/objective-questions">← 返回客观题管理</RouterLink>
+      <div class="edit-heading-body">
+        <h1 class="page-title">{{ isEdit ? '编辑客观题' : '新建客观题' }}</h1>
+        <p>配置题型、题目内容与标准答案。</p>
+      </div>
+    </header>
 
     <div v-if="loading" class="state-card card"><div class="loading-spinner"></div><p class="muted">正在加载客观题配置…</p></div>
-    <p v-if="pageError" class="submit-error">{{ pageError }}</p>
+    <p v-if="pageError" class="submit-error" role="alert">{{ pageError }}</p>
 
     <div v-if="!loading" class="form-cards">
       <div class="card form-card">
@@ -260,17 +265,27 @@ onMounted(() => {
   padding-bottom: 48px;
 }
 .page-title {
-  margin: 28px 0 16px;
-  font-size: 22px;
-  font-weight: 600;
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.35;
+  font-weight: 700;
 }
+.edit-heading { margin-bottom: 24px; }
+.edit-heading .back { display: inline-flex; padding: 7px 0; color: #555; font-size: 14px; }
+.edit-heading .back:hover { color: #111; text-decoration: underline; }
+.edit-heading .back:focus-visible { outline: 2px solid #111; outline-offset: 3px; }
+.edit-heading-body { margin-top: 14px; }
+.edit-heading-body p { margin: 8px 0 0; font-size: 14px; line-height: 1.6; color: #555; }
 .form-cards {
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 .form-card {
-  padding: 20px 22px;
+  padding: 24px;
+  min-width: 0;
+  background: #fff;
+  box-shadow: none;
 }
 .card-title {
   margin: 0 0 16px;
@@ -289,9 +304,11 @@ onMounted(() => {
 .field-row {
   display: flex;
   gap: 20px;
+  flex-wrap: wrap;
 }
 .field-row > * {
-  flex: 1;
+  flex: 1 1 210px;
+  min-width: 0;
 }
 .option-row {
   display: flex;

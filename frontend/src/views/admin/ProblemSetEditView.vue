@@ -290,7 +290,9 @@ onMounted(loadExisting)
     <template v-else>
       <!-- 基本信息面板 -->
       <section class="panel">
-        <h2 class="panel-title">01 / 基本信息</h2>
+        <div class="panel-header-row basic-heading">
+          <div><h2 class="panel-title">基本信息</h2><p class="panel-description">设置题集名称、题型和可见范围</p></div>
+        </div>
         <div class="form-grid">
           <FormField label="题集标题" required>
             <input
@@ -356,9 +358,7 @@ onMounted(loadExisting)
         <!-- 左侧：章节与已选题目 -->
         <section class="panel sections-panel">
           <div class="panel-header-row">
-            <h2 class="panel-title">
-              章节编排 · {{ sections.length }} 节 / {{ totalSelectedCount }} 题
-            </h2>
+            <div><h2 class="panel-title">章节编排</h2><p class="panel-description">{{ sections.length }} 个章节 · {{ totalSelectedCount }} 道题目</p></div>
             <button class="btn btn-ghost btn-sm" type="button" @click="addSection">
               + 新增章节
             </button>
@@ -373,11 +373,14 @@ onMounted(loadExisting)
               @click="activeSectionIndex = sIdx"
             >
               <div class="section-box-head">
-                <span class="sec-index mono">#{{ sIdx + 1 }}</span>
+                <button class="section-select" type="button" :aria-pressed="activeSectionIndex === sIdx" @click.stop="activeSectionIndex = sIdx">
+                  第 {{ sIdx + 1 }} 节 <span v-if="activeSectionIndex === sIdx">· 当前章节</span>
+                </button>
                 <input
                   v-model="sec.title"
                   class="input sec-title-input"
                   type="text"
+                  :aria-label="`第 ${sIdx + 1} 节标题`"
                   placeholder="章节标题…"
                 />
                 <div class="sec-btns">
@@ -414,6 +417,7 @@ onMounted(loadExisting)
                 v-model="sec.description"
                 class="input sec-desc-input"
                 type="text"
+                :aria-label="`第 ${sIdx + 1} 节学习提示`"
                 placeholder="章节副标题或学习提示（可选）…"
               />
 
@@ -437,6 +441,7 @@ onMounted(loadExisting)
                       class="icon-btn"
                       type="button"
                       :disabled="iIdx === 0"
+                      :aria-label="`上移题目 ${item.title}`"
                       @click.stop="moveItemUp(sIdx, iIdx)"
                     >
                       ↑
@@ -445,6 +450,7 @@ onMounted(loadExisting)
                       class="icon-btn"
                       type="button"
                       :disabled="iIdx === sec.items.length - 1"
+                      :aria-label="`下移题目 ${item.title}`"
                       @click.stop="moveItemDown(sIdx, iIdx)"
                     >
                       ↓
@@ -452,6 +458,7 @@ onMounted(loadExisting)
                     <button
                       class="icon-btn danger"
                       type="button"
+                      :aria-label="`移除题目 ${item.title}`"
                       @click.stop="removeItem(sIdx, iIdx)"
                     >
                       ×
@@ -480,8 +487,10 @@ onMounted(loadExisting)
 .page-title { margin: 0 0 10px; font-size: 28px; font-weight: 700; }
 .page-sub { margin: 0; color: var(--ink-secondary); font-size: 16px; line-height: 1.7; }
 .head-actions { display: flex; gap: 12px; }
-.panel { min-width: 0; background: var(--surface); border: 1px solid var(--line); padding: 24px; margin-bottom: 24px; }
-.panel-title { margin: 0 0 20px; font-size: 21px; font-weight: 700; }
+.panel { min-width: 0; background: var(--bg); border: 1px solid var(--line); padding: 24px; margin-bottom: 24px; }
+.panel-title { margin: 0; font-size: 20px; font-weight: 700; }
+.panel-description { margin: 6px 0 0; color: var(--ink-secondary); font-size: 14px; line-height: 1.5; }
+.basic-heading { padding-bottom: 18px; border-bottom: 1px solid var(--line); }
 .panel-header-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 20px; }
 .panel-header-row .panel-title { margin: 0; }
 .form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-bottom: 24px; }
@@ -489,21 +498,22 @@ onMounted(loadExisting)
 .textarea { width: 100%; resize: vertical; line-height: 1.7; }
 .btn { min-height: 44px; font-size: 15px; }
 .composer-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
-.section-list { display: flex; flex-direction: column; gap: 20px; }
-.section-box { min-width: 0; border: 1px solid var(--line); padding: 18px; background: var(--bg); }
-.section-box.active { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); background: var(--surface); }
+.section-list { display: flex; flex-direction: column; gap: 16px; }
+.section-box { min-width: 0; border: 1px solid var(--line); padding: 18px; background: var(--surface); }
+.section-box.active { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); background: var(--bg); }
 .section-box-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
-.sec-index { font-weight: 700; font-size: 15px; }
-.sec-title-input { flex: 1; width: 0; min-width: 150px; font-weight: 600; }
+.section-select { border: 1px solid var(--line); padding: 6px 10px; min-height: 36px; background: var(--bg); color: var(--ink); font-size: 14px; font-weight: 600; cursor: pointer; }
+.section-select[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: white; }
+.sec-title-input { flex: 1 1 160px; width: 0; min-width: 0; font-weight: 600; }
 .sec-desc-input { width: 100%; margin-bottom: 16px; }
 .sec-btns, .item-actions { display: inline-flex; gap: 6px; flex-shrink: 0; }
 .icon-btn { width: 36px; height: 36px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; font-size: 16px; display: inline-flex; align-items: center; justify-content: center; }
 .icon-btn:hover:not(:disabled) { border-color: var(--ink); background: var(--bg); }
 .icon-btn:disabled { opacity: .35; cursor: not-allowed; }
 .icon-btn.danger:hover { color: var(--danger); border-color: var(--danger); }
-.sec-empty { padding: 28px 16px; text-align: center; font-size: 16px; line-height: 1.7; color: var(--ink-secondary); border: 1px dashed var(--line); }
+.sec-empty { padding: 24px 16px; text-align: center; font-size: 14px; line-height: 1.7; color: var(--ink-secondary); border: 1px dashed var(--line); }
 .sec-items { display: flex; flex-direction: column; gap: 10px; }
-.sec-item-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px; background: var(--bg); border: 1px solid var(--line); font-size: 16px; min-width: 0; }
+.sec-item-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px; background: var(--bg); border: 1px solid var(--line); font-size: 15px; min-width: 0; }
 .item-order { color: var(--ink-secondary); min-width: 24px; }
 .item-id { color: var(--ink-secondary); font-size: 14px; }
 .item-title { order: 2; flex-basis: 100%; min-width: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.7; }

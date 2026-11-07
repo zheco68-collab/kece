@@ -232,9 +232,15 @@ const router = createRouter({
     {
       path: '/admin',
       component: () => import('@/layouts/AdminLayout.vue'),
-      redirect: '/admin/questions',
+      redirect: { name: 'admin-overview' },
       meta: { roles: ['ADMIN', 'TEACHER'] },
       children: [
+        {
+          path: 'overview',
+          name: 'admin-overview',
+          component: () => import('@/views/admin/AdminOverviewView.vue'),
+          meta: { title: '概况' },
+        },
         {
           path: 'questions',
           name: 'admin-questions',
