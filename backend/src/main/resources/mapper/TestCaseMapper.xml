@@ -21,6 +21,14 @@
         SELECT * FROM `test_case` WHERE id = #{id}
     </select>
 
+    <select id="findForManifest" resultMap="BaseResultMap">
+        SELECT * FROM test_case WHERE question_id = #{questionId} ORDER BY case_num, id FOR UPDATE
+    </select>
+
+    <select id="findByIdForUpdate" resultMap="BaseResultMap">
+        SELECT * FROM test_case WHERE id = #{id} FOR UPDATE
+    </select>
+
     <select id="findByQuestionId" resultMap="BaseResultMap">
         SELECT id, question_id, input_path, output_path, input_size, output_size, case_num, score_weight, is_sample, created_at
         FROM `test_case` WHERE question_id = #{questionId} ORDER BY case_num ASC, id ASC

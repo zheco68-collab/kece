@@ -121,6 +121,7 @@ public class TestCaseStorageService {
                                     ? String.valueOf(tc.getId())
                                     : ("tmp_" + System.currentTimeMillis()));
 
+            baseName += "-" + java.util.UUID.randomUUID();
             Path inPath = qDir.resolve(baseName + ".in");
             Path outPath = qDir.resolve(baseName + ".out");
 
@@ -307,21 +308,6 @@ public class TestCaseStorageService {
         pairs.sort(Comparator.comparing(CasePair::getSortKey, new NaturalOrderComparator()));
 
         if (replaceExisting) {
-            // 清理已有文件和记录
-            try {
-                if (Files.exists(qDir)) {
-                    try (var s = Files.list(qDir)) {
-                        s.forEach(
-                                p -> {
-                                    try {
-                                        Files.deleteIfExists(p);
-                                    } catch (Exception ignored) {
-                                    }
-                                });
-                    }
-                }
-            } catch (Exception ignored) {
-            }
             testCaseMapper.deleteByQuestionId(questionId);
         }
 
@@ -334,8 +320,9 @@ public class TestCaseStorageService {
         for (int i = 0; i < pairs.size(); i++) {
             CasePair pair = pairs.get(i);
             int caseNum = currentSeq++;
-            String inFileName = caseNum + ".in";
-            String outFileName = caseNum + ".out";
+            String versionedName = caseNum + "-" + java.util.UUID.randomUUID();
+            String inFileName = versionedName + ".in";
+            String outFileName = versionedName + ".out";
 
             Path targetIn = qDir.resolve(inFileName);
             Path targetOut = qDir.resolve(outFileName);

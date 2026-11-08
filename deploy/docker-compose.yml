@@ -58,7 +58,7 @@ services:
     container_name: kece-backend
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       DB_HOST: mysql
       DB_PORT: 3306
@@ -67,6 +67,8 @@ services:
       DB_PASSWORD: kece123
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      KECE_JUDGING_ALLOWED_NODE_HOSTS: ${KECE_JUDGING_ALLOWED_NODE_HOSTS:-}
+      KECE_JUDGING_ALLOWED_NODE_NETWORKS: ${KECE_JUDGING_ALLOWED_NODE_NETWORKS:-}
     depends_on:
       mysql:
         condition: service_healthy
@@ -79,22 +81,25 @@ services:
       dockerfile: Dockerfile
     container_name: kece-judger
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      WORKER_CONCURRENCY: 8
+      JUDGE_POOL: ${JUDGE_POOL:-python}
+      JUDGE_CONTROL_URL: ${JUDGE_CONTROL_URL:-http://backend:8080/api/v1}
+      JUDGE_ENROLLMENT_CODE: ${JUDGE_ENROLLMENT_CODE:-}
+      JUDGE_CREDENTIAL_FILE: /workspace/credential.json
+      JUDGE_LOCAL_SLOTS: ${JUDGE_LOCAL_SLOTS:-2}
       # 工作目录必须与下方卷挂载路径一致，且与宿主机同路径：
       # 判题机通过宿主机 docker.sock 拉起沙箱，docker run -v 的源路径按宿主机解析。
       WORKSPACE_DIR: /workspace
       IMAGE_ARKTS: kece-sandbox-arkts:latest
-      # 数据库判题连接的独立 MySQL 实例。
+      # 数据库判题连接的独立 MySQL 实例（仅 JUDGE_POOL=mysql 时使用）。
       JUDGE_MYSQL_HOST: judge-mysql
       JUDGE_MYSQL_PORT: 3306
       JUDGE_MYSQL_USER: root
       JUDGE_MYSQL_PASSWORD: judge123
     depends_on:
-      redis:
-        condition: service_healthy
+      backend:
+        condition: service_started
       judge-mysql:
         condition: service_healthy
     # 仅本地开发：判题机以 DinD 方式拉起沙箱容器，需挂载 docker.sock 并提权；

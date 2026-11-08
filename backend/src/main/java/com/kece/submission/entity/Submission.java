@@ -11,6 +11,7 @@ public class Submission {
     private Long userId;
     private Long questionId;
     private Long contestId;
+    private Long currentJudgeJobId;
 
     /** 语言：cpp/java/python。 */
     private String language;

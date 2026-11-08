@@ -16,6 +16,10 @@ public interface SubmissionMapper {
 
     Submission findByIdForUpdate(Long id);
 
+    Submission findStatusById(Long id);
+
+    int setCurrentJudgeJob(@Param("id") Long id, @Param("jobId") Long jobId);
+
     List<SubmissionListVO> findPage(
             @Param("userId") Long userId,
             @Param("questionId") Long questionId,

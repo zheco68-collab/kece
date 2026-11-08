@@ -55,6 +55,10 @@
         SELECT DISTINCT tags FROM `question` WHERE status = 1 AND tags IS NOT NULL AND tags != ''
     </select>
 
+    <select id="findByIdForUpdate" resultMap="BaseResultMap">
+        SELECT * FROM question WHERE id = #{id} FOR UPDATE
+    </select>
+
     <select id="findById" resultMap="BaseResultMap">
         SELECT * FROM `question` WHERE id = #{id}
     </select>

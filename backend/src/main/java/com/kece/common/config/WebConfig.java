@@ -2,12 +2,17 @@ package com.kece.common.config;
 
 import com.kece.common.security.AuthInterceptor;
 import com.kece.common.security.JwtUtil;
+import com.kece.judging.control.JudgeClaimReturnValueHandler;
+import com.kece.judging.control.JudgeMachineInterceptor;
 import java.nio.file.Paths;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.method.support.HandlerMethodReturnValueHandler;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -18,10 +23,20 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebConfig implements WebMvcConfigurer {
 
     private final JwtUtil jwtUtil;
+    private final JudgeMachineInterceptor machineInterceptor;
+    private final List<HttpMessageConverter<?>> messageConverters;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new AuthInterceptor(jwtUtil)).addPathPatterns("/**");
+        registry.addInterceptor(new AuthInterceptor(jwtUtil))
+                .addPathPatterns("/**")
+                .excludePathPatterns("/internal/judgers/**");
+        registry.addInterceptor(machineInterceptor).addPathPatterns("/internal/judgers/**");
+    }
+
+    @Override
+    public void addReturnValueHandlers(List<HandlerMethodReturnValueHandler> handlers) {
+        handlers.add(new JudgeClaimReturnValueHandler(messageConverters));
     }
 
     @Override

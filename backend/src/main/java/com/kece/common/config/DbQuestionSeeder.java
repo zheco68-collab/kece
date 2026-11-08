@@ -31,6 +31,9 @@ public class DbQuestionSeeder {
     private final DbQuestionMapper questionMapper;
     private final DbTestCaseMapper testCaseMapper;
     private final UserMapper userMapper;
+    private final com.kece.judging.artifact.JudgeManifestMapper manifestMapper;
+    private final com.kece.judging.artifact.JudgeManifestService judgeManifests;
+    private final org.springframework.transaction.support.TransactionTemplate transaction;
 
     @Value("${kece.demo-data.enabled:false}")
     private boolean demoDataEnabled;
@@ -59,32 +62,47 @@ public class DbQuestionSeeder {
     }
 
     private int ensureQuestion(Seed seed, Long authorId) {
-        if (questionMapper.findByTitle(seed.title()) != null) {
+        DbQuestion existing = questionMapper.findByTitle(seed.title());
+        if (existing != null) {
+            if (manifestMapper.current(
+                            com.kece.judging.JudgeDispatch.Kind.DATABASE.name(), existing.getId())
+                    == null) {
+                transaction.executeWithoutResult(
+                        tx ->
+                                judgeManifests.publish(
+                                        com.kece.judging.JudgeDispatch.Kind.DATABASE,
+                                        existing.getId()));
+            }
             return 0;
         }
-        DbQuestion question = new DbQuestion();
-        question.setTitle(seed.title());
-        question.setDescription(seed.description());
-        question.setDialect("MYSQL");
-        question.setType(seed.type());
-        question.setSchemaSql(seed.schemaSql());
-        question.setReferenceSql(seed.referenceSql());
-        question.setVerifySql(seed.verifySql());
-        question.setOrderSensitive(seed.orderSensitive() ? 1 : 0);
-        question.setStatus(1); // 示例题一律公开
-        question.setCreatedBy(authorId);
-        questionMapper.insert(question);
-        int order = 0;
-        for (Case c : seed.cases()) {
-            DbTestCase testCase = new DbTestCase();
-            testCase.setQuestionId(question.getId());
-            testCase.setCaseOrder(order++);
-            testCase.setSeedSql(c.seedSql());
-            testCase.setExpectedOutput(c.expectedOutput());
-            testCase.setIsSample(c.sample() ? 1 : 0);
-            testCaseMapper.insert(testCase);
-        }
-        return 1;
+        return transaction.execute(
+                tx -> {
+                    DbQuestion question = new DbQuestion();
+                    question.setTitle(seed.title());
+                    question.setDescription(seed.description());
+                    question.setDialect("MYSQL");
+                    question.setType(seed.type());
+                    question.setSchemaSql(seed.schemaSql());
+                    question.setReferenceSql(seed.referenceSql());
+                    question.setVerifySql(seed.verifySql());
+                    question.setOrderSensitive(seed.orderSensitive() ? 1 : 0);
+                    question.setStatus(1); // 示例题一律公开
+                    question.setCreatedBy(authorId);
+                    questionMapper.insert(question);
+                    int order = 0;
+                    for (Case c : seed.cases()) {
+                        DbTestCase testCase = new DbTestCase();
+                        testCase.setQuestionId(question.getId());
+                        testCase.setCaseOrder(order++);
+                        testCase.setSeedSql(c.seedSql());
+                        testCase.setExpectedOutput(c.expectedOutput());
+                        testCase.setIsSample(c.sample() ? 1 : 0);
+                        testCaseMapper.insert(testCase);
+                    }
+                    judgeManifests.publish(
+                            com.kece.judging.JudgeDispatch.Kind.DATABASE, question.getId());
+                    return 1;
+                });
     }
 
     /** 标题为查重键，务必保持稳定；改动标题等于新增一道题。 */

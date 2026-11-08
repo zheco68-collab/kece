@@ -12,6 +12,11 @@ public interface ProblemSetUserProgressMapper {
     ProblemSetUserProgress findBySetAndUser(
             @Param("setId") Long setId, @Param("userId") Long userId);
 
+    void ensureRow(@Param("setId") Long setId, @Param("userId") Long userId);
+
+    ProblemSetUserProgress lockBySetAndUser(
+            @Param("setId") Long setId, @Param("userId") Long userId);
+
     List<ProblemSetUserProgress> findByUserAndSetIds(
             @Param("userId") Long userId, @Param("setIds") List<Long> setIds);
 

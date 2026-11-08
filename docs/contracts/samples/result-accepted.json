@@ -1,0 +1,28 @@
+{
+  "request": {
+    "leaseEpoch": 2,
+    "status": "ACCEPTED",
+    "result": {
+      "score": 100,
+      "timeUsedMs": 42,
+      "memoryUsedKb": 12288,
+      "testCasesReport": [
+        {
+          "caseId": 1,
+          "status": "ACCEPTED",
+          "timeMs": 20,
+          "memoryKb": 11264
+        },
+        {
+          "caseId": 2,
+          "status": "ACCEPTED",
+          "timeMs": 42,
+          "memoryKb": 12288
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": "COMMITTED"
+  }
+}

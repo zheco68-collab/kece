@@ -360,6 +360,32 @@ public class ProblemSetService {
         }
     }
 
+    /**
+     * Reconciles one problem under the progress row lock inside the settlement event transaction.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void reconcileJudgeProgress(Long userId, String questionType, Long questionId) {
+        String type = normalizeQuestionType(questionType);
+        var items =
+                itemMapper.findByQuestion(type, questionId).stream()
+                        .sorted(java.util.Comparator.comparing(ProblemSetItem::getSetId))
+                        .toList();
+        for (var item : items) {
+            Long setId = item.getSetId();
+            progressMapper.ensureRow(setId, userId);
+            var progress = progressMapper.lockBySetAndUser(setId, userId);
+            boolean solved =
+                    ("ALGO".equals(type)
+                                    ? submissionMapper.findAcceptedQuestionIds(userId)
+                                    : dbSubmissionMapper.findAcceptedQuestionIds(userId))
+                            .contains(questionId);
+            var ids = parseJsonIdSet(progress.getSolvedItemIds());
+            if (solved ? ids.add(item.getId()) : ids.remove(item.getId())) {
+                progressMapper.upsertProgress(setId, userId, ids.size(), writeJson(ids));
+            }
+        }
+    }
+
     /** 创建新题集（TEACHER / ADMIN）。 */
     @Transactional
     public ProblemSetDetailVO createProblemSet(SaveProblemSetRequest req) {

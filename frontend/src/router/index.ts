@@ -386,6 +386,12 @@ const router = createRouter({
           meta: { roles: ['ADMIN', 'TEACHER'], title: '提交监控' },
         },
         {
+          path: 'judgers',
+          name: 'admin-judgers',
+          component: () => import('@/views/admin/AdminJudgersView.vue'),
+          meta: { roles: ['ADMIN'], title: '评测机管理' },
+        },
+        {
           path: 'announcements',
           name: 'admin-announcements',
           component: () => import('@/views/admin/AdminAnnouncementsView.vue'),

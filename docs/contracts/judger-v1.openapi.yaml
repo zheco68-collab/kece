@@ -1,0 +1,606 @@
+openapi: 3.1.0
+info:
+  title: KECE Dedicated Judge Pool Machine Control Protocol
+  version: 1.0.0
+  description: >
+    Frozen v1 machine-to-machine contract between KECE backend (`com.kece.judging.control`)
+    and dedicated Go pool workers (`judger/internal/control`, `judger/internal/artifact`,
+    `judger/internal/health`). All BIGINT database identifiers are serialized as decimal strings.
+servers:
+  - url: /api/v1
+    description: KECE backend servlet context path
+security:
+  - NodeBearerAuth: []
+
+components:
+  securitySchemes:
+    NodeBearerAuth:
+      type: http
+      scheme: bearer
+      description: Node credential issued by /internal/judgers/join (or per-job artifactToken for artifact downloads).
+  parameters:
+    SessionEpochHeader:
+      name: X-Judge-Session-Epoch
+      in: header
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+  schemas:
+    ProtocolError:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          example: STALE_LEASE
+    JoinRequest:
+      type: object
+      required: [enrollmentCode, bootId, protocolVersion]
+      properties:
+        enrollmentCode:
+          type: string
+          minLength: 43
+          maxLength: 43
+        bootId:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{16,64}$'
+        protocolVersion:
+          type: integer
+          const: 1
+    JoinedResponse:
+      type: object
+      required: [nodeId, credential, sessionEpoch, protocolVersion, pool, runtimeSpec]
+      properties:
+        nodeId:
+          type: string
+        credential:
+          type: string
+        sessionEpoch:
+          type: integer
+          format: int64
+        protocolVersion:
+          type: integer
+          const: 1
+        pool:
+          type: string
+          enum: [cpp, java, python, mysql, arkts]
+        runtimeSpec:
+          type: string
+    SessionRequest:
+      type: object
+      required: [bootId, protocolVersion]
+      properties:
+        bootId:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{16,64}$'
+        protocolVersion:
+          type: integer
+          const: 1
+    SessionResponse:
+      type: object
+      required: [nodeId, sessionEpoch, protocolVersion, pool, runtimeSpec]
+      properties:
+        nodeId:
+          type: string
+        sessionEpoch:
+          type: integer
+          format: int64
+        protocolVersion:
+          type: integer
+          const: 1
+        pool:
+          type: string
+          enum: [cpp, java, python, mysql, arkts]
+        runtimeSpec:
+          type: string
+    CheckReport:
+      type: object
+      required: [checkId, passed]
+      properties:
+        checkId:
+          type: string
+        passed:
+          type: boolean
+        detail:
+          type: string
+          maxLength: 500
+    HeartbeatRequest:
+      type: object
+      required: [runtimeSpec, runtimeVersion, localSlots, healthy]
+      properties:
+        runtimeSpec:
+          type: string
+        runtimeVersion:
+          type: string
+          pattern: '^[A-Za-z0-9._+-]{1,100}$'
+        localSlots:
+          type: integer
+          minimum: 1
+          maximum: 256
+        healthy:
+          type: boolean
+        checkResult:
+          $ref: '#/components/schemas/CheckReport'
+    CheckDirective:
+      type: object
+      required: [checkId, remainingMs]
+      properties:
+        checkId:
+          type: string
+        remainingMs:
+          type: integer
+          format: int64
+    HeartbeatResponse:
+      type: object
+      required: [state, revision, maxSlots]
+      properties:
+        state:
+          type: string
+          enum: [PENDING_VERIFICATION, ENABLED, DRAINING, DISABLED]
+        revision:
+          type: integer
+          format: int64
+        maxSlots:
+          type: integer
+        check:
+          $ref: '#/components/schemas/CheckDirective'
+    ClaimRequest:
+      type: object
+      required: [slots, waitMs]
+      properties:
+        slots:
+          type: integer
+          minimum: 1
+          maximum: 16
+        waitMs:
+          type: integer
+          minimum: 0
+          maximum: 15000
+    ArtifactRef:
+      type: object
+      required: [digest, size]
+      properties:
+        digest:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        size:
+          type: integer
+          format: int64
+          minimum: 0
+    SQLSpec:
+      type: object
+      required: [dialect, type, orderSensitive]
+      properties:
+        dialect:
+          type: string
+          const: MYSQL
+        type:
+          type: string
+          enum: [SELECT, DML]
+        schema:
+          $ref: '#/components/schemas/ArtifactRef'
+        reference:
+          $ref: '#/components/schemas/ArtifactRef'
+        verify:
+          $ref: '#/components/schemas/ArtifactRef'
+        orderSensitive:
+          type: boolean
+    CaseSpec:
+      type: object
+      required: [caseId]
+      properties:
+        caseId:
+          type: integer
+          format: int64
+        caseNum:
+          type: integer
+        scoreWeight:
+          type: integer
+        sample:
+          type: boolean
+        input:
+          $ref: '#/components/schemas/ArtifactRef'
+        output:
+          $ref: '#/components/schemas/ArtifactRef'
+        seed:
+          $ref: '#/components/schemas/ArtifactRef'
+    Manifest:
+      type: object
+      required: [version, submissionType, timeLimitMs, cases]
+      properties:
+        version:
+          type: integer
+          const: 1
+        submissionType:
+          type: string
+          enum: [ALGO, DATABASE]
+        timeLimitMs:
+          type: integer
+        memoryLimitMb:
+          type: integer
+        sql:
+          $ref: '#/components/schemas/SQLSpec'
+        cases:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseSpec'
+    SourceSnapshot:
+      type: object
+      required: [language, codeContent]
+      properties:
+        questionId:
+          type: integer
+          format: int64
+        language:
+          type: string
+        codeContent:
+          type: object
+          additionalProperties:
+            type: string
+    ClaimedJob:
+      type: object
+      required:
+        - jobId
+        - submissionType
+        - submissionId
+        - generation
+        - pool
+        - runtimeSpec
+        - leaseEpoch
+        - leaseRemainingMs
+        - manifestId
+        - manifest
+        - source
+        - artifactToken
+      properties:
+        jobId:
+          type: string
+        submissionType:
+          type: string
+          enum: [ALGO, DATABASE]
+        submissionId:
+          type: string
+        generation:
+          type: integer
+        pool:
+          type: string
+          enum: [cpp, java, python, mysql, arkts]
+        runtimeSpec:
+          type: string
+        leaseEpoch:
+          type: integer
+          format: int64
+        leaseRemainingMs:
+          type: integer
+          format: int64
+        manifestId:
+          type: string
+        manifest:
+          $ref: '#/components/schemas/Manifest'
+        source:
+          $ref: '#/components/schemas/SourceSnapshot'
+        artifactToken:
+          type: string
+    ClaimBatch:
+      type: object
+      required: [protocolVersion, jobs]
+      properties:
+        protocolVersion:
+          type: integer
+          const: 1
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClaimedJob'
+    ProgressItem:
+      type: object
+      required: [jobId, leaseEpoch, sequence, phase, finishedCases]
+      properties:
+        jobId:
+          type: string
+        leaseEpoch:
+          type: integer
+          format: int64
+        sequence:
+          type: integer
+          format: int64
+        phase:
+          type: string
+          enum: [COMPILING, JUDGING]
+        finishedCases:
+          type: integer
+          minimum: 0
+    RenewRequest:
+      type: object
+      required: [jobs]
+      properties:
+        jobs:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items:
+            $ref: '#/components/schemas/ProgressItem'
+    RenewedItem:
+      type: object
+      required: [jobId, status, leaseRemainingMs]
+      properties:
+        jobId:
+          type: string
+        status:
+          type: string
+          enum: [RENEWED, STALE_LEASE]
+        leaseRemainingMs:
+          type: integer
+          format: int64
+    RenewBatch:
+      type: object
+      required: [jobs]
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/RenewedItem'
+    CaseResultVO:
+      type: object
+      required: [caseId, status]
+      properties:
+        caseId:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [ACCEPTED, WRONG_ANSWER, TIME_LIMIT_EXCEEDED, MEMORY_LIMIT_EXCEEDED, RUNTIME_ERROR]
+        timeMs:
+          type: integer
+          minimum: 0
+        memoryKb:
+          type: integer
+          minimum: 0
+        expectedOutput:
+          type: string
+          maxLength: 65536
+        actualOutput:
+          type: string
+          maxLength: 65536
+    SubmissionResultVO:
+      type: object
+      required: [score, testCasesReport]
+      properties:
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        timeUsedMs:
+          type: integer
+          minimum: 0
+        memoryUsedKb:
+          type: integer
+          minimum: 0
+        compileErrorLog:
+          type: string
+          maxLength: 65536
+        testCasesReport:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseResultVO'
+    ResultRequest:
+      type: object
+      required: [leaseEpoch]
+      properties:
+        leaseEpoch:
+          type: integer
+          format: int64
+          minimum: 1
+        status:
+          type: string
+          enum: [ACCEPTED, WRONG_ANSWER, COMPILE_ERROR, TIME_LIMIT_EXCEEDED, MEMORY_LIMIT_EXCEEDED, RUNTIME_ERROR]
+        result:
+          $ref: '#/components/schemas/SubmissionResultVO'
+        errorCode:
+          type: string
+          pattern: '^[A-Z0-9_]{1,64}$'
+    Receipt:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [COMMITTED, ALREADY_COMMITTED, RETRY_SCHEDULED]
+    NodeHealthz:
+      type: object
+      required: [protocolVersion, nodeId, pool, runtimeSpec, runtimeVersion, state, healthy, activeSlots, localSlots, maxSlots]
+      properties:
+        protocolVersion:
+          type: integer
+          const: 1
+        nodeId:
+          type: string
+        pool:
+          type: string
+        runtimeSpec:
+          type: string
+        runtimeVersion:
+          type: string
+        state:
+          type: string
+        healthy:
+          type: boolean
+        activeSlots:
+          type: integer
+        localSlots:
+          type: integer
+        maxSlots:
+          type: integer
+
+paths:
+  /internal/judgers/join:
+    post:
+      summary: Exchange one-time enrollment code for persistent node credential
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinRequest'
+      responses:
+        '200':
+          description: Node enrolled and session opened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinedResponse'
+        '401':
+          description: Invalid or expired enrollment code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProtocolError'
+        '422':
+          description: Invalid bootId or unsupported protocolVersion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProtocolError'
+
+  /internal/judgers/session:
+    post:
+      summary: Resume or advance node session epoch on worker boot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionRequest'
+      responses:
+        '200':
+          description: Active session epoch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '401':
+          description: Invalid or revoked node credential
+        '409':
+          description: Stale bootId reuse rejected
+
+  /internal/judgers/heartbeat:
+    post:
+      summary: Report node liveness, slot capacity, and optional self-test result
+      parameters:
+        - $ref: '#/components/parameters/SessionEpochHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatRequest'
+      responses:
+        '200':
+          description: Desired node state and optional self-test directive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatResponse'
+        '409':
+          description: Stale session or check epoch
+
+  /internal/judgers/jobs/claim:
+    post:
+      summary: Claim available pool jobs with bounded long-polling
+      parameters:
+        - $ref: '#/components/parameters/SessionEpochHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimRequest'
+      responses:
+        '200':
+          description: Claimed job batch (empty when idle)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimBatch'
+
+  /internal/judgers/jobs/renew:
+    post:
+      summary: Renew active job leases and report monotonic progress
+      parameters:
+        - $ref: '#/components/parameters/SessionEpochHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenewRequest'
+      responses:
+        '200':
+          description: Per-job lease renewal outcome
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenewBatch'
+
+  /internal/judgers/jobs/{id}/artifacts/{digest}:
+    get:
+      summary: Stream immutable testcase artifact authorized by active job lease token
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: digest
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{64}$'
+      responses:
+        '200':
+          description: Verified raw artifact bytes
+          headers:
+            X-Content-SHA256:
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Invalid or expired artifact lease token
+        '404':
+          description: Digest not part of job manifest
+
+  /internal/judgers/jobs/{id}/result:
+    post:
+      summary: Commit final verdict or report retryable infrastructure error
+      parameters:
+        - $ref: '#/components/parameters/SessionEpochHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultRequest'
+      responses:
+        '200':
+          description: Settlement receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Receipt'
+        '409':
+          description: Stale lease or conflicting duplicate payload
+        '422':
+          description: Malformed verdict or case report

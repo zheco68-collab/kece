@@ -36,10 +36,10 @@ except ImportError:
     sys.exit(1)
 
 # 默认远端配置
-DEFAULT_REMOTE_HOST = os.environ.get("KECE_REMOTE_HOST", "10.56.40.238")
+DEFAULT_REMOTE_HOST = os.environ.get("KECE_REMOTE_HOST", "")
 DEFAULT_REMOTE_PORT = int(os.environ.get("KECE_REMOTE_PORT", "22"))
-DEFAULT_REMOTE_USER = os.environ.get("KECE_REMOTE_USER", "zco")
-DEFAULT_REMOTE_PASS = os.environ.get("KECE_REMOTE_PASS", "zco070612")
+DEFAULT_REMOTE_USER = os.environ.get("KECE_REMOTE_USER", "")
+DEFAULT_REMOTE_PASS = os.environ.get("KECE_REMOTE_PASS", "")
 DEFAULT_REMOTE_TESTCASE_DIR = "/home/zco/kece/testcases"
 
 def md5_file(filepath: str) -> str:
@@ -87,7 +87,7 @@ def scan_and_validate_local_testcases(src_dir: str) -> Tuple[List[str], Dict[str
             unpaired_warnings.append(f"题目 {qid} 缺失 .in 文件: {sorted(missing_in)}")
 
         matched_files = []
-        for base in sorted(common_bases, key=lambda x: int(x) if x.isdigit() else x):
+        for base in sorted(common_bases, key=lambda x: (0, int(x)) if x.isdigit() else (1, x)):
             rel_in = f"{qid}/{base}.in"
             rel_out = f"{qid}/{base}.out"
             rel_files.append(rel_in)

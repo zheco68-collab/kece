@@ -31,7 +31,7 @@ Teachers can use the same question bank to prepare collections, classroom exerci
 
 ## A look at the workspace
 
-These screenshots show **historical examples from October 14, 2026**. The current interface may differ; visit the [live demo](https://kece.zheco68.asia/) for the latest version.
+These screenshots show **historical examples from October 14, 2026**. The live site runs the currently deployed release.
 
 ### Write and submit
 
@@ -47,18 +47,22 @@ After judging, inspect the overall verdict and test-case results to understand t
 
 ## Architecture
 
-![KECE architecture: browser, frontend, backend, Redis, databases and judge workers](./docs/images/kece-architecture.svg)
+![KECE architecture: frontend, API, persistent MySQL jobs and Go worker pools](./docs/images/kece-architecture.svg)
 
-The Vue frontend talks to the Spring Boot API. Submissions enter Redis-backed queues, where Go judge workers execute programming tasks in Docker containers or assess SQL against a separate MySQL instance. The backend processes results and stores application data in the business database.
+The Vue frontend talks to the Spring Boot API. Submissions and persistent judge jobs (`judge_job`) are committed atomically in MySQL, where dedicated Go pool workers (`cpp`, `java`, `python`, `mysql`, `arkts`) claim leases over the internal control protocol, fetch content-addressed testcase artifacts, execute programming tasks in isolated Docker sandboxes or assess SQL against a dedicated MySQL instance, and report verified verdicts back to the backend.
 
 | Layer | Technology |
 | --- | --- |
 | Frontend | Vue 3, TypeScript, Vite, Pinia, Monaco Editor |
 | Backend | Java 17, Spring Boot, MyBatis, Flyway |
-| Judging | Go, Docker, Redis, dedicated MySQL instance |
-| Data | MySQL, Redis |
+| Judging | Go dedicated pool workers, Docker, Linux Cgroups, dedicated MySQL instance |
+| Data | MySQL (business data + persistent job scheduler), Redis (caching) |
 
 Queueing and isolated workers help separate submissions from execution; actual throughput and recovery depend on configuration, hardware, and workload. Measure capacity in the target environment before relying on it for an exam.
+
+Administrators can enroll workers, set shared host capacity, run self-checks, and drain or enable nodes. Redis remains a cache for application data, while MySQL holds programming and SQL judge jobs.
+
+The isolated local benchmark completed 1,290 submissions across MySQL-only, Python-only, and mixed bursts of 30, 100, and 300 concurrent clients. All submissions passed the single-case benchmark workload. [Capacity and reconciliation report (Chinese)](./docs/评测机容量与灰度对账报告.md)
 
 ## Run locally
 
@@ -94,7 +98,9 @@ The `dev` profile enables local demo accounts when initialization succeeds: admi
 > [!IMPORTANT]
 > Keep the SQL judge instance separate from the business database: judging creates and deletes temporary databases. Local scripts and deployment examples contain development defaults; review credentials, JWT secrets, network exposure, Docker access, and isolation before any production use. Never expose seeded development accounts in production.
 
-The stop scripts terminate processes by name or port and leave infrastructure containers running. Review them before use on a machine hosting other services.
+Use `deploy/stop.ps1` or `deploy/stop.sh` to stop the local processes managed by the startup scripts.
+
+For a new worker, register the node once the backend is ready and start it with `JUDGE_ENROLLMENT_CODE`. Run the self-check and enable the node in the administration console. An enrolled worker reconnects with its stored credential. [Node onboarding guide (Chinese)](./docs/评测机节点接入与扩容教程.md)
 
 ## Repository
 
@@ -113,6 +119,7 @@ docs/       Product, API, architecture, and implementation notes
 - [Architecture and resilience proposal](./docs/算法优化与高可用高容错架构方案.md)
 - [Frontend refactoring plan](./docs/前端架构重构与去重方案.md)
 - [Solution module plan](./docs/题解模块落地方案.md)
+- [Judge worker deployment and operations (Chinese)](./deploy/judger/README.md)
 - [Changelog](./CHANGELOG.md)
 
 Some documents describe proposals or historical work. Consult the implementation and changelog for current behavior.

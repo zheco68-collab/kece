@@ -1,21 +1,15 @@
-// Package judge 编排编译、逐用例运行与结果汇总，并回写 Redis 状态。
+// Package judge 编排编译、逐用例运行与结果汇总。
 package judge
 
 import (
+	"bytes"
 	"context"
-	"database/sql"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
-	"sync"
-	"time"
 
 	"github.com/zheco68-collab/KECE/judger/internal/compare"
-	"github.com/zheco68-collab/KECE/judger/internal/config"
-	"github.com/zheco68-collab/KECE/judger/internal/model"
-	"github.com/zheco68-collab/KECE/judger/internal/queue"
 	"github.com/zheco68-collab/KECE/judger/internal/sandbox"
 )
 
@@ -24,42 +18,21 @@ const (
 	statusJudging   = "JUDGING"
 )
 
-// Judge 为单次提交的判题编排器。
-type Judge struct {
-	queue     *queue.Queue
-	runner    *sandbox.Runner
-	cfg       config.Config
-	sqlMu     sync.Mutex
-	adminPool *sql.DB
+// CodeJudge runs code against a set of test cases.
+type CodeJudge struct {
+	runner      *sandbox.Runner
+	testcaseDir string
 }
 
-// New 创建判题编排器。
-func New(cfg config.Config, q *queue.Queue, r *sandbox.Runner) *Judge {
-	return &Judge{queue: q, runner: r, cfg: cfg}
+func NewCode(runner *sandbox.Runner, testcaseDir string) *CodeJudge {
+	return &CodeJudge{runner: runner, testcaseDir: testcaseDir}
 }
 
-// Close 释放常驻连接池资源。
-func (j *Judge) Close() {
-	j.sqlMu.Lock()
-	defer j.sqlMu.Unlock()
-	if j.adminPool != nil {
-		_ = j.adminPool.Close()
-		j.adminPool = nil
-	}
-}
-
-// ParseTask 解析后端推送的任务 JSON。
-func ParseTask(data string) (model.Task, error) {
-	var task model.Task
-	err := json.Unmarshal([]byte(data), &task)
-	return task, err
-}
-
-// Process 完整处理一次提交：编译 → 逐用例运行 → 汇总并回写终态。
-func (j *Judge) Process(ctx context.Context, task model.Task) error {
-	ws, err := os.MkdirTemp(j.cfg.WorkspaceDir, "sub-")
+// Execute compiles, runs test cases, and returns the verdict to its caller.
+func (j *CodeJudge) Execute(ctx context.Context, task CodeTask, progress ProgressSink) (Verdict, error) {
+	ws, err := os.MkdirTemp(j.runner.Workspace, "sub-")
 	if err != nil {
-		return j.finishSystemError(ctx, task.SubmissionID)
+		return Verdict{}, err
 	}
 	defer os.RemoveAll(ws)
 	_ = os.Chmod(ws, 0o777)
@@ -67,40 +40,30 @@ func (j *Judge) Process(ctx context.Context, task model.Task) error {
 	// 1. 落盘源码。
 	filename := filenameFor(task.Language)
 	if err := os.WriteFile(filepath.Join(ws, filename), []byte(extractCode(task, filename)), 0o666); err != nil {
-		return j.finishSystemError(ctx, task.SubmissionID)
+		return Verdict{}, err
 	}
 
 	// 2. 编译（在独立编译容器中进行，避免编译器 g++/javac/tsc 的内存峰值污染运行容器的 cgroup memory.peak）。
-	j.publish(ctx, task.SubmissionID, statusCompiling, len(task.TestCases), 0)
+	progress.update(statusCompiling, len(task.TestCases), 0)
 	stderr, ok, err := j.runner.Compile(ctx, task.Language, ws)
 	if err != nil {
-		return j.finishSystemError(ctx, task.SubmissionID)
+		return Verdict{}, err
 	}
 	if !ok {
-		return j.finishCompileError(ctx, task.SubmissionID, stderr)
-	}
-
-	// 启动单次提交沙箱会话（直接按题目的运行内存限制创建并复用容器，避免逐用例 cold start）
-	sess, _ := j.runner.StartSession(ctx, task.Language, ws, task.MemoryLimitMb)
-	if sess != nil {
-		defer func() {
-			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = sess.Close(closeCtx)
-		}()
+		return Verdict{Status: sandbox.StatusCompileError, Score: intPtr(0), CompileErrorLog: strPtr(stderr), TestCasesReport: []CaseResult{}}, nil
 	}
 
 	// 3. 逐用例运行并汇总。
-	j.publish(ctx, task.SubmissionID, statusJudging, len(task.TestCases), 0)
-	report := make([]model.CaseResult, 0, len(task.TestCases))
+	progress.update(statusJudging, len(task.TestCases), 0)
+	report := make([]CaseResult, 0, len(task.TestCases))
 	statuses := make([]string, 0, len(task.TestCases))
 	maxTimeMs := 0
 	// 各用例峰值内存的最大值；全部用例都测不到时保持 nil，不伪造成 0。
 	var maxMemKb *int
 	for i, tc := range task.TestCases {
-		cr, err := j.runCaseWithSession(ctx, task, ws, tc, sess)
+		cr, err := j.runCase(ctx, task, ws, tc)
 		if err != nil {
-			return j.finishSystemError(ctx, task.SubmissionID)
+			return Verdict{}, err
 		}
 		report = append(report, cr)
 		statuses = append(statuses, cr.Status)
@@ -111,43 +74,36 @@ func (j *Judge) Process(ctx context.Context, task model.Task) error {
 			kb := *cr.MemoryKb
 			maxMemKb = &kb
 		}
-		j.publish(ctx, task.SubmissionID, statusJudging, len(task.TestCases), i+1)
+		progress.update(statusJudging, len(task.TestCases), i+1)
 	}
 
-	// 4. 写终态并推送结果。
-	overall := AggregateOverall(statuses)
-	result := model.Result{
+	// 4. 汇总终态。
+	return Verdict{
+		Status:          AggregateOverall(statuses),
 		Score:           intPtr(scoreFromCases(task.TestCases, statuses)),
 		TimeUsedMs:      intPtr(maxTimeMs),
 		MemoryUsedKb:    maxMemKb,
 		TestCasesReport: report,
-	}
-	return j.finishTerminal(ctx, task.SubmissionID, overall, result)
+	}, nil
 }
 
-// runCaseWithSession 在指定沙箱会话（若无则兜底新建容器）中运行单个测试点。
-func (j *Judge) runCaseWithSession(ctx context.Context, task model.Task, ws string, tc model.TestCase, sess *sandbox.Session) (model.CaseResult, error) {
-	targetInPath := filepath.Join(ws, "input.txt")
+func (j *CodeJudge) runCase(ctx context.Context, task CodeTask, ws string, tc TestCase) (CaseResult, error) {
+	input := []byte(tc.Input)
 	var expectedOutput string
+	if task.RequireCaseFiles && (tc.InputPath == "" || tc.OutputPath == "") {
+		return CaseResult{}, fmt.Errorf("verified case files are missing")
+	}
 
-	// 1. 准备输入数据（优先读文件，若无或读取失败则降级为 tc.Input 字符串）
+	// 输入通过标准输入传入，避免写入由学生代码控制的目录。
 	if tc.InputPath != "" {
 		srcIn := tc.InputPath
 		if !filepath.IsAbs(srcIn) {
-			srcIn = filepath.Join(j.cfg.TestcaseDir, tc.InputPath)
+			srcIn = filepath.Join(j.testcaseDir, tc.InputPath)
 		}
 		if data, err := os.ReadFile(srcIn); err == nil {
-			if err := os.WriteFile(targetInPath, data, 0o666); err != nil {
-				return model.CaseResult{}, err
-			}
-		} else if tc.Input != "" {
-			_ = os.WriteFile(targetInPath, []byte(tc.Input), 0o666)
-		} else {
-			return model.CaseResult{}, fmt.Errorf("read input file %s: %w", srcIn, err)
-		}
-	} else {
-		if err := os.WriteFile(targetInPath, []byte(tc.Input), 0o666); err != nil {
-			return model.CaseResult{}, err
+			input = data
+		} else if task.RequireCaseFiles || tc.Input == "" {
+			return CaseResult{}, fmt.Errorf("read input file %s: %w", srcIn, err)
 		}
 	}
 
@@ -155,10 +111,12 @@ func (j *Judge) runCaseWithSession(ctx context.Context, task model.Task, ws stri
 	if tc.OutputPath != "" {
 		srcOut := tc.OutputPath
 		if !filepath.IsAbs(srcOut) {
-			srcOut = filepath.Join(j.cfg.TestcaseDir, tc.OutputPath)
+			srcOut = filepath.Join(j.testcaseDir, tc.OutputPath)
 		}
 		if data, err := os.ReadFile(srcOut); err == nil {
 			expectedOutput = string(data)
+		} else if task.RequireCaseFiles {
+			return CaseResult{}, fmt.Errorf("read verified output: %w", err)
 		} else {
 			expectedOutput = tc.ExpectedOutput
 		}
@@ -166,20 +124,12 @@ func (j *Judge) runCaseWithSession(ctx context.Context, task model.Task, ws stri
 		expectedOutput = tc.ExpectedOutput
 	}
 
-	var (
-		res sandbox.RunResult
-		err error
-	)
-	if sess != nil {
-		res, err = sess.Run(ctx, task.TimeLimitMs)
-	} else {
-		res, err = j.runner.Run(ctx, task.Language, ws, task.TimeLimitMs, task.MemoryLimitMb)
-	}
+	res, err := j.runner.Run(ctx, task.Language, ws, task.TimeLimitMs, task.MemoryLimitMb, bytes.NewReader(input))
 	if err != nil {
-		return model.CaseResult{}, err
+		return CaseResult{}, err
 	}
 
-	cr := model.CaseResult{
+	cr := CaseResult{
 		CaseID:   tc.CaseID,
 		TimeMs:   intPtr(int(res.Elapsed.Milliseconds())),
 		MemoryKb: res.MemoryKb,
@@ -205,51 +155,6 @@ func (j *Judge) runCaseWithSession(ctx context.Context, task model.Task, ws stri
 	return cr, nil
 }
 
-// publish 写入进行中状态与进度。
-func (j *Judge) publish(ctx context.Context, submissionID int64, status string, total, finished int) {
-	vo := model.SubmissionVO{
-		SubmissionID: submissionID,
-		Status:       status,
-		Progress:     &model.Progress{TotalCases: total, FinishedCases: finished},
-	}
-	j.writeStatus(ctx, submissionID, vo)
-}
-
-// finishCompileError 写入编译错误终态。
-func (j *Judge) finishCompileError(ctx context.Context, submissionID int64, log string) error {
-	result := model.Result{Score: intPtr(0), CompileErrorLog: strPtr(log), TestCasesReport: []model.CaseResult{}}
-	return j.finishTerminal(ctx, submissionID, sandbox.StatusCompileError, result)
-}
-
-// finishSystemError 写入系统错误终态。
-func (j *Judge) finishSystemError(ctx context.Context, submissionID int64) error {
-	result := model.Result{Score: intPtr(0), TestCasesReport: []model.CaseResult{}}
-	return j.finishTerminal(ctx, submissionID, sandbox.StatusSystemError, result)
-}
-
-// finishTerminal 写入终态并推送结果。
-func (j *Judge) finishTerminal(ctx context.Context, submissionID int64, status string, result model.Result) error {
-	vo := model.SubmissionVO{SubmissionID: submissionID, Status: status, Result: &result}
-	return publishTerminal(ctx, j.queue, vo)
-}
-
-func publishTerminal(ctx context.Context, q *queue.Queue, vo model.SubmissionVO) error {
-	data, err := json.Marshal(vo)
-	if err != nil {
-		return err
-	}
-	return q.PublishTerminal(ctx, vo.SubmissionID, string(data))
-}
-
-// writeStatus 序列化并写状态缓存，序列化失败时静默忽略。
-func (j *Judge) writeStatus(ctx context.Context, submissionID int64, vo model.SubmissionVO) {
-	data, err := json.Marshal(vo)
-	if err != nil {
-		return
-	}
-	_ = j.queue.PublishStatus(ctx, submissionID, string(data))
-}
-
 // AggregateOverall 根据各用例状态汇总整体结论：取首个非 AC 状态，全 AC 则为 AC。
 func AggregateOverall(statuses []string) string {
 	for _, s := range statuses {
@@ -261,7 +166,7 @@ func AggregateOverall(statuses []string) string {
 }
 
 // scoreFromCases 优先按各用例 ScoreWeight 权重占比计分（满分 100，向下取整）；若未配置正权重则退化为均分。
-func scoreFromCases(cases []model.TestCase, statuses []string) int {
+func scoreFromCases(cases []TestCase, statuses []string) int {
 	if len(statuses) == 0 {
 		return 0
 	}
@@ -317,7 +222,7 @@ func filenameFor(lang string) string {
 }
 
 // extractCode 按约定文件名取源码，缺失时回退到任意非空片段。
-func extractCode(task model.Task, filename string) string {
+func extractCode(task CodeTask, filename string) string {
 	if code, ok := task.CodeContent[filename]; ok && code != "" {
 		return code
 	}

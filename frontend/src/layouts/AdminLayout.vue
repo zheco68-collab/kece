@@ -33,6 +33,7 @@ const navGroups: NavGroup[] = [
   ] },
   { label: '评测与内容', items: [
     { path: '/admin/submissions', label: '提交监控', icon: 'monitor' },
+    { path: '/admin/judgers', label: '评测机管理', icon: 'server', adminOnly: true },
     { path: '/admin/announcements', label: '公告管理', icon: 'announcement' },
     { path: '/admin/solutions', label: '题解管理', icon: 'solution', adminOnly: true },
   ] },
@@ -121,6 +122,13 @@ function logout() {
           <!-- 提交监控图标 -->
           <svg v-else-if="s.icon === 'monitor'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+          <!-- 评测机管理服务器图标 -->
+          <svg v-else-if="s.icon === 'server'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="8" rx="0" ry="0" />
+            <rect x="2" y="14" width="20" height="8" rx="0" ry="0" />
+            <line x1="6" y1="6" x2="6.01" y2="6" />
+            <line x1="6" y1="18" x2="6.01" y2="18" />
           </svg>
           <!-- 公告管理图标 -->
           <svg v-else-if="s.icon === 'announcement'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

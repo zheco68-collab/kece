@@ -10,6 +10,7 @@
         <result column="language" property="language"/>
         <result column="code_content" property="codeContent"/>
         <result column="status" property="status"/>
+        <result column="current_judge_job_id" property="currentJudgeJobId"/>
         <result column="score" property="score"/>
         <result column="time_used_ms" property="timeUsedMs"/>
         <result column="memory_used_kb" property="memoryUsedKb"/>
@@ -29,6 +30,16 @@
     <select id="findById" resultMap="BaseResultMap">
         SELECT * FROM `submission` WHERE id = #{id}
     </select>
+
+    <select id="findStatusById" resultMap="BaseResultMap">
+        SELECT id, user_id, question_id, contest_id, current_judge_job_id, status, score,
+               time_used_ms, memory_used_kb, error_log, result_json
+        FROM `submission` WHERE id = #{id}
+    </select>
+
+    <update id="setCurrentJudgeJob">
+        UPDATE `submission` SET current_judge_job_id = #{jobId} WHERE id = #{id}
+    </update>
 
     <select id="findByIdForUpdate" resultMap="BaseResultMap">
         SELECT * FROM `submission` WHERE id = #{id} FOR UPDATE

@@ -87,16 +87,6 @@ public class ObjectiveQuestionStrategy implements QuestionTypeStrategy {
     }
 
     @Override
-    public String getRedisStatusKey(Long submissionId) {
-        return "obj:status:" + submissionId;
-    }
-
-    @Override
-    public String getRedisProgressKey(Long submissionId) {
-        return "";
-    }
-
-    @Override
     public Optional<ContestSubmissionDTO> findLatestContestSubmission(
             Long examId, Long userId, Long questionId) {
         return Optional.empty();

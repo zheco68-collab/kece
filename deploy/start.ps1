@@ -50,30 +50,38 @@ if (docker ps -a --format "{{.Names}}" | Select-String -Quiet "^kece-redis$") {
     docker run -d --name kece-redis --restart unless-stopped -p 6379:6379 redis:7-alpine | Out-Null
 }
 
-# ---- 2. 判题机（先编译再后台启动） ----
-if (Get-Process -Name judger -ErrorAction SilentlyContinue) {
-    Write-Host "判题机已在运行，跳过" -ForegroundColor Yellow
+# ---- 2. 专池判题节点（先编译再按实例后台启动） ----
+$JudgePool     = if ($env:JUDGE_POOL)      { $env:JUDGE_POOL }      else { "python" }
+$JudgeNodeName = if ($env:JUDGE_NODE_NAME) { $env:JUDGE_NODE_NAME } else { "local-$JudgePool-1" }
+$JudgePidFile  = Join-Path $LogDir "judger-$JudgeNodeName.pid"
+$JudgeBin      = Join-Path $LogDir "kece-judger.exe"
+
+$RunningPid = if (Test-Path $JudgePidFile) { Get-Content $JudgePidFile -ErrorAction SilentlyContinue } else { $null }
+if ($RunningPid -and (Get-Process -Id ([int]$RunningPid) -ErrorAction SilentlyContinue)) {
+    Write-Host "专池判题节点 ($JudgeNodeName) 已在运行 (PID=$RunningPid)，跳过" -ForegroundColor Yellow
 } else {
     Push-Location "$RootDir\judger"
     try {
-        go build -o judger.exe ./cmd/judger
-        if (-not (Test-Path "judger.exe")) { throw "判题机编译失败，未生成 judger.exe" }
+        go build -o $JudgeBin ./cmd/judger
+        if (-not (Test-Path $JudgeBin)) { throw "判题机编译失败，未生成 $JudgeBin" }
     } finally { Pop-Location }
 
-    $env:REDIS_ADDR           = if ($env:REDIS_ADDR)           { $env:REDIS_ADDR }           else { "127.0.0.1:6379" }
-    $env:WORKER_CONCURRENCY   = if ($env:WORKER_CONCURRENCY)   { $env:WORKER_CONCURRENCY }   else { "8" }
-    $env:WORKSPACE_DIR        = if ($env:WORKSPACE_DIR)        { $env:WORKSPACE_DIR }        else { (Join-Path $env:USERPROFILE "judge-workspace") }
-    $env:JUDGE_MYSQL_HOST     = if ($env:JUDGE_MYSQL_HOST)     { $env:JUDGE_MYSQL_HOST }     else { "127.0.0.1" }
-    $env:JUDGE_MYSQL_PORT     = if ($env:JUDGE_MYSQL_PORT)     { $env:JUDGE_MYSQL_PORT }     else { "3307" }
-    $env:JUDGE_MYSQL_USER     = if ($env:JUDGE_MYSQL_USER)     { $env:JUDGE_MYSQL_USER }     else { "root" }
-    $env:JUDGE_MYSQL_PASSWORD = if ($env:JUDGE_MYSQL_PASSWORD) { $env:JUDGE_MYSQL_PASSWORD } else { "judge123" }
+    $env:JUDGE_POOL            = $JudgePool
+    $env:JUDGE_CONTROL_URL     = if ($env:JUDGE_CONTROL_URL)     { $env:JUDGE_CONTROL_URL }     else { "http://127.0.0.1:8080/api/v1" }
+    $env:JUDGE_CREDENTIAL_FILE = if ($env:JUDGE_CREDENTIAL_FILE) { $env:JUDGE_CREDENTIAL_FILE } else { (Join-Path $LogDir "credential-$JudgeNodeName.json") }
+    $env:JUDGE_LOCAL_SLOTS     = if ($env:JUDGE_LOCAL_SLOTS)     { $env:JUDGE_LOCAL_SLOTS }     else { "2" }
+    $env:WORKSPACE_DIR         = if ($env:WORKSPACE_DIR)         { $env:WORKSPACE_DIR }         else { (Join-Path $env:USERPROFILE "judge-workspace-$JudgeNodeName") }
+    $env:JUDGE_ARTIFACT_CACHE_DIR = if ($env:JUDGE_ARTIFACT_CACHE_DIR) { $env:JUDGE_ARTIFACT_CACHE_DIR } else { (Join-Path $LogDir "cache-$JudgeNodeName") }
+    $env:JUDGE_MYSQL_HOST      = if ($env:JUDGE_MYSQL_HOST)      { $env:JUDGE_MYSQL_HOST }      else { "127.0.0.1" }
+    $env:JUDGE_MYSQL_PORT      = if ($env:JUDGE_MYSQL_PORT)      { $env:JUDGE_MYSQL_PORT }      else { "3307" }
+    $env:JUDGE_MYSQL_USER      = if ($env:JUDGE_MYSQL_USER)      { $env:JUDGE_MYSQL_USER }      else { "root" }
+    $env:JUDGE_MYSQL_PASSWORD  = if ($env:JUDGE_MYSQL_PASSWORD)  { $env:JUDGE_MYSQL_PASSWORD }  else { "judge123" }
 
-    $env:TESTCASE_DIR         = if ($env:TESTCASE_DIR)         { $env:TESTCASE_DIR }         else { "$RootDir\backend\testcases" }
-
-    Start-Process -FilePath "$RootDir\judger\judger.exe" -WorkingDirectory "$RootDir\judger" `
-      -RedirectStandardOutput (Join-Path $LogDir "judger.log") `
-      -RedirectStandardError  (Join-Path $LogDir "judger.err.log") -WindowStyle Hidden
-    Write-Host "判题机已启动（日志：.logs\judger.log）" -ForegroundColor Green
+    $proc = Start-Process -FilePath $JudgeBin -WorkingDirectory "$RootDir\judger" `
+      -RedirectStandardOutput (Join-Path $LogDir "judger-$JudgeNodeName.log") `
+      -RedirectStandardError  (Join-Path $LogDir "judger-$JudgeNodeName.err.log") -WindowStyle Hidden -PassThru
+    Set-Content -Path $JudgePidFile -Value $proc.Id
+    Write-Host "专池判题节点 ($JudgeNodeName, pool=$JudgePool) 已启动（PID=$($proc.Id)，日志：.logs\judger-$JudgeNodeName.log）" -ForegroundColor Green
 }
 
 # ---- 3. 后端 ----

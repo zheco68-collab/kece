@@ -2,13 +2,13 @@
 package sandbox
 
 import (
-	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
+	"io"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -18,14 +18,51 @@ const (
 	backstopBuffer = 30 * time.Second
 	maxOutputBytes = 64 << 10
 	maxStderrBytes = 8 << 10
-	// 峰值内存探测文件：容器在工作目录（挂载为 /work）内写回，宿主机按同名路径读取。
-	memProbeName = ".memory"
-	memProbePath = "/work/" + memProbeName
+	memProbePrefix = "kece.memory_bytes="
+	runTimePrefix  = "kece.run_ms="
 )
+
+// limitedBuffer 在采集阶段即限制最大缓冲字节数，避免超大标准输出撑爆 worker 内存。
+type limitedBuffer struct {
+	buf []byte
+	max int
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	origLen := len(p)
+	if len(b.buf) < b.max {
+		remain := b.max - len(b.buf)
+		if len(p) > remain {
+			p = p[:remain]
+		}
+		b.buf = append(b.buf, p...)
+	}
+	return origLen, nil
+}
+
+func (b *limitedBuffer) String() string {
+	return string(b.buf)
+}
+
+func newContainerName(prefix string) string {
+	var rnd [6]byte
+	_, _ = rand.Read(rnd[:])
+	return fmt.Sprintf("kece-%s-%d-%s", prefix, time.Now().Unix(), hex.EncodeToString(rnd[:]))
+}
+
+func forceRemoveContainer(name string) {
+	if name == "" {
+		return
+	}
+	rmCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _, _, _ = runDocker(rmCtx, []string{"rm", "-f", name})
+}
 
 // Runner 通过宿主机 Docker daemon 执行沙箱容器。
 type Runner struct {
 	Workspace       string
+	CgroupParent    string
 	CompileTimeout  time.Duration
 	CompileMemoryMb int
 	ImageCPP        string
@@ -37,7 +74,6 @@ type Runner struct {
 // RunResult 为单次运行的原始结果。
 type RunResult struct {
 	Stdout   string
-	Stderr   string
 	ExitCode int
 	Elapsed  time.Duration
 	// MemoryKb 为本次运行的峰值内存（含运行时基线）；宿主机/内核不支持探测时为 nil。
@@ -51,19 +87,23 @@ func (r *Runner) Compile(ctx context.Context, lang, ws string) (stderr string, o
 	if !need {
 		return "", true, nil
 	}
-	timeoutCtx, cancel := context.WithTimeout(ctx, r.CompileTimeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, r.CompileTimeout+backstopBuffer)
 	defer cancel()
 
-	args := r.dockerArgs(r.CompileMemoryMb, ws, r.imageFor(lang), shell)
+	cname := newContainerName("cmp")
+	seconds := fmt.Sprintf("%.3f", r.CompileTimeout.Seconds())
+	shell = fmt.Sprintf("timeout -s KILL %s sh -c '%s'; code=$?; %s", seconds, shell, normalizeExit)
+	args := r.dockerArgs(ctx, cname, r.CompileMemoryMb, ws, r.imageFor(lang), shell, false)
 	stdout, stderr, code, err := runDocker(timeoutCtx, args)
 	if err != nil {
+		forceRemoveContainer(cname)
 		if ctx.Err() != nil {
 			return "", false, ctx.Err()
 		}
-		if timeoutCtx.Err() != nil {
-			return "compile timed out", false, nil
-		}
 		return "", false, fmt.Errorf("docker compile: %w", err)
+	}
+	if code == exitTLE || code == exitOOM {
+		return "compile timed out", false, nil
 	}
 	compileLog := stderr
 	if compileLog == "" {
@@ -72,8 +112,8 @@ func (r *Runner) Compile(ctx context.Context, lang, ws string) (stderr string, o
 	return truncate(compileLog, maxStderrBytes), code == 0, nil
 }
 
-// Run 运行编译产物（标准输入已写入 ws/input.txt），返回标准输出、退出码与耗时。
-func (r *Runner) Run(ctx context.Context, lang, ws string, timeLimitMs, memoryMb int) (RunResult, error) {
+// Run 在独立容器中运行一个测试用例，直接通过标准输入传输用例数据。
+func (r *Runner) Run(ctx context.Context, lang, ws string, timeLimitMs, memoryMb int, input io.Reader) (RunResult, error) {
 	res := RunResult{}
 	sec := fmt.Sprintf("%.3f", float64(timeLimitMs)/1000.0)
 	shell := runCommand(lang, sec)
@@ -81,37 +121,44 @@ func (r *Runner) Run(ctx context.Context, lang, ws string, timeLimitMs, memoryMb
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeLimitMs)*time.Millisecond+backstopBuffer)
 	defer cancel()
 
-	// 探测文件写在本次提交的工作目录里（该目录即容器内的 /work），须与挂载源同一路径。
-	// 先清掉上一用例残留：本次读不到即代表「测不到」，不可退化成 0。
-	memPath := filepath.Join(ws, memProbeName)
-	_ = os.Remove(memPath)
-
+	cname := newContainerName("run")
 	start := time.Now()
-	args := r.dockerArgs(memoryMb, ws, r.imageFor(lang), shell)
-	stdout, stderr, code, err := runDocker(timeoutCtx, args)
+	args := r.dockerArgs(ctx, cname, memoryMb, ws, r.imageFor(lang), shell, true)
+	stdout, stderr, code, err := runDockerWithInput(timeoutCtx, args, input)
 	res.Elapsed = time.Since(start)
 	res.Stdout = truncate(stdout, maxOutputBytes)
-	res.Stderr = truncate(stderr, maxStderrBytes)
 	res.ExitCode = code
-	res.MemoryKb = readMemProbe(memPath)
 	if err != nil {
-		switch {
-		case ctx.Err() != nil:
+		forceRemoveContainer(cname)
+		if ctx.Err() != nil {
 			return res, ctx.Err()
-		case timeoutCtx.Err() != nil:
-			res.ExitCode = exitKill
-			return res, nil
-		default:
-			return res, fmt.Errorf("docker run: %w", err)
 		}
+		return res, fmt.Errorf("docker run: %w", err)
+	}
+	res.MemoryKb = readMemProbe(stderr)
+	if measured, err := strconv.Atoi(readProbe(stderr, runTimePrefix)); err == nil && measured >= 0 {
+		res.Elapsed = time.Duration(measured) * time.Millisecond
 	}
 	return res, nil
 }
 
 // dockerArgs 构造沙箱容器启动参数，落实网络隔离、Cgroups 资源限制与权限收敛。
-func (r *Runner) dockerArgs(memoryMb int, ws, image, shellCmd string) []string {
-	return []string{
-		"run", "--rm",
+func (r *Runner) dockerArgs(ctx context.Context, containerName string, memoryMb int, ws, image, shellCmd string, stdin bool) []string {
+	args := []string{"run", "--rm", "--pull=never", "--name", containerName, "--label", "kece.managed=true"}
+	mount := ws + ":/work"
+	if stdin {
+		// The supervisor needs to switch user and signal the resulting process.
+		// The student runs as nobody without these capabilities.
+		args = append(args, "-i")
+		mount += ":ro"
+	}
+	if owner, ok := ctx.Value(ownerKey{}).(containerOwner); ok {
+		args = append(args, "--label", "kece.node="+owner.nodeID,
+			"--label", "kece.job="+owner.jobID,
+			"--label", "kece.session="+strconv.FormatInt(owner.sessionEpoch, 10),
+			"--label", "kece.lease="+strconv.FormatInt(owner.leaseEpoch, 10))
+	}
+	args = append(args,
 		"--network", "none",
 		"--memory", fmt.Sprintf("%dm", memoryMb),
 		"--memory-swap", fmt.Sprintf("%dm", memoryMb),
@@ -119,11 +166,20 @@ func (r *Runner) dockerArgs(memoryMb int, ws, image, shellCmd string) []string {
 		"--cpus", "1",
 		"--cap-drop", "ALL",
 		"--security-opt", "no-new-privileges",
-		"-v", ws + ":/work",
+	)
+	if stdin {
+		args = append(args, "--cap-add", "SETUID", "--cap-add", "SETGID", "--cap-add", "KILL")
+	}
+	if r.CgroupParent != "" {
+		args = append(args, "--cgroup-parent", r.CgroupParent)
+	}
+	args = append(args,
+		"-v", mount,
 		"-w", "/work",
 		image,
 		"sh", "-c", shellCmd,
-	}
+	)
+	return args
 }
 
 func (r *Runner) imageFor(lang string) string {
@@ -154,59 +210,87 @@ func compileCommand(lang string) (string, bool) {
 	}
 }
 
+// Docker CLI reserves 125–127 for launch errors. Keep user exit codes out of that range.
+const normalizeExit = "case $code in 125|126|127) code=1;; esac; exit $code"
+
 // runCommand 构造容器内的运行命令。
 //
-// 程序退出后顺带把容器 cgroup 的峰值内存（cgroup v2 memory.peak）写回工作目录，宿主机据此上报
-// 逐用例内存。`; code=$?` 先存下程序的退出码、末尾 `exit $code` 原样退出，TLE/MLE/RE 的判定不受影响；
-// 内核不支持 memory.peak 时写入失败（重定向到 /dev/null），读数留空而不是伪装成 0。
+// The supervisor owns the timeout and the metrics channel. The student can only
+// write to stdout and cannot signal the supervisor or report fabricated metrics.
 func runCommand(lang, sec string) string {
 	var run string
 	switch lang {
 	case "cpp":
-		run = fmt.Sprintf("timeout -s KILL %s ./main < /work/input.txt", sec)
+		run = "./main"
 	case "java":
-		run = fmt.Sprintf("timeout -s KILL %s java -cp /work Main < /work/input.txt", sec)
+		run = "java -cp /work Main"
 	case "python":
-		run = fmt.Sprintf("timeout -s KILL %s python3 /work/main.py < /work/input.txt", sec)
+		run = "python3 /work/main.py"
 	case "arkts":
-		run = fmt.Sprintf("timeout -s KILL %s node /work/main.js < /work/input.txt", sec)
+		run = "node /work/main.js"
 	default:
 		return "exit 1"
 	}
-	return fmt.Sprintf("echo 0 > /sys/fs/cgroup/memory.peak 2>/dev/null || true; %s; code=$?; cat /sys/fs/cgroup/memory.peak > %s 2>/dev/null; exit $code", run, memProbePath)
+	return fmt.Sprintf(
+		"read -r start _ < /proc/uptime; "+
+			"KECE_RUNTIME_PATH=\"$PATH\" timeout -s KILL %s su -p -s /bin/sh nobody -c 'export PATH=$KECE_RUNTIME_PATH HOME=/tmp; %s; code=$?; case $code in 124|125|126|127|137) code=1;; esac; exit $code' 2>/dev/null; code=$?; "+
+			"read -r finish _ < /proc/uptime; "+
+			"awk -v start=\"$start\" -v finish=\"$finish\" 'BEGIN {if (start != \"\" && finish != \"\") printf \"%s%%.0f\\n\", (finish-start)*1000}' >&2; "+
+			"if [ -r /sys/fs/cgroup/memory.peak ]; then printf '%s' >&2; cat /sys/fs/cgroup/memory.peak >&2; fi; "+
+			"if grep -Eq '^oom_kill [1-9][0-9]*$' /sys/fs/cgroup/memory.events 2>/dev/null; then code=137; "+
+			"elif [ \"$code\" -eq 137 ]; then code=124; fi; %s",
+		sec, run, runTimePrefix, memProbePrefix, normalizeExit)
 }
 
-// readMemProbe 读取容器写回的峰值内存（KB）。文件缺失（内核无 memory.peak）或内容非法时返回 nil。
-func readMemProbe(path string) *int {
-	data, err := os.ReadFile(path)
-	if err != nil {
+// readMemProbe reads the cgroup measurement from the supervisor's stderr.
+func readMemProbe(stderr string) *int {
+	bytesVal, err := strconv.ParseInt(readProbe(stderr, memProbePrefix), 10, 64)
+	if err != nil || bytesVal <= 0 {
 		return nil
 	}
-	bytes, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
-	if err != nil || bytes <= 0 {
-		return nil
-	}
-	kb := int(bytes / 1024)
+	kb := int(bytesVal / 1024)
 	if kb <= 0 {
 		return nil
 	}
 	return &kb
 }
 
-// runDocker 执行 docker 子命令并返回输出、退出码。
-// 仅在 docker 命令本身失败（如 daemon 不可用）时返回错误；容器非零退出不算错误。
+func readProbe(stderr, prefix string) string {
+	for _, line := range strings.Split(stderr, "\n") {
+		if value, found := strings.CutPrefix(line, prefix); found {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+// runDocker 执行 docker 子命令并返回受限长度的输出与退出码。
+// 仅在 docker 命令本身失败（如 daemon 不可用或 context 取消）时返回错误；容器非零退出不算错误。
 func runDocker(ctx context.Context, args []string) (stdout, stderr string, exitCode int, err error) {
+	return runDockerWithInput(ctx, args, nil)
+}
+
+func runDockerWithInput(ctx context.Context, args []string, input io.Reader) (stdout, stderr string, exitCode int, err error) {
 	cmd := exec.CommandContext(ctx, "docker", args...)
-	var outBuf, errBuf bytes.Buffer
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
+	cmd.Stdin = input
+	outBuf := &limitedBuffer{max: maxOutputBytes}
+	errBuf := &limitedBuffer{max: maxStderrBytes}
+	cmd.Stdout = outBuf
+	cmd.Stderr = errBuf
 	err = cmd.Run()
 	stdout = outBuf.String()
 	stderr = errBuf.String()
 	if err != nil {
+		if ctx.Err() != nil {
+			return stdout, stderr, -1, ctx.Err()
+		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return stdout, stderr, exitErr.ExitCode(), nil
+			code := exitErr.ExitCode()
+			if args[0] == "run" && code >= 125 && code <= 127 {
+				return stdout, stderr, code, fmt.Errorf("Docker 启动失败（%d）: %s", code, truncate(strings.TrimSpace(stderr), 500))
+			}
+			return stdout, stderr, code, nil
 		}
 		return stdout, stderr, -1, err
 	}
@@ -220,121 +304,15 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
-// Session 表示单次提交生命周期内复用的沙箱容器。
-type Session struct {
-	runner      *Runner
-	containerID string
-	ws          string
-	lang        string
-	memoryMb    int
+// PrewarmPool 仅预热当前专池所需的单个沙箱镜像，不检查或拉取其他语言的镜像。
+func (r *Runner) PrewarmPool(ctx context.Context, pool string) {
+	img := r.imageFor(pool)
+	if img == "" {
+		return
+	}
+	go func(image string) {
+		timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		_, _, _, _ = runDocker(timeoutCtx, []string{"run", "--rm", image, "true"})
+	}(img)
 }
-
-// StartSession 启动一个单次提交的运行沙箱容器，供全部测试用例复用。
-// 编译阶段已在独立容器中完成，因此会话容器直接以题目的 runMemoryMb 启动，
-// 避免编译器（g++/javac/tsc）的高内存峰值污染 cgroup memory.peak 读数。
-func (r *Runner) StartSession(ctx context.Context, lang, ws string, runMemoryMb int) (*Session, error) {
-	image := r.imageFor(lang)
-	if image == "" {
-		return nil, fmt.Errorf("no image for language: %s", lang)
-	}
-	if runMemoryMb <= 0 {
-		runMemoryMb = 256
-	}
-
-	args := []string{
-		"run", "-d",
-		"--network", "none",
-		"--memory", fmt.Sprintf("%dm", runMemoryMb),
-		"--memory-swap", fmt.Sprintf("%dm", runMemoryMb),
-		"--pids-limit", "64",
-		"--cpus", "1",
-		"--cap-drop", "ALL",
-		"--security-opt", "no-new-privileges",
-		"-v", ws + ":/work",
-		"-w", "/work",
-		image,
-		"sleep", "3600",
-	}
-
-	timeoutCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-
-	stdout, stderr, code, err := runDocker(timeoutCtx, args)
-	if err != nil || code != 0 {
-		return nil, fmt.Errorf("start session container (code=%d, stderr=%s): %w", code, stderr, err)
-	}
-
-	cid := strings.TrimSpace(stdout)
-	if len(cid) < 12 {
-		return nil, fmt.Errorf("invalid container id: %s", stdout)
-	}
-
-	return &Session{
-		runner:      r,
-		containerID: cid,
-		ws:          ws,
-		lang:        lang,
-		memoryMb:    runMemoryMb,
-	}, nil
-}
-
-// Close 销毁沙箱容器并清理资源。
-func (s *Session) Close(ctx context.Context) error {
-	if s == nil || s.containerID == "" {
-		return nil
-	}
-	args := []string{"rm", "-f", s.containerID}
-	_, _, _, err := runDocker(ctx, args)
-	return err
-}
-
-// Run 在复用的容器中执行单个测试用例。
-func (s *Session) Run(ctx context.Context, timeLimitMs int) (RunResult, error) {
-	res := RunResult{}
-	sec := fmt.Sprintf("%.3f", float64(timeLimitMs)/1000.0)
-	shell := runCommand(s.lang, sec)
-
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeLimitMs)*time.Millisecond+backstopBuffer)
-	defer cancel()
-
-	memPath := filepath.Join(s.ws, memProbeName)
-	_ = os.Remove(memPath)
-
-	start := time.Now()
-	args := []string{"exec", s.containerID, "sh", "-c", shell}
-	stdout, stderr, code, err := runDocker(timeoutCtx, args)
-	res.Elapsed = time.Since(start)
-	res.Stdout = truncate(stdout, maxOutputBytes)
-	res.Stderr = truncate(stderr, maxStderrBytes)
-	res.ExitCode = code
-	res.MemoryKb = readMemProbe(memPath)
-	if err != nil {
-		switch {
-		case ctx.Err() != nil:
-			return res, ctx.Err()
-		case timeoutCtx.Err() != nil:
-			res.ExitCode = exitKill
-			return res, nil
-		default:
-			return res, fmt.Errorf("docker exec run: %w", err)
-		}
-	}
-	return res, nil
-}
-
-// Prewarm 在后台预热基础沙箱镜像，将镜像载入 Linux 内存页缓存，避免首次判题冷启动。
-func (r *Runner) Prewarm(ctx context.Context) {
-	images := []string{r.ImageCPP, r.ImageJava, r.ImagePython, r.ImageArkTS}
-	for _, img := range images {
-		if img == "" {
-			continue
-		}
-		go func(image string) {
-			timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			defer cancel()
-			args := []string{"run", "--rm", image, "true"}
-			_, _, _, _ = runDocker(timeoutCtx, args)
-		}(img)
-	}
-}
-

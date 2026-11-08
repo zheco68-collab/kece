@@ -4,8 +4,10 @@ import { RouterView, useRoute } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import ToastHost from '@/components/ToastHost.vue'
+import { provideJudgeCluster } from '@/features/judging/composables/useJudgeCluster'
 
 const route = useRoute()
+const cluster = provideJudgeCluster(30000)
 
 // 动态面包屑导航计算：工业风等宽标签，如 KECE // PORTAL / RANKINGS
 const currentSection = computed(() => {
@@ -53,9 +55,34 @@ const currentSection = computed(() => {
           <span class="bc-current mono">{{ currentSection }}</span>
         </div>
         <div class="topbar-right">
-          <div class="telemetry-pill mono" title="集群系统遥测状态：全部节点正常运行">
-            <span class="dot-online"></span>
-            <span>CLUSTER: 2/2 ONLINE</span>
+          <div
+            class="telemetry-pill mono"
+            :class="{
+              'is-stale': cluster.isStale.value,
+              'is-degraded': cluster.isUnavailable.value || cluster.readyPools.value === 0,
+            }"
+            :title="
+              cluster.isUnavailable.value
+                ? '评测集群状态暂不可用'
+                : cluster.isStale.value
+                  ? '评测集群数据已过期，正在尝试重新连接'
+                  : `评测集群就绪：${cluster.readyPools.value}/${cluster.totalPools.value} 专池`
+            "
+          >
+            <span
+              class="dot-status"
+              :class="{
+                'dot-online': !cluster.isStale.value && !cluster.isUnavailable.value && cluster.readyPools.value > 0,
+                'dot-stale': cluster.isStale.value && !cluster.isUnavailable.value,
+                'dot-offline': cluster.isUnavailable.value || cluster.readyPools.value === 0,
+              }"
+            ></span>
+            <span v-if="cluster.initialLoading.value">CLUSTER: LOADING...</span>
+            <span v-else-if="cluster.isUnavailable.value">CLUSTER: UNAVAILABLE</span>
+            <span v-else>
+              POOLS: {{ cluster.readyPools.value }}/{{ cluster.totalPools.value }} READY
+              <span v-if="cluster.isStale.value" class="stale-label">(STALE)</span>
+            </span>
           </div>
         </div>
       </header>
@@ -155,15 +182,47 @@ const currentSection = computed(() => {
   font-weight: 600;
   letter-spacing: 0.04em;
   user-select: none;
+  transition: all 0.2s ease;
 }
 
-.dot-online {
+.telemetry-pill.is-stale {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+.telemetry-pill.is-degraded {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.dot-status {
   width: 6px;
   height: 6px;
-  background: #10b981;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
   border-radius: 50%;
   display: inline-block;
+}
+
+.dot-status.dot-online {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+
+.dot-status.dot-stale {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+}
+
+.dot-status.dot-offline {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+}
+
+.stale-label {
+  font-size: 10px;
+  opacity: 0.85;
+  margin-left: 2px;
 }
 
 .main-content {

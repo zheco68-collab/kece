@@ -1,0 +1,15 @@
+{
+  "request": {
+    "enrollmentCode": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "bootId": "boot-1794083400-0123456789abcdef",
+    "protocolVersion": 1
+  },
+  "response": {
+    "nodeId": "12",
+    "credential": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+    "sessionEpoch": 1,
+    "protocolVersion": 1,
+    "pool": "python",
+    "runtimeSpec": "python-v1"
+  }
+}

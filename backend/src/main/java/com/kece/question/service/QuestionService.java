@@ -9,6 +9,8 @@ import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
 import com.kece.common.security.AuthUser;
 import com.kece.common.security.Role;
+import com.kece.judging.JudgeDispatch.Kind;
+import com.kece.judging.artifact.JudgeManifestService;
 import com.kece.practice.service.LessonPracticeService;
 import com.kece.question.dto.QuestionRequest;
 import com.kece.question.dto.QuestionVO;
@@ -55,9 +57,13 @@ public class QuestionService {
     private final TestCaseStorageService testCaseStorageService;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
+    private final JudgeManifestService judgeManifests;
 
     @Autowired(required = false)
     private ObjectProvider<LessonPracticeService> practiceServiceProvider;
+
+    @Autowired(required = false)
+    private com.kece.judging.JudgeDispatch judgeDispatch;
 
     public PageResult<QuestionVO> list(
             String keyword,
@@ -238,16 +244,18 @@ public class QuestionService {
         applyRequest(question, request);
         question.setCreatedBy(AuthContextHolder.currentUserId());
         questionMapper.insert(question);
+        judgeManifests.publish(Kind.ALGO, question.getId());
         evictQuestionCache(question.getId());
         return toVO(question);
     }
 
     @Transactional
     public QuestionVO update(Long id, QuestionRequest request) {
-        Question question = getQuestionOrThrow(id);
+        Question question = lockQuestionOrThrow(id);
         checkOwnerOrAdmin(question);
         applyRequest(question, request);
         questionMapper.update(question);
+        judgeManifests.publish(Kind.ALGO, id);
         evictQuestionCache(id);
         return toVO(question);
     }
@@ -255,7 +263,7 @@ public class QuestionService {
     /** 删除编程题：无提交记录时出题人/管理员可删；有提交记录时仅 ADMIN 可强制删除（级联清理提交记录）。 */
     @Transactional
     public void delete(Long id) {
-        Question question = getQuestionOrThrow(id);
+        Question question = lockQuestionOrThrow(id);
         checkOwnerOrAdmin(question);
         AuthUser user = AuthContextHolder.get();
         boolean admin = user != null && user.hasRole(Role.ADMIN);
@@ -264,8 +272,12 @@ public class QuestionService {
         }
         if (admin) {
             submissionMapper.deleteByQuestionId(id);
+            if (judgeDispatch != null) {
+                judgeDispatch.cancelOrphanedQueued();
+            }
         }
         testCaseMapper.deleteByQuestionId(id);
+        judgeManifests.clearCurrent(Kind.ALGO, id);
         questionMapper.deleteById(id);
         testCaseStorageService.deleteQuestionDir(id);
         evictQuestionCache(id);
@@ -298,7 +310,7 @@ public class QuestionService {
 
     @Transactional
     public TestCaseVO addTestCase(Long questionId, TestCaseRequest request) {
-        Question question = getQuestionOrThrow(questionId);
+        Question question = lockQuestionOrThrow(questionId);
         checkOwnerOrAdmin(question);
         List<TestCase> existing = testCaseMapper.findByQuestionId(questionId);
         int nextNum =
@@ -330,6 +342,7 @@ public class QuestionService {
         if (clearInline) {
             testCaseMapper.clearInlineContent(testCase.getId());
         }
+        judgeManifests.publish(Kind.ALGO, question.getId());
         evictDetailCache(questionId);
         return toTestCaseVO(testCase);
     }
@@ -337,8 +350,9 @@ public class QuestionService {
     @Transactional
     public TestCaseVO updateTestCase(Long testCaseId, TestCaseRequest request) {
         TestCase testCase = getTestCaseOrThrow(testCaseId);
-        Question question = getQuestionOrThrow(testCase.getQuestionId());
+        Question question = lockQuestionOrThrow(testCase.getQuestionId());
         checkOwnerOrAdmin(question);
+        testCase = lockCaseOrThrow(testCaseId);
         if (request.getCaseNum() != null) {
             testCase.setCaseNum(request.getCaseNum());
         }
@@ -364,15 +378,16 @@ public class QuestionService {
         if (clearInline) {
             testCaseMapper.clearInlineContent(testCase.getId());
         }
+        judgeManifests.publish(Kind.ALGO, question.getId());
         evictDetailCache(testCase.getQuestionId());
         return toTestCaseVO(testCase);
     }
 
     @Transactional
     public void toggleTestCaseSample(Long questionId, Long testCaseId, boolean isSample) {
-        Question question = getQuestionOrThrow(questionId);
+        Question question = lockQuestionOrThrow(questionId);
         checkOwnerOrAdmin(question);
-        TestCase testCase = getTestCaseOrThrow(testCaseId);
+        TestCase testCase = lockCaseOrThrow(testCaseId);
         if (!testCase.getQuestionId().equals(questionId)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "测试点不属于该题目");
         }
@@ -388,12 +403,13 @@ public class QuestionService {
         if (!isSample) {
             testCaseMapper.clearInlineContent(testCase.getId());
         }
+        judgeManifests.publish(Kind.ALGO, question.getId());
         evictDetailCache(questionId);
     }
 
     @Transactional
     public void setSampleCaseIds(Long questionId, List<Long> sampleCaseIds) {
-        Question question = getQuestionOrThrow(questionId);
+        Question question = lockQuestionOrThrow(questionId);
         checkOwnerOrAdmin(question);
         List<TestCase> cases = testCaseMapper.findByQuestionId(questionId);
         Set<Long> targetIds =
@@ -416,33 +432,18 @@ public class QuestionService {
                 }
             }
         }
+        judgeManifests.publish(Kind.ALGO, question.getId());
         evictDetailCache(questionId);
     }
 
     @Transactional
     public void deleteTestCase(Long testCaseId) {
         TestCase testCase = getTestCaseOrThrow(testCaseId);
-        Question question = getQuestionOrThrow(testCase.getQuestionId());
+        Question question = lockQuestionOrThrow(testCase.getQuestionId());
         checkOwnerOrAdmin(question);
-        if (testCase.getInputPath() != null) {
-            java.nio.file.Path p = testCaseStorageService.resolvePath(testCase.getInputPath());
-            if (p != null) {
-                try {
-                    java.nio.file.Files.deleteIfExists(p);
-                } catch (Exception ignored) {
-                }
-            }
-        }
-        if (testCase.getOutputPath() != null) {
-            java.nio.file.Path p = testCaseStorageService.resolvePath(testCase.getOutputPath());
-            if (p != null) {
-                try {
-                    java.nio.file.Files.deleteIfExists(p);
-                } catch (Exception ignored) {
-                }
-            }
-        }
+        testCase = lockCaseOrThrow(testCaseId);
         testCaseMapper.deleteById(testCaseId);
+        judgeManifests.publish(Kind.ALGO, question.getId());
         evictDetailCache(testCase.getQuestionId());
     }
 
@@ -452,10 +453,12 @@ public class QuestionService {
             org.springframework.web.multipart.MultipartFile file,
             boolean replace,
             boolean firstAsSample) {
-        Question question = getQuestionOrThrow(questionId);
+        Question question = lockQuestionOrThrow(questionId);
         checkOwnerOrAdmin(question);
         List<TestCase> imported =
                 testCaseStorageService.importZip(questionId, file, replace, firstAsSample);
+        judgeManifests.publish(Kind.ALGO, questionId);
+        evictDetailCache(questionId);
         return imported.stream().map(this::toTestCaseVO).toList();
     }
 
@@ -478,6 +481,22 @@ public class QuestionService {
         Question question = getQuestionOrThrow(testCase.getQuestionId());
         checkOwnerOrAdmin(question);
         return testCaseStorageService.getOutputResource(testCase);
+    }
+
+    private Question lockQuestionOrThrow(Long id) {
+        Question question = questionMapper.findByIdForUpdate(id);
+        if (question == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "题目不存在");
+        }
+        return question;
+    }
+
+    private TestCase lockCaseOrThrow(Long id) {
+        TestCase testCase = testCaseMapper.findByIdForUpdate(id);
+        if (testCase == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "测试用例不存在");
+        }
+        return testCase;
     }
 
     private Question getQuestionOrThrow(Long id) {

@@ -116,14 +116,8 @@ public class FrontendQuestionStrategy implements QuestionTypeStrategy {
         return null;
     }
 
-    @Override
-    public String getRedisStatusKey(Long submissionId) {
+    private String getRedisStatusKey(Long submissionId) {
         return "fesub:status:" + submissionId;
-    }
-
-    @Override
-    public String getRedisProgressKey(Long submissionId) {
-        return "fe_judge:progress:" + submissionId;
     }
 
     @Override

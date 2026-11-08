@@ -7,6 +7,8 @@ on:
       - 'frontend/**'
       - 'backend/**'
       - 'judger/**'
+      - 'deploy/judger/**'
+      - 'docs/contracts/**'
       - '.github/workflows/**'
   pull_request:
     branches: [main]
@@ -14,6 +16,8 @@ on:
       - 'frontend/**'
       - 'backend/**'
       - 'judger/**'
+      - 'deploy/judger/**'
+      - 'docs/contracts/**'
       - '.github/workflows/**'
 
 jobs:
@@ -57,6 +61,15 @@ jobs:
   judger:
     name: Judger (Lint + Test + Build)
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: judge-ci-test
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306/tcp
+        options: --health-cmd="mysqladmin ping -h 127.0.0.1" --health-interval=5s --health-retries=20
     defaults:
       run:
         working-directory: judger
@@ -65,7 +78,19 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-      - run: gofmt -l . | grep -q . && exit 1 || true
+      - name: Check gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted Go files:"
+            echo "$unformatted"
+            exit 1
+          fi
       - run: go vet ./...
-      - run: go test ./...
+      - run: docker pull python:3.12-slim
+      - run: go test -race -count=1 ./...
+        env:
+          KECE_TEST_DOCKER: '1'
+          KECE_TEST_MYSQL_PORT: ${{ job.services.mysql.ports[3306] }}
+          KECE_TEST_MYSQL_PASSWORD: judge-ci-test
       - run: go build -o bin/judger ./cmd/judger

@@ -31,6 +31,9 @@ public class QuestionSeeder {
     private final QuestionMapper questionMapper;
     private final TestCaseMapper testCaseMapper;
     private final UserMapper userMapper;
+    private final com.kece.judging.artifact.JudgeManifestMapper manifestMapper;
+    private final com.kece.judging.artifact.JudgeManifestService judgeManifests;
+    private final org.springframework.transaction.support.TransactionTemplate transaction;
 
     @Value("${kece.demo-data.enabled:false}")
     private boolean demoDataEnabled;
@@ -59,30 +62,45 @@ public class QuestionSeeder {
     }
 
     private int ensureQuestion(Seed seed, Long authorId) {
-        if (questionMapper.findByTitle(seed.title()) != null) {
+        Question existing = questionMapper.findByTitle(seed.title());
+        if (existing != null) {
+            if (manifestMapper.current(
+                            com.kece.judging.JudgeDispatch.Kind.ALGO.name(), existing.getId())
+                    == null) {
+                transaction.executeWithoutResult(
+                        tx ->
+                                judgeManifests.publish(
+                                        com.kece.judging.JudgeDispatch.Kind.ALGO,
+                                        existing.getId()));
+            }
             return 0;
         }
-        Question question = new Question();
-        question.setTitle(seed.title());
-        question.setDescription(seed.description());
-        question.setDifficulty(seed.difficulty());
-        question.setTimeLimit(seed.timeLimitMs());
-        question.setMemoryLimit(256);
-        question.setLanguages("cpp,java,python");
-        question.setCreatedBy(authorId);
-        question.setStatus(1); // 示例题一律公开
-        questionMapper.insert(question);
-        int order = 0;
-        for (Case c : seed.cases()) {
-            TestCase testCase = new TestCase();
-            testCase.setQuestionId(question.getId());
-            testCase.setCaseNum(++order);
-            testCase.setInput(c.input());
-            testCase.setExpectedOutput(c.expectedOutput());
-            testCase.setIsSample(c.sample() ? 1 : 0);
-            testCaseMapper.insert(testCase);
-        }
-        return 1;
+        return transaction.execute(
+                tx -> {
+                    Question question = new Question();
+                    question.setTitle(seed.title());
+                    question.setDescription(seed.description());
+                    question.setDifficulty(seed.difficulty());
+                    question.setTimeLimit(seed.timeLimitMs());
+                    question.setMemoryLimit(256);
+                    question.setLanguages("cpp,java,python");
+                    question.setCreatedBy(authorId);
+                    question.setStatus(1); // 示例题一律公开
+                    questionMapper.insert(question);
+                    int order = 0;
+                    for (Case c : seed.cases()) {
+                        TestCase testCase = new TestCase();
+                        testCase.setQuestionId(question.getId());
+                        testCase.setCaseNum(++order);
+                        testCase.setInput(c.input());
+                        testCase.setExpectedOutput(c.expectedOutput());
+                        testCase.setIsSample(c.sample() ? 1 : 0);
+                        testCaseMapper.insert(testCase);
+                    }
+                    judgeManifests.publish(
+                            com.kece.judging.JudgeDispatch.Kind.ALGO, question.getId());
+                    return 1;
+                });
     }
 
     /** 标题为查重键，务必保持稳定；改动标题等于新增一道题。 */

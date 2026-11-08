@@ -1,0 +1,9 @@
+{
+  "request": {
+    "leaseEpoch": 1,
+    "errorCode": "ARTIFACT_PREPARE_FAILED"
+  },
+  "response": {
+    "status": "RETRY_SCHEDULED"
+  }
+}

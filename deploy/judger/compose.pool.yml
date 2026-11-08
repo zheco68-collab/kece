@@ -1,0 +1,43 @@
+# KECE 代码专池评测节点 Docker Compose 模板（cpp / java / python / arkts）
+# 用法:
+#   docker compose -f deploy/judger/compose.pool.yml --env-file /etc/kece/judger/python-1.env -p kece-judger-python-1 up -d
+# 注意: MySQL 专池节点请使用 deploy/judger/compose.mysql.yml（不挂载宿主 docker.sock）。
+
+services:
+  judger-pool-node:
+    build:
+      context: ../../judger
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 40s
+    environment:
+      - JUDGE_POOL=${JUDGE_POOL:-python}
+      - JUDGE_CONTROL_URL=${JUDGE_CONTROL_URL:?Set the reachable HTTPS control-plane URL}
+      - JUDGE_ENROLLMENT_CODE=${JUDGE_ENROLLMENT_CODE:-}
+      - JUDGE_CREDENTIAL_FILE=/data/judge/credential.json
+      - JUDGE_BOOT_ID=${JUDGE_BOOT_ID:-}
+      - JUDGE_LOCAL_SLOTS=${JUDGE_LOCAL_SLOTS:-2}
+      - JUDGE_RUNTIME_SPEC=${JUDGE_RUNTIME_SPEC:-python-v1}
+      - JUDGE_RUNTIME_VERSION=${JUDGE_RUNTIME_VERSION:-3.12}
+      - JUDGE_HEALTH_ADDR=0.0.0.0:9090
+      # 必须与下方宿主机同名路径挂载保持严格一致（宿主 Docker daemon 按宿主机路径解析 -v）
+      - WORKSPACE_DIR=${JUDGE_HOST_WORKSPACE:-/tmp/kece-judge-work}
+      - JUDGE_CGROUP_PARENT=${JUDGE_CGROUP_PARENT:-}
+      - JUDGE_ARTIFACT_CACHE_DIR=/data/judge/cache
+      - JUDGE_ARTIFACT_CACHE_LIMIT_MB=${JUDGE_ARTIFACT_CACHE_LIMIT_MB:-2048}
+      - IMAGE_PYTHON=${IMAGE_PYTHON:-python:3.12-slim}
+      - IMAGE_CPP=${IMAGE_CPP:-gcc:13}
+      - IMAGE_JAVA=${IMAGE_JAVA:-eclipse-temurin:17-jdk}
+      - IMAGE_ARKTS=${IMAGE_ARKTS:-kece-sandbox-arkts:latest}
+    volumes:
+      # 挂载宿主 Docker socket 以便启动受限无网络沙箱容器（不使用 privileged）
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 沙箱容器工作目录：宿主机与 worker 容器内路径必须一致
+      - ${JUDGE_HOST_WORKSPACE:-/tmp/kece-judge-work}:${JUDGE_HOST_WORKSPACE:-/tmp/kece-judge-work}
+      # 凭据与不可变用例缓存持久卷
+      - judger-node-data:/data/judge
+    ports:
+      - "127.0.0.1:${JUDGE_HEALTH_PORT:-0}:9090"
+
+volumes:
+  judger-node-data:

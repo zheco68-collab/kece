@@ -68,7 +68,7 @@ public interface QuestionTypeStrategy {
             Long submissionId, Long expectedUserId, Long expectedQuestionId);
 
     /**
-     * 提取评测结果：优先 Redis 实时状态缓存，回退 MySQL 记录。
+     * 提取评测结果：从业务提交记录读取当前状态与分数。
      *
      * @param submissionId 评测记录ID
      * @return 评测结果 DTO
@@ -83,12 +83,6 @@ public interface QuestionTypeStrategy {
      * @return 最新提交记录ID，无提交则返回 null
      */
     Long findLatestUserSubmissionId(Long userId, Long questionId);
-
-    /** 获取 Redis 评测状态实时缓存 Key。 */
-    String getRedisStatusKey(Long submissionId);
-
-    /** 获取 Redis 评测步骤进度实时 Key。 */
-    String getRedisProgressKey(Long submissionId);
 
     /**
      * 获取考试赛制中该用户最新的提交记录（状态及原始分数）。

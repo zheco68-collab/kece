@@ -156,6 +156,20 @@ class QuestionIntegrationTest extends AbstractIntegrationTest {
     void deleteQuestionWithSubmission_shouldBeRejected() throws Exception {
         String token = teacherToken();
         long id = createQuestion(token, "删除保护_" + UUID.randomUUID().toString().substring(0, 8));
+        mockMvc.perform(
+                        post("/questions/" + id + "/test-cases")
+                                .header("Authorization", "Bearer " + token)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        objectMapper.writeValueAsString(
+                                                Map.of(
+                                                        "input",
+                                                        "1",
+                                                        "expectedOutput",
+                                                        "1",
+                                                        "isSample",
+                                                        1))))
+                .andExpect(status().isOk());
 
         // 学生提交代码（判题机未启动，记录停留在 PENDING 但已入库）
         String username = "stu_" + UUID.randomUUID().toString().substring(0, 8);
@@ -220,6 +234,20 @@ class QuestionIntegrationTest extends AbstractIntegrationTest {
     void rejudgeInFlightSubmission_shouldReturnParamError() throws Exception {
         String token = teacherToken();
         long id = createQuestion(token, "重判并发_" + UUID.randomUUID().toString().substring(0, 8));
+        mockMvc.perform(
+                        post("/questions/" + id + "/test-cases")
+                                .header("Authorization", "Bearer " + token)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        objectMapper.writeValueAsString(
+                                                Map.of(
+                                                        "input",
+                                                        "1",
+                                                        "expectedOutput",
+                                                        "1",
+                                                        "isSample",
+                                                        1))))
+                .andExpect(status().isOk());
 
         // 学生提交代码（判题机未启动，记录停留在 PENDING）
         String username = "stu_" + UUID.randomUUID().toString().substring(0, 8);

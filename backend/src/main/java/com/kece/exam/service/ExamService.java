@@ -23,6 +23,7 @@ import com.kece.exam.entity.ExamQuestion;
 import com.kece.exam.entity.ExamSessionStatus;
 import com.kece.exam.entity.ExamStudentInfo;
 import com.kece.exam.entity.ExamSubmission;
+import com.kece.exam.mapper.ExamCandidateGuardMapper;
 import com.kece.exam.mapper.ExamMapper;
 import com.kece.exam.mapper.ExamQuestionMapper;
 import com.kece.exam.mapper.ExamStudentInfoMapper;
@@ -52,12 +53,16 @@ public class ExamService {
     private static final int TITLE_MAX_LENGTH = 255;
 
     private final ExamMapper examMapper;
+    private final ExamCandidateGuardMapper candidateGuard;
     private final ExamQuestionMapper examQuestionMapper;
     private final ExamSubmissionMapper submissionMapper;
     private final SubmissionMapper codeSubmissionMapper;
     private final DbSubmissionMapper dbSubmissionMapper;
     private final ExamStudentInfoMapper studentInfoMapper;
     private final QuestionStrategyFactory strategyFactory;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.kece.judging.JudgeDispatch judgeDispatch;
 
     /** 公开列表：仅公开考试；all=true 时特权角色可见私有考试。 */
     public PageResult<ExamVO> list(
@@ -177,11 +182,15 @@ public class ExamService {
         if (submissionMapper.countByExam(id) > 0 && !admin) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "该考试已有作答记录，仅管理员可强制删除");
         }
+        candidateGuard.deleteByExam(id);
         // ADMIN 强制删除：级联清理考试作答与考试内产生的代码/数据库评测提交
         if (admin) {
             submissionMapper.deleteByExam(id);
             codeSubmissionMapper.deleteByContest(id);
             dbSubmissionMapper.deleteByContest(id);
+            if (judgeDispatch != null) {
+                judgeDispatch.cancelOrphanedQueued();
+            }
         }
         examQuestionMapper.deleteByExamId(id);
         examMapper.deleteById(id);

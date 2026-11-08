@@ -17,6 +17,8 @@ public interface DbQuestionMapper {
 
     DbQuestion findById(Long id);
 
+    DbQuestion findByIdForUpdate(Long id);
+
     /** 按标题精确查重（种子播种幂等用）。 */
     DbQuestion findByTitle(@Param("title") String title);
 

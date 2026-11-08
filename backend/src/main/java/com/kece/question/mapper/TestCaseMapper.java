@@ -22,7 +22,11 @@ public interface TestCaseMapper {
 
     TestCase findById(Long id);
 
+    TestCase findByIdForUpdate(Long id);
+
     List<TestCase> findByQuestionId(Long questionId);
+
+    List<TestCase> findForManifest(Long questionId);
 
     List<TestCase> findSamplesByQuestionId(Long questionId);
 

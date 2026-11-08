@@ -17,6 +17,8 @@ public interface QuestionMapper {
 
     Question findById(Long id);
 
+    Question findByIdForUpdate(Long id);
+
     /** 按标题精确查重（种子播种幂等用）。 */
     Question findByTitle(@Param("title") String title);
 

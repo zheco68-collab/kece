@@ -17,8 +17,10 @@ export function useSubmissionMonitor<T>(options: SubmissionMonitorOptions<T>) {
   let timer: ReturnType<typeof setTimeout> | null = null
   let activeId: number | null = null
   let startTime = 0
+  let generation = 0
 
   const stop = () => {
+    generation++
     if (timer !== null) {
       clearTimeout(timer)
       timer = null
@@ -34,7 +36,7 @@ export function useSubmissionMonitor<T>(options: SubmissionMonitorOptions<T>) {
 
     timer = setTimeout(async () => {
       const currentTargetId = options.submissionId.value
-      if (!currentTargetId || currentTargetId !== activeId) {
+      if (!currentTargetId || currentTargetId !== activeId || !polling.value) {
         stop()
         return
       }
@@ -45,10 +47,15 @@ export function useSubmissionMonitor<T>(options: SubmissionMonitorOptions<T>) {
         return
       }
 
+      const reqGen = generation
+      const reqId = activeId
+
       try {
-        const res = await options.fetcher(activeId)
-        // 关键竞态防御：若在网络请求期间已切换了目标 ID，丢弃迟到响应
-        if (options.submissionId.value !== activeId) return
+        const res = await options.fetcher(reqId)
+        // 关键竞态防御：若在网络请求期间 generation 已变化，或切换了目标 ID，或已停止，丢弃迟到响应
+        if (generation !== reqGen || !polling.value || options.submissionId.value !== reqId) {
+          return
+        }
 
         result.value = res
         if (options.isTerminal(res)) {
@@ -59,10 +66,11 @@ export function useSubmissionMonitor<T>(options: SubmissionMonitorOptions<T>) {
           scheduleNext()
         }
       } catch (err: unknown) {
-        if (options.submissionId.value === activeId) {
-          error.value = err instanceof Error ? err.message : '获取评测结果异常'
-          stop()
+        if (generation !== reqGen || !polling.value || options.submissionId.value !== reqId) {
+          return
         }
+        error.value = err instanceof Error ? err.message : '获取评测结果异常'
+        stop()
       }
     }, interval)
   }
@@ -78,12 +86,16 @@ export function useSubmissionMonitor<T>(options: SubmissionMonitorOptions<T>) {
         activeId = newId
         startTime = Date.now()
         polling.value = true
+        const reqGen = generation
+        const reqId = newId
 
         // 立即首查一次
         options
           .fetcher(newId)
           .then((res) => {
-            if (activeId !== newId) return
+            if (generation !== reqGen || !polling.value || options.submissionId.value !== reqId) {
+              return
+            }
             result.value = res
             if (!options.isTerminal(res)) {
               scheduleNext()
@@ -93,7 +105,9 @@ export function useSubmissionMonitor<T>(options: SubmissionMonitorOptions<T>) {
             }
           })
           .catch((err: unknown) => {
-            if (activeId !== newId) return
+            if (generation !== reqGen || !polling.value || options.submissionId.value !== reqId) {
+              return
+            }
             error.value = err instanceof Error ? err.message : '获取评测结果异常'
             stop()
           })

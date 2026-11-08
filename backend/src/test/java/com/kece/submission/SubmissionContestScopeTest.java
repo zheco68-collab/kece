@@ -24,8 +24,7 @@ class SubmissionContestScopeTest {
     void ordinarySubmitRejectsClientSuppliedContestId() {
         SubmissionMapper submissions = mock(SubmissionMapper.class);
         QuestionMapper questions = mock(QuestionMapper.class);
-        SubmissionService service =
-                new SubmissionService(submissions, questions, null, null, null, null, null);
+        SubmissionService service = new SubmissionService(submissions, questions, null, null, null);
         // Use the same JSON shape as a public POST /submissions request.
         SubmitRequest request =
                 new ObjectMapper()

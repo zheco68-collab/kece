@@ -1,234 +1,168 @@
-// Command judger 为 KECE 算法评测判题机：从 Redis 拉取任务，
-// 在 Docker 沙箱中编译运行，并将结果回写 Redis。
+// Command judger starts the KECE dedicated pool judging worker.
 package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"regexp"
 	"syscall"
 	"time"
 
+	"github.com/zheco68-collab/KECE/judger/internal/artifact"
 	"github.com/zheco68-collab/KECE/judger/internal/config"
+	"github.com/zheco68-collab/KECE/judger/internal/control"
+	"github.com/zheco68-collab/KECE/judger/internal/health"
 	"github.com/zheco68-collab/KECE/judger/internal/judge"
-	"github.com/zheco68-collab/KECE/judger/internal/queue"
 	"github.com/zheco68-collab/KECE/judger/internal/sandbox"
+	"github.com/zheco68-collab/KECE/judger/internal/worker"
 )
 
+var bootIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
+
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	cfg := config.Load()
-	if err := os.MkdirAll(cfg.WorkspaceDir, 0o755); err != nil {
-		log.Fatalf("create workspace %s: %v", cfg.WorkspaceDir, err)
-	}
-	q := queue.New(cfg)
-	defer q.Close()
-
-	// 数据库判题使用独立队列键，避免与代码提交的 submissionId 撞车、互抢结果。
-	sqlCfg := cfg
-	sqlCfg.QueueKey = cfg.SqlQueueKey
-	sqlCfg.ProcessingKey = cfg.SqlProcessingKey
-	sqlCfg.ResultsKey = cfg.SqlResultsKey
-	sqlCfg.StatusKeyPrefix = cfg.SqlStatusKeyPrefix
-	sqlCfg.LeaseKeyPrefix = cfg.SqlLeaseKeyPrefix
-	sqlQ := queue.New(sqlCfg)
-	defer sqlQ.Close()
-
-	runner := &sandbox.Runner{
-		Workspace:       cfg.WorkspaceDir,
-		CompileTimeout:  cfg.CompileTimeout,
-		CompileMemoryMb: cfg.CompileMemoryMb,
-		ImageCPP:        cfg.Images.CPP,
-		ImageJava:       cfg.Images.Java,
-		ImagePython:     cfg.Images.Python,
-		ImageArkTS:      cfg.Images.ArkTS,
-	}
-	j := judge.New(cfg, q, runner)
-	defer j.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go heartbeatLoop(ctx, q, cfg.HeartbeatInterval)
-	go reapLoop(ctx, q, cfg.ReapInterval)
-	for i := 0; i < cfg.WorkerConcurrency; i++ {
-		go workerLoop(ctx, cfg, j, q, i+1)
-	}
-	go reapLoop(ctx, sqlQ, cfg.ReapInterval)
-	for i := 0; i < cfg.WorkerConcurrency; i++ {
-		go sqlWorkerLoop(ctx, cfg, j, sqlQ, i+1)
-	}
-
-	// 启动时在后台预热所有沙箱镜像，将镜像载入 Linux 内存页缓存
-	go runner.Prewarm(ctx)
-
-	log.Printf("judger started: worker=%s redis=%s concurrency=%d workspace=%s",
-		cfg.WorkerID, cfg.RedisAddr, cfg.WorkerConcurrency, cfg.WorkspaceDir)
-
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
-	log.Println("shutting down")
-	cancel()
-	_ = q.ClearHeartbeat(context.Background())
-	time.Sleep(time.Second)
-}
-
-// workerLoop 循环拉取并处理任务，直至上下文取消。
-func workerLoop(ctx context.Context, cfg config.Config, j *judge.Judge, q *queue.Queue, workerID int) {
-	for {
-		taskJSON, ok, err := q.Take(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			log.Printf("[worker-%d] take task: %v", workerID, err)
-			time.Sleep(time.Second)
-			continue
-		}
-		if !ok {
-			continue // 等待超时，无任务
-		}
-
-		task, err := judge.ParseTask(taskJSON)
-		if err != nil {
-			log.Printf("[worker-%d] parse task: %v", workerID, err)
-			_ = q.RemoveProcessing(ctx, taskJSON)
-			continue
-		}
-
-		_ = q.SetLease(ctx, task.SubmissionID)
-		stop := renewLease(ctx, q, task.SubmissionID, cfg.LeaseTTL/2)
-		err = j.Process(ctx, task)
-		close(stop)
-		if err != nil {
-			// Keep the claim. The reaper retries after the lease expires.
-			log.Printf("[worker-%d] publish result for %d: %v", workerID, task.SubmissionID, err)
-			continue
-		}
-		if err := q.RemoveProcessing(ctx, taskJSON); err != nil {
-			log.Printf("[worker-%d] acknowledge task %d: %v", workerID, task.SubmissionID, err)
-			continue
-		}
-		_ = q.ClearLease(ctx, task.SubmissionID)
+	if err := runPool(ctx, cfg); err != nil {
+		log.Fatal(err)
 	}
 }
 
-// sqlWorkerLoop 循环拉取并处理数据库判题任务，与 workerLoop 同构，作用于独立队列。
-func sqlWorkerLoop(ctx context.Context, cfg config.Config, j *judge.Judge, sqlQ *queue.Queue, workerID int) {
-	for {
-		taskJSON, ok, err := sqlQ.Take(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			log.Printf("[sql-worker-%d] take sql task: %v", workerID, err)
-			time.Sleep(time.Second)
-			continue
-		}
-		if !ok {
-			continue // 等待超时，无任务
-		}
-
-		task, err := judge.ParseTask(taskJSON)
-		if err != nil {
-			log.Printf("[sql-worker-%d] parse sql task: %v", workerID, err)
-			_ = sqlQ.RemoveProcessing(ctx, taskJSON)
-			continue
-		}
-
-		_ = sqlQ.SetLease(ctx, task.SubmissionID)
-		stop := renewLease(ctx, sqlQ, task.SubmissionID, cfg.LeaseTTL/2)
-		err = j.ProcessSQL(ctx, sqlQ, task)
-		close(stop)
-		if err != nil {
-			// Keep the claim. The reaper retries after the lease expires.
-			log.Printf("[worker-%d] publish result for %d: %v", workerID, task.SubmissionID, err)
-			continue
-		}
-		if err := sqlQ.RemoveProcessing(ctx, taskJSON); err != nil {
-			log.Printf("[worker-%d] acknowledge task %d: %v", workerID, task.SubmissionID, err)
-			continue
-		}
-		_ = sqlQ.ClearLease(ctx, task.SubmissionID)
+func runPool(ctx context.Context, cfg config.Config) error {
+	switch cfg.JudgePool {
+	case "cpp", "java", "python", "mysql", "arkts":
+	default:
+		return fmt.Errorf("unsupported JUDGE_POOL %q (expected cpp|java|python|mysql|arkts)", cfg.JudgePool)
 	}
-}
-
-// renewLease 在处理期间周期性续租，避免长任务被重投；返回停止通道。
-func renewLease(ctx context.Context, q *queue.Queue, submissionID int64, interval time.Duration) chan struct{} {
-	stop := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				_ = q.SetLease(ctx, submissionID)
-			}
-		}
-	}()
-	return stop
-}
-
-// heartbeatLoop 周期性上报判题机存活心跳。
-func heartbeatLoop(ctx context.Context, q *queue.Queue, interval time.Duration) {
-	// 启动时立即上报一次初始心跳，不等待首个周期
-	if err := q.Heartbeat(ctx); err != nil {
-		log.Printf("initial heartbeat: %v", err)
+	if cfg.JudgeLocalSlots <= 0 {
+		return fmt.Errorf("invalid JUDGE_LOCAL_SLOTS %d (must be > 0)", cfg.JudgeLocalSlots)
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := q.Heartbeat(ctx); err != nil {
-				log.Printf("heartbeat: %v", err)
-			}
-		}
+	if cfg.JudgeControlURL == "" {
+		return fmt.Errorf("JUDGE_CONTROL_URL must not be empty")
 	}
-}
-
-// reapLoop 周期性扫描处理中列表，重投租约失效（判题机宕机）的任务。
-func reapLoop(ctx context.Context, q *queue.Queue, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			reap(ctx, q)
-		}
+	if cfg.JudgeCredentialFile == "" {
+		return fmt.Errorf("JUDGE_CREDENTIAL_FILE must not be empty")
 	}
-}
+	if !bootIDPattern.MatchString(cfg.JudgeBootID) {
+		return fmt.Errorf("invalid JUDGE_BOOT_ID %q (must match [A-Za-z0-9_-]{16,64})", cfg.JudgeBootID)
+	}
 
-func reap(ctx context.Context, q *queue.Queue) {
-	tasks, err := q.ListProcessing(ctx)
+	log.Printf("[judger] starting pool worker: pool=%s, control=%s, slots=%d",
+		cfg.JudgePool, cfg.JudgeControlURL, cfg.JudgeLocalSlots)
+
+	client, err := control.NewClient(cfg.JudgeControlURL, &http.Client{Timeout: 35 * time.Second})
 	if err != nil {
-		log.Printf("reap: %v", err)
-		return
+		return fmt.Errorf("control client: %w", err)
 	}
-	for _, taskJSON := range tasks {
-		task, err := judge.ParseTask(taskJSON)
-		if err != nil {
-			_ = q.RemoveProcessing(ctx, taskJSON)
-			continue
+
+	cache, err := artifact.NewCache(cfg.JudgeArtifactCacheDir, cfg.JudgeArtifactCacheLimit)
+	if err != nil {
+		return fmt.Errorf("artifact cache: %w", err)
+	}
+
+	var (
+		runner      *sandbox.Runner
+		codeExec    worker.Executor
+		sqlExec     worker.SQLExecutor
+		healthCheck func(context.Context) error
+	)
+
+	if cfg.JudgePool == "mysql" {
+		mysqlExec := judge.NewSQL(judge.SQLConfig{
+			Host:        cfg.JudgeMysqlHost,
+			Port:        cfg.JudgeMysqlPort,
+			User:        cfg.JudgeMysqlUser,
+			Password:    cfg.JudgeMysqlPassword,
+			Concurrency: cfg.JudgeLocalSlots,
+			Timeout:     cfg.SqlTimeout,
+		})
+		sqlExec = mysqlExec
+		healthCheck = mysqlExec.Ping
+		defer mysqlExec.Close()
+		go runSQLOrphanJanitor(ctx, mysqlExec)
+	} else {
+		if err := os.MkdirAll(cfg.WorkspaceDir, 0o777); err != nil {
+			return fmt.Errorf("create judge workspace: %w", err)
 		}
-		alive, err := q.HasLease(ctx, task.SubmissionID)
-		if err != nil {
-			continue
+		runner = &sandbox.Runner{
+			Workspace:       cfg.WorkspaceDir,
+			CgroupParent:    cfg.CgroupParent,
+			CompileTimeout:  cfg.CompileTimeout,
+			CompileMemoryMb: cfg.CompileMemoryMb,
+			ImageCPP:        cfg.Images.CPP,
+			ImageJava:       cfg.Images.Java,
+			ImagePython:     cfg.Images.Python,
+			ImageArkTS:      cfg.Images.ArkTS,
 		}
-		if !alive {
-			log.Printf("reap: requeue submission %d", task.SubmissionID)
-			if err := q.Requeue(ctx, taskJSON); err != nil {
-				log.Printf("reap requeue: %v", err)
+		runner.PrewarmPool(ctx, cfg.JudgePool)
+		codeExec = judge.NewCode(runner, "")
+		image := map[string]string{
+			"cpp": cfg.Images.CPP, "java": cfg.Images.Java,
+			"python": cfg.Images.Python, "arkts": cfg.Images.ArkTS,
+		}[cfg.JudgePool]
+		healthCheck = func(ctx context.Context) error {
+			if err := exec.CommandContext(ctx, "docker", "image", "inspect", image).Run(); err != nil {
+				return fmt.Errorf("inspect sandbox image %q: %w", image, err)
 			}
+			return nil
+		}
+	}
+
+	w := worker.NewWorker(worker.Config{
+		Pool:              cfg.JudgePool,
+		EnrollmentCode:    cfg.JudgeEnrollmentCode,
+		CredentialFile:    cfg.JudgeCredentialFile,
+		BootID:            cfg.JudgeBootID,
+		RuntimeSpec:       cfg.JudgeRuntimeSpec,
+		RuntimeVersion:    cfg.JudgeRuntimeVersion,
+		LocalSlots:        cfg.JudgeLocalSlots,
+		ClaimWaitMs:       15000,
+		HeartbeatInterval: cfg.JudgeHeartbeatInterval,
+		RenewInterval:     15 * time.Second,
+		SafetyMargin:      5 * time.Second,
+		HealthCheck:       healthCheck,
+	}, client, cache, codeExec, sqlExec, runner)
+
+	if cfg.JudgeHealthAddr != "" {
+		go func() {
+			log.Printf("[judger] internal /healthz listening on %s", cfg.JudgeHealthAddr)
+			if err := health.Serve(ctx, cfg.JudgeHealthAddr, w.HealthSnapshot); err != nil {
+				log.Printf("[judger] health server stopped: %v", err)
+			}
+		}()
+	}
+
+	return w.Run(ctx)
+}
+
+func runSQLOrphanJanitor(ctx context.Context, sqlExec *judge.SQLJudge) {
+	sweep := func() {
+		sweepCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		dbs, users, err := sqlExec.CleanupOrphanDatabases(sweepCtx, 5*time.Minute)
+		if err != nil {
+			log.Printf("[judger] sql orphan sweep warning: %v", err)
+			return
+		}
+		if dbs > 0 || users > 0 {
+			log.Printf("[judger] sql orphan sweep cleaned %d databases and %d users", dbs, users)
+		}
+	}
+	sweep()
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
 		}
 	}
 }

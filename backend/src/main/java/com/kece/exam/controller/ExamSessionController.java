@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -81,8 +82,10 @@ public class ExamSessionController {
     @RequireRole
     @PutMapping("/{id}/answers")
     public ApiResponse<Void> saveAnswer(
-            @PathVariable Long id, @Valid @RequestBody ExamAnswerRequest request) {
-        examSubmissionService.saveAnswer(id, request);
+            @PathVariable Long id,
+            @Valid @RequestBody ExamAnswerRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key) {
+        examSubmissionService.saveAnswer(id, request, key);
         return ApiResponse.success();
     }
 
@@ -90,15 +93,19 @@ public class ExamSessionController {
     @RequireRole
     @PostMapping("/{id}/questions/{examQuestionId}/submit")
     public ApiResponse<SingleSubmitVO> submitQuestion(
-            @PathVariable Long id, @PathVariable Long examQuestionId) {
-        return ApiResponse.success(examSubmissionService.submitQuestion(id, examQuestionId));
+            @PathVariable Long id,
+            @PathVariable Long examQuestionId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key) {
+        return ApiResponse.success(examSubmissionService.submitQuestion(id, examQuestionId, key));
     }
 
     @Operation(summary = "交卷评测（客观题同步判分；代码/数据库题批量入队；幂等）")
     @RequireRole
     @PostMapping("/{id}/submit")
-    public ApiResponse<SubmitResultVO> submit(@PathVariable Long id) {
-        return ApiResponse.success(examSubmissionService.submit(id));
+    public ApiResponse<SubmitResultVO> submit(
+            @PathVariable Long id,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key) {
+        return ApiResponse.success(examSubmissionService.submit(id, key));
     }
 
     @Operation(summary = "我的作答与成绩")

@@ -1,5 +1,6 @@
 package com.kece.submission.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,4 +17,7 @@ public class SubmissionVO {
     private String status;
     private ProgressVO progress;
     private SubmissionResultVO result;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String waitReason;
 }

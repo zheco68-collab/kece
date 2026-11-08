@@ -28,6 +28,14 @@ public interface LessonPracticeMemberMapper {
 
     @Select(
             """
+            SELECT * FROM lesson_practice_member
+            WHERE practice_id = #{practiceId} AND user_id = #{userId} FOR UPDATE
+            """)
+    LessonPracticeMember lockByPracticeAndUser(
+            @Param("practiceId") Long practiceId, @Param("userId") Long userId);
+
+    @Select(
+            """
         SELECT * FROM `lesson_practice_member`
         WHERE practice_id = #{practiceId}
         ORDER BY total_score DESC, solved_count DESC, penalty_time ASC, joined_at ASC

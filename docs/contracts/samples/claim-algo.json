@@ -1,0 +1,66 @@
+{
+  "request": {
+    "slots": 2,
+    "waitMs": 15000
+  },
+  "response": {
+    "protocolVersion": 1,
+    "jobs": [
+      {
+        "jobId": "381",
+        "submissionType": "ALGO",
+        "submissionId": "204",
+        "generation": 1,
+        "pool": "python",
+        "runtimeSpec": "python-v1",
+        "leaseEpoch": 2,
+        "leaseRemainingMs": 59500,
+        "manifestId": "301",
+        "manifest": {
+          "version": 1,
+          "submissionType": "ALGO",
+          "timeLimitMs": 2000,
+          "memoryLimitMb": 256,
+          "cases": [
+            {
+              "caseId": 1,
+              "caseNum": 1,
+              "scoreWeight": 50,
+              "sample": true,
+              "input": {
+                "digest": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+                "size": 3
+              },
+              "output": {
+                "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "size": 0
+              }
+            },
+            {
+              "caseId": 2,
+              "caseNum": 2,
+              "scoreWeight": 50,
+              "sample": false,
+              "input": {
+                "digest": "b3a8e0e1f9ab1bfe3a36f231f676f78bb30a519d2b21e6c530c0eee8ebb4a5d0",
+                "size": 5
+              },
+              "output": {
+                "digest": "35a9e381b1a27567549b5f8a6f783c167ebf809f1c4d6a9e367240484d8ce281",
+                "size": 2
+              }
+            }
+          ]
+        },
+        "source": {
+          "questionId": 1001,
+          "language": "python",
+          "codeContent": {
+            "main.py": "a, b = map(int, input().split())\nprint(a + b)\n"
+          }
+        },
+        "artifactToken": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+      }
+    ]
+  }
+}
