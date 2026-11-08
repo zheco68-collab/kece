@@ -116,4 +116,84 @@ describe('useSubmissionMonitor composable', () => {
     expect(error.value).toBe('评测服务离线')
     expect(polling.value).toBe(false)
   })
+
+  it('A -> B -> A 快速切换时，A 的首个慢请求迟到响应不能覆盖第二次切换到 A 的最新结果', async () => {
+    const subId = ref<number | null>(null)
+
+    let resolveFirstA: (val: TestSubmission) => void = () => {}
+    const slowPromiseA1 = new Promise<TestSubmission>((resolve) => {
+      resolveFirstA = resolve
+    })
+
+    const mockFetcher = vi.fn<(id: number) => Promise<TestSubmission>>().mockImplementation((id) => {
+      if (id === 201) {
+        if (mockFetcher.mock.calls.filter((c) => c[0] === 201).length === 1) {
+          return slowPromiseA1 // 第一次针对 201 的慢请求
+        }
+        return Promise.resolve({ id: 201, status: 'ACCEPTED' }) // 第二次针对 201 的即时响应
+      }
+      return Promise.resolve({ id: 202, status: 'ACCEPTED' })
+    })
+
+    const { result } = useSubmissionMonitor<TestSubmission>({
+      submissionId: subId,
+      fetcher: mockFetcher,
+      isTerminal: (res) => res.status === 'ACCEPTED',
+    })
+
+    // 1. 设置为 201
+    subId.value = 201
+    await flushPromises()
+
+    // 2. 切换为 202
+    subId.value = 202
+    await flushPromises()
+    expect(result.value?.id).toBe(202)
+
+    // 3. 再次切换回 201
+    subId.value = 201
+    await flushPromises()
+    expect(result.value?.id).toBe(201)
+    expect(result.value?.status).toBe('ACCEPTED')
+
+    // 4. 让第一次针对 201 的慢请求返回（返回状态为 JUDGING）
+    resolveFirstA({ id: 201, status: 'JUDGING' })
+    await flushPromises()
+
+    // 结果仍然必须保持为最新的 ACCEPTED，不能被第一次的迟到 JUDGING 覆盖
+    expect(result.value?.id).toBe(201)
+    expect(result.value?.status).toBe('ACCEPTED')
+  })
+
+  it('手动调用 stop 之后迟到响应被丢弃，且不再安排新的轮询', async () => {
+    const subId = ref<number | null>(301)
+
+    let resolvePending: (val: TestSubmission) => void = () => {}
+    const pendingPromise = new Promise<TestSubmission>((resolve) => {
+      resolvePending = resolve
+    })
+
+    const mockFetcher = vi.fn<(id: number) => Promise<TestSubmission>>().mockReturnValue(pendingPromise)
+
+    const { result, polling, stop } = useSubmissionMonitor<TestSubmission>({
+      submissionId: subId,
+      fetcher: mockFetcher,
+      isTerminal: (res) => res.status === 'ACCEPTED',
+    })
+
+    await flushPromises()
+    expect(polling.value).toBe(true)
+
+    // 在请求在途时手动 stop
+    stop()
+    expect(polling.value).toBe(false)
+
+    // 迟到响应返回
+    resolvePending({ id: 301, status: 'JUDGING' })
+    await flushPromises()
+
+    // 结果不被写入，polling 仍为 false
+    expect(result.value).toBeNull()
+    expect(polling.value).toBe(false)
+  })
 })

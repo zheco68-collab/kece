@@ -10,7 +10,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.kece.AbstractIntegrationTest;
 import com.kece.submission.dto.SubmissionResultVO;
-import com.kece.submission.dto.SubmissionVO;
 import com.kece.submission.dto.TestCaseResultVO;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,19 +17,17 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MvcResult;
 
 /**
  * 数据库 OJ 接口集成测试。
  *
- * <p>覆盖题目 CRUD、标准答案脱敏（{@code referenceSql}/{@code verifySql} 仅出题人可见）、提交入队与「人人只看自己」的记录页。 判题本身由 Go
+ * <p>覆盖题目 CRUD、标准答案脱敏（{@code referenceSql}/{@code verifySql} 仅出题人可见）、持久任务入队与「人人只看自己」的记录页。 判题本身由 Go
  * 判题机执行，此处不启动判题机，提交停留在 PENDING，因此只断言入队任务与记录归属，不断言评测结果。
  */
 class DbQuestionIntegrationTest extends AbstractIntegrationTest {
-
-    private static final String SQL_QUEUE_KEY = "judge:sql:queue";
 
     private static final String EMP_SCHEMA =
             "CREATE TABLE emp (id INT PRIMARY KEY, name VARCHAR(32), dept VARCHAR(16), salary DECIMAL(10,2));";
@@ -49,7 +46,7 @@ class DbQuestionIntegrationTest extends AbstractIntegrationTest {
     private static final String ACTUAL_RESULT_SET =
             "{\"columns\":[{\"name\":\"id\",\"type\":\"INT\"}],\"rows\":[[\"1\"],[\"3\"]]}";
 
-    @Autowired private StringRedisTemplate redis;
+    @Autowired private JdbcTemplate jdbc;
 
     // ---------- helpers ----------
 
@@ -189,29 +186,31 @@ class DbQuestionIntegrationTest extends AbstractIntegrationTest {
         return data(result);
     }
 
-    /**
-     * 判题机未启动时，直接往 Redis 状态缓存写一份终态结果：两个测试点都带比对结果，专测脱敏。
-     *
-     * @return 逐用例报告，顺序与传参一致
-     */
+    /** 判题机未启动时，直接往数据库写一份终态结果（并将 current_judge_job_id 置空覆盖无指针历史记录读取）：两个测试点都带比对结果，专测脱敏。 */
     private void cacheTerminalResult(long submissionId, long sampleCaseId, long hiddenCaseId)
             throws Exception {
-        SubmissionVO vo =
-                SubmissionVO.builder()
-                        .submissionId(submissionId)
-                        .status("WRONG_ANSWER")
-                        .result(
-                                SubmissionResultVO.builder()
-                                        .score(0)
-                                        .timeUsedMs(12)
-                                        .testCasesReport(
-                                                List.of(
-                                                        caseResult(sampleCaseId, 5),
-                                                        caseResult(hiddenCaseId, 7)))
-                                        .build())
+        SubmissionResultVO result =
+                SubmissionResultVO.builder()
+                        .score(0)
+                        .timeUsedMs(12)
+                        .testCasesReport(
+                                List.of(caseResult(sampleCaseId, 5), caseResult(hiddenCaseId, 7)))
                         .build();
-        redis.opsForValue()
-                .set("dbsub:status:" + submissionId, objectMapper.writeValueAsString(vo));
+        jdbc.update(
+                """
+                UPDATE db_submission
+                SET status = 'WRONG_ANSWER', score = 0, time_used_ms = 12,
+                    result_json = ?, current_judge_job_id = NULL
+                WHERE id = ?
+                """,
+                objectMapper.writeValueAsString(result),
+                submissionId);
+        jdbc.update(
+                """
+                UPDATE judge_job SET state = 'CANCELLED'
+                WHERE submission_type = 'DATABASE' AND submission_id = ?
+                """,
+                submissionId);
     }
 
     private TestCaseResultVO caseResult(long caseId, int timeMs) {
@@ -473,23 +472,42 @@ class DbQuestionIntegrationTest extends AbstractIntegrationTest {
         long submissionId =
                 submit(id, student, "SELECT id, name FROM emp").path("submissionId").asLong();
 
-        // 集成测试不启动判题机，任务应留在队列里，且携带题目的建表/答案脚本供判题机使用。
-        List<String> tasks = redis.opsForList().range(SQL_QUEUE_KEY, 0, -1);
-        assertThat(tasks).isNotNull();
-        String task =
-                tasks.stream()
-                        .filter(t -> t.contains("\"submissionId\":" + submissionId))
-                        .findFirst()
-                        .orElse(null);
-        assertThat(task).as("提交任务应已压入 %s", SQL_QUEUE_KEY).isNotNull();
-        assertThat(task).contains("\"type\":\"sql\"");
-        assertThat(task).contains("\"answer.sql\":\"SELECT id, name FROM emp\"");
-        assertThat(task).contains("\"schemaSql\":\"" + EMP_SCHEMA + "\"");
-        assertThat(task).contains("\"referenceSql\":\"" + SELECT_REF + "\"");
-        assertThat(task).contains("\"timeLimitMs\":5000");
-        // 测试点只带数据，不再重复下发建表语句与答案。
-        assertThat(task).contains("\"seedSql\":\"" + EMP_SEED + "\"");
-        assertThat(task).doesNotContain("\"ddl\"");
+        // 集成测试不启动判题机，提交应创建持久 judge_job 并关联不可变 manifest。
+        Long jobId =
+                jdbc.queryForObject(
+                        "SELECT current_judge_job_id FROM db_submission WHERE id = ?",
+                        Long.class,
+                        submissionId);
+        assertThat(jobId).isNotNull();
+        Map<String, Object> job =
+                jdbc.queryForMap(
+                        """
+                        SELECT submission_type, pool, state, manifest_id, request_snapshot, total_cases
+                        FROM judge_job WHERE id = ?
+                        """,
+                        jobId);
+        assertThat(job.get("submission_type")).isEqualTo("DATABASE");
+        assertThat(job.get("pool")).isEqualTo("mysql");
+        assertThat(job.get("state")).isEqualTo("QUEUED");
+        assertThat(((Number) job.get("total_cases")).intValue()).isEqualTo(2);
+        String snapshot = String.valueOf(job.get("request_snapshot"));
+        assertThat(snapshot).contains("\"answer.sql\":\"SELECT id, name FROM emp\"");
+
+        String manifestDoc =
+                jdbc.queryForObject(
+                        "SELECT document FROM judge_manifest WHERE id = ?",
+                        String.class,
+                        job.get("manifest_id"));
+        JsonNode manifestJson = objectMapper.readTree(manifestDoc);
+        assertThat(manifestJson.path("sql").path("dialect").asText()).isEqualTo("MYSQL");
+        assertThat(manifestJson.path("timeLimitMs").asInt()).isEqualTo(5000);
+        String schemaDigest = manifestJson.path("sql").path("schema").path("digest").asText();
+        Long schemaSize =
+                jdbc.queryForObject(
+                        "SELECT byte_size FROM judge_artifact WHERE digest = ?",
+                        Long.class,
+                        schemaDigest);
+        assertThat(schemaSize).isEqualTo(EMP_SCHEMA.length());
     }
 
     @Test

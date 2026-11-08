@@ -11,13 +11,13 @@ import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
 import com.kece.common.security.AuthUser;
 import com.kece.common.security.Role;
+import com.kece.judging.JudgeDispatch;
+import com.kece.judging.JudgeDispatch.Scene;
 import com.kece.practice.service.LessonPracticeService;
-import com.kece.problemset.service.ProblemSetService;
 import com.kece.question.entity.Question;
 import com.kece.question.entity.TestCase;
 import com.kece.question.mapper.QuestionMapper;
 import com.kece.question.mapper.TestCaseMapper;
-import com.kece.submission.dto.ProgressVO;
 import com.kece.submission.dto.SubmissionListVO;
 import com.kece.submission.dto.SubmissionResultVO;
 import com.kece.submission.dto.SubmissionVO;
@@ -25,9 +25,6 @@ import com.kece.submission.dto.SubmitRequest;
 import com.kece.submission.entity.Submission;
 import com.kece.submission.enums.SubmissionStatus;
 import com.kece.submission.mapper.SubmissionMapper;
-import com.kece.user.service.UserDailyAcService;
-import java.time.Duration;
-import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -38,35 +35,28 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 提交与评测业务逻辑：压队列、Redis 状态缓存、结果落库。 */
+/** 提交与评测业务逻辑：创建持久判题任务、状态进度读取与结果查询。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class SubmissionService {
 
-    private static final String QUEUE_KEY = "judge:queue";
-    private static final String STATUS_KEY_PREFIX = "sub:status:";
-    private static final String OWNER_KEY_PREFIX = "sub:owner:";
-    private static final long STATUS_TTL_SECONDS = 3600;
     private static final List<String> SUPPORTED_LANGUAGES =
             List.of("cpp", "java", "python", "arkts");
 
     private final SubmissionMapper submissionMapper;
     private final QuestionMapper questionMapper;
     private final TestCaseMapper testCaseMapper;
-    private final StringRedisTemplate redis;
+    private final JudgeDispatch judging;
     private final ObjectMapper objectMapper;
-    private final UserDailyAcService userDailyAcService;
-    private final ProblemSetService problemSetService;
 
     @Autowired(required = false)
     private ObjectProvider<LessonPracticeService> practiceServiceProvider;
 
-    /** 提交代码：入库、原子关联随堂课练（若带上下文）、压队列、写 Redis 初始状态，返回任务 ID 与 PENDING。 */
+    /** 提交代码：入库、原子关联随堂课练（若带上下文）、创建持久判题任务，返回任务 ID 与 PENDING。 */
     @Transactional
     public SubmissionVO submit(SubmitRequest request) {
         Long userId = AuthContextHolder.currentUserId();
@@ -110,31 +100,17 @@ public class SubmissionService {
         submission.setStatus(SubmissionStatus.PENDING.name());
         submissionMapper.insert(submission);
 
-        // 在推入 Redis 判题队列之前同一事务内原子绑定课练记录，彻底消灭快判竞态与断网丢单
-        bindPracticeSubmissionIfPresent(
-                request.getPracticeCode(),
-                userId,
-                request.getPracticeQuestionId(),
-                request.getQuestionId(),
-                submission.getId());
+        // 在创建持久判题任务之前同一事务内原子绑定课练记录，彻底消灭快判竞态与断网丢单
+        boolean practiceBound =
+                bindPracticeSubmissionIfPresent(
+                        request.getPracticeCode(),
+                        userId,
+                        request.getPracticeQuestionId(),
+                        request.getQuestionId(),
+                        submission.getId());
 
-        List<TestCase> testCases = testCaseMapper.findByQuestionId(request.getQuestionId());
-        String taskJson = writeJson(buildTask(submission, question, testCases, code));
-
-        SubmissionVO pending = buildPendingVO(submission.getId(), testCases.size());
-        redis.opsForValue()
-                .set(
-                        statusKey(submission.getId()),
-                        writeJson(pending),
-                        Duration.ofSeconds(STATUS_TTL_SECONDS));
-        redis.opsForValue()
-                .set(
-                        ownerKey(submission.getId()),
-                        String.valueOf(userId),
-                        Duration.ofSeconds(STATUS_TTL_SECONDS));
-        redis.opsForList().rightPush(QUEUE_KEY, taskJson);
-
-        return pending;
+        return judging.enqueueCode(
+                submission, code, practiceBound ? Scene.PRACTICE : Scene.PROBLEM);
     }
 
     private boolean canAccessViaPractice(String practiceCode, Long userId, Long questionId) {
@@ -147,7 +123,7 @@ public class SubmissionService {
                         practiceCode, userId, "ALGO", questionId);
     }
 
-    private void bindPracticeSubmissionIfPresent(
+    private boolean bindPracticeSubmissionIfPresent(
             String practiceCode,
             Long userId,
             Long practiceQuestionId,
@@ -157,13 +133,12 @@ public class SubmissionService {
                 || practiceCode.isBlank()
                 || practiceQuestionId == null
                 || practiceServiceProvider == null) {
-            return;
+            return false;
         }
         LessonPracticeService practiceService = practiceServiceProvider.getIfAvailable();
-        if (practiceService != null) {
-            practiceService.bindPracticalSubmissionOnCreate(
-                    practiceCode, userId, practiceQuestionId, questionId, submissionId, "ALGO");
-        }
+        return practiceService != null
+                && practiceService.bindPracticalSubmissionOnCreate(
+                        practiceCode, userId, practiceQuestionId, questionId, submissionId, "ALGO");
     }
 
     /** 提交列表：默认本人提交，可指定 targetUserId 查看该用户提交（非本人自动脱敏代码原文），按 id 倒序分页。 */
@@ -219,48 +194,24 @@ public class SubmissionService {
         return submissionMapper.findAcceptedQuestionIds(userId);
     }
 
-    /** 查询评测状态与结果：优先命中 Redis 状态缓存，缺失时回退 MySQL。 */
+    /** 查询评测状态与结果：通过当前任务指针聚合持久任务实时进度，历史无指针记录直接读取数据库终态。 */
     public SubmissionVO get(Long id) {
         AuthUser user = AuthContextHolder.get();
         if (user == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
-        Submission submission = null;
-        String ownerId = redis.opsForValue().get(ownerKey(id));
-        if (ownerId != null) {
-            boolean isOwnerOrAdmin =
-                    user.hasRole(Role.ADMIN) || ownerId.equals(String.valueOf(user.getId()));
-            // 非提交人且非教师/管理员：无需查库即可直接拒绝
-            if (!isOwnerOrAdmin && !user.hasRole(Role.TEACHER)) {
-                throw new BusinessException(ResultCode.FORBIDDEN);
-            }
-            String cached = redis.opsForValue().get(statusKey(id));
-            if (cached != null) {
-                SubmissionVO cachedVo = readJson(cached, SubmissionVO.class);
-                // 轮询快路径：非终态（PENDING/COMPILING/JUDGING）无测试点详情，提交人或管理员直接从 Redis 返回，免查 MySQL
-                if (isOwnerOrAdmin
-                        && cachedVo != null
-                        && cachedVo.getStatus() != null
-                        && !SubmissionStatus.from(cachedVo.getStatus()).isTerminal()) {
-                    return cachedVo;
-                }
-                submission = submissionMapper.findById(id);
-                if (submission == null || !canAccessSubmission(user, submission)) {
-                    throw new BusinessException(ResultCode.FORBIDDEN);
-                }
-                return sanitize(cachedVo, user, submission.getQuestionId());
-            }
-        }
+        Submission submission = submissionMapper.findStatusById(id);
         if (submission == null) {
-            submission = submissionMapper.findById(id);
-            if (submission == null) {
-                throw new BusinessException(ResultCode.NOT_FOUND, "提交记录不存在");
-            }
+            throw new BusinessException(ResultCode.NOT_FOUND, "提交记录不存在");
         }
         if (!canAccessSubmission(user, submission)) {
             throw new BusinessException(ResultCode.FORBIDDEN);
         }
-        return sanitize(toVOFromEntity(submission), user, submission.getQuestionId());
+        SubmissionVO vo = toVOFromEntity(submission);
+        if (submission.getCurrentJudgeJobId() != null) {
+            vo = judging.persistentStatus(submission.getCurrentJudgeJobId(), vo);
+        }
+        return sanitize(vo, user, submission.getQuestionId());
     }
 
     /** 样例豁免统一（决策 27）：样例用例的期望/实际输出始终可见（本就随题面公开）；非样例仅管理员或该题出题人可见， 其余答题者置空，避免由比对结果反推隐藏测试点的数据与答案。 */
@@ -306,14 +257,10 @@ public class SubmissionService {
         return question != null && question.getCreatedBy().equals(user.getId());
     }
 
-    /**
-     * 重判单条提交：仅管理员或该题出题人可操作；评测中的提交拒绝；使用题目当前数据重新入队。
-     *
-     * <p>三步缺一不可：reset DB（专用 SQL 置回 NULL）→ 清/刷 Redis 状态与 owner（成对）→ 重新压队列任务。
-     */
+    /** 重判单条提交：仅管理员或该题出题人可操作；评测中的提交拒绝；在行锁内重置结果并递增持久任务代次。 */
     @Transactional
     public RejudgeResultVO rejudge(Long id) {
-        Submission submission = submissionMapper.findById(id);
+        Submission submission = submissionMapper.findByIdForUpdate(id);
         if (submission == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "提交记录不存在");
         }
@@ -325,20 +272,10 @@ public class SubmissionService {
         if (question == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "题目不存在或已删除");
         }
-        List<TestCase> testCases = testCaseMapper.findByQuestionId(submission.getQuestionId());
         Map<String, String> code = parseCodeContent(submission.getCodeContent());
 
         submissionMapper.resetResult(id);
-        SubmissionVO pending = buildPendingVO(id, testCases.size());
-        redis.opsForValue()
-                .set(statusKey(id), writeJson(pending), Duration.ofSeconds(STATUS_TTL_SECONDS));
-        redis.opsForValue()
-                .set(
-                        ownerKey(id),
-                        String.valueOf(submission.getUserId()),
-                        Duration.ofSeconds(STATUS_TTL_SECONDS));
-        redis.opsForList()
-                .rightPush(QUEUE_KEY, writeJson(buildTask(submission, question, testCases, code)));
+        judging.enqueueCode(submission, code, Scene.REJUDGE);
         return RejudgeResultVO.builder()
                 .submissionId(id)
                 .status(SubmissionStatus.PENDING.name())
@@ -373,107 +310,6 @@ public class SubmissionService {
         } catch (JsonProcessingException e) {
             return Map.of();
         }
-    }
-
-    @Transactional
-    public void persistResult(Long submissionId, String payload) {
-        Submission sub = submissionMapper.findByIdForUpdate(submissionId);
-        if (sub == null) {
-            // The result can arrive before the submit transaction commits.
-            throw new IllegalStateException("提交尚未可见：" + submissionId);
-        }
-        String cached = redis.opsForValue().get(statusKey(submissionId));
-        if (payload != null && cached != null && !payload.equals(cached)) {
-            // A newer judgment has already replaced this attempt's status.
-            return;
-        }
-        if (cached == null
-                && sub.getStatus() != null
-                && SubmissionStatus.from(sub.getStatus()).isTerminal()) {
-            // A retry after the UI cache expired must not overwrite an already finalized attempt.
-            return;
-        }
-        String body = payload != null ? payload : cached;
-        if (body == null) {
-            // Only legacy messages depend on a cache entry that can expire.
-            return;
-        }
-        SubmissionVO vo = readJson(body, SubmissionVO.class);
-        if (vo == null
-                || vo.getStatus() == null
-                || !SubmissionStatus.from(vo.getStatus()).isTerminal()) {
-            throw new IllegalStateException("尚无有效评测终态：" + submissionId);
-        }
-        SubmissionResultVO result = vo.getResult();
-        boolean newlyAccepted =
-                !"ACCEPTED".equals(sub.getStatus())
-                        && SubmissionStatus.ACCEPTED.name().equals(vo.getStatus());
-
-        submissionMapper.updateResult(
-                submissionId,
-                vo.getStatus(),
-                result == null ? null : result.getScore(),
-                result == null ? null : result.getTimeUsedMs(),
-                result == null ? null : result.getMemoryUsedKb(),
-                result == null ? null : result.getCompileErrorLog(),
-                result == null ? null : writeJson(result));
-
-        if (newlyAccepted) {
-            LocalDate date =
-                    sub.getCreatedAt() != null ? sub.getCreatedAt().toLocalDate() : LocalDate.now();
-            userDailyAcService.recordAlgoAc(sub.getUserId(), date);
-            problemSetService.onQuestionSolved(sub.getUserId(), "ALGO", sub.getQuestionId());
-        }
-    }
-
-    private Map<String, Object> buildTask(
-            Submission submission,
-            Question question,
-            List<TestCase> testCases,
-            Map<String, String> code) {
-        Map<String, Object> task = new HashMap<>();
-        task.put("submissionId", submission.getId());
-        task.put("questionId", submission.getQuestionId());
-        task.put("language", submission.getLanguage());
-        task.put("codeContent", code);
-        task.put("timeLimitMs", question.getTimeLimit() == null ? 1000 : question.getTimeLimit());
-        task.put(
-                "memoryLimitMb",
-                question.getMemoryLimit() == null ? 256 : question.getMemoryLimit());
-        List<Map<String, Object>> cases =
-                testCases.stream()
-                        .map(
-                                tc -> {
-                                    Map<String, Object> c = new HashMap<>();
-                                    c.put("caseId", tc.getId());
-                                    c.put("caseNum", tc.getCaseNum() != null ? tc.getCaseNum() : 1);
-                                    c.put(
-                                            "scoreWeight",
-                                            tc.getScoreWeight() != null ? tc.getScoreWeight() : 10);
-                                    if (tc.getInputPath() != null && !tc.getInputPath().isBlank()) {
-                                        c.put("inputPath", tc.getInputPath());
-                                        c.put("outputPath", tc.getOutputPath());
-                                    } else {
-                                        c.put("input", tc.getInput() != null ? tc.getInput() : "");
-                                        c.put(
-                                                "expectedOutput",
-                                                tc.getExpectedOutput() != null
-                                                        ? tc.getExpectedOutput()
-                                                        : "");
-                                    }
-                                    return c;
-                                })
-                        .toList();
-        task.put("testCases", cases);
-        return task;
-    }
-
-    private SubmissionVO buildPendingVO(Long id, int totalCases) {
-        return SubmissionVO.builder()
-                .submissionId(id)
-                .status(SubmissionStatus.PENDING.name())
-                .progress(ProgressVO.builder().totalCases(totalCases).finishedCases(0).build())
-                .build();
     }
 
     private SubmissionVO toVOFromEntity(Submission s) {
@@ -522,14 +358,6 @@ public class SubmissionService {
                     }
                 });
         return result;
-    }
-
-    private String statusKey(Long id) {
-        return STATUS_KEY_PREFIX + id;
-    }
-
-    private String ownerKey(Long id) {
-        return OWNER_KEY_PREFIX + id;
     }
 
     private String writeJson(Object value) {

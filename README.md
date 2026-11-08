@@ -50,16 +50,20 @@ KECE（课测）是面向编程教学、日常练习和在线考试的评测平�
 
 ## 系统如何工作
 
-<p align="center"><img src="./docs/images/kece-architecture-zh.svg" alt="KECE 系统架构：浏览器、Spring Boot、MySQL、Redis 和 Go 评测机" width="100%"></p>
+<p align="center"><img src="./docs/images/kece-architecture-zh.svg" alt="KECE 系统架构：浏览器、Spring Boot、MySQL 持久任务和 Go 评测专池" width="100%"></p>
 
-前端通过 API 向业务后端提交请求；评测任务经 Redis 队列交给 Go 评测机，评测结果再回到业务服务。算法代码在 Docker 沙箱中运行，SQL 使用独立的判题数据库实例。具体容量与可靠性受硬件、配置和题目负载影响，需要通过实际压测验证。
+前端通过 API 向业务后端提交请求；业务后端在同一事务内持久化提交记录、不可变用例清单引用与评测任务（`judge_job`），各语言独立的 Go 专池节点（`cpp`、`java`、`python`、`mysql`、`arkts`）通过受控内部协议主动领单、拉取 SHA-256 校验用例、续租并回传结果。算法代码在无网络受限 Docker 沙箱中运行，SQL 使用独立的判题数据库实例与一次性受限账号。具体容量与可靠性受硬件、槽位配额和题目负载影响，需要通过实际压测验证。
 
 | 组件 | 技术 |
 | :--- | :--- |
 | 前端 | Vue 3、TypeScript、Vite、Pinia、Monaco Editor |
 | 后端 | Java 17、Spring Boot、MyBatis、Flyway |
-| 评测 | Go、Docker、Linux Cgroups、Redis |
-| 数据 | MySQL 业务库、独立 MySQL 判题实例、Redis |
+| 评测 | Go 专池节点（C++ / Java / Python / MySQL / ArkTS）、Docker、Linux Cgroups |
+| 数据 | MySQL 业务库（含持久任务与租约控制面）、独立 MySQL 判题实例、Redis 缓存 |
+
+管理员可在「评测机管理」登记节点、分配宿主机槽位、发起自检、启用或排空节点。Redis 继续提供业务缓存，编程题和 SQL 题的评测任务由 MySQL 持久化管理。
+
+本地隔离测试中，MySQL 单池、Python 单池及混合池的 30／100／300 并发批次共完成 1290 单，全部判为 AC。测试使用单用例轻量题，生产容量须按目标硬件和题型单独验收。 [容量与对账报告](./docs/评测机容量与灰度对账报告.md)
 
 ## 快速开始
 
@@ -106,6 +110,8 @@ bash ./deploy/start.sh
 
 停止由脚本管理的本地进程，使用 `deploy/stop.ps1` 或 `deploy/stop.sh`。运行前请先阅读脚本，确认停止范围。
 
+新评测节点首次启动需要一次性接入码。后端就绪后，在后台登记节点，配置 `JUDGE_ENROLLMENT_CODE` 启动对应专池，再完成自检和启用。已有节点可用持久化凭据重连。 [节点接入教程](./docs/评测机节点接入与扩容教程.md)
+
 > 开发 profile 的演示账号仅供本地测试，默认密码及演示数据的启用方式以代码为准。生产环境必须更换所有默认凭据和 JWT 密钥，并独立配置数据库、Redis 和评测隔离。仓库中的 Compose 判题机使用 `privileged` 与 Docker socket，标注为本地开发用途，不应直接作为生产安全配置。
 
 ## 项目结构
@@ -125,7 +131,10 @@ KECE/
 - [全局接口规范与公共约定](./docs/全局接口规范与公共约定.md)
 - [题解模块落地方案](./docs/题解模块落地方案.md)
 - [前端架构重构与去重方案](./docs/前端架构重构与去重方案.md)
-- [算法优化与高可用高容错架构方案](./docs/算法优化与高可用高容错架构方案.md)
+- [评测机分池与扩容实施方案](./docs/评测机分池与扩容实施方案.md)
+- [评测机代码抽离与分池改造落地方案](./docs/评测机代码抽离与分池改造落地方案.md)
+- [评测机容量与灰度对账报告](./docs/评测机容量与灰度对账报告.md)
+- [专池部署与运维手册](./deploy/judger/README.md)
 - [版本变更记录](./CHANGELOG.md)
 
 方案文档可能包含历史设计或尚未实施的建议，实际功能以当前代码和版本记录为准。

@@ -31,6 +31,46 @@ public interface LessonPracticeSubmissionMapper {
     @Select("SELECT * FROM `lesson_practice_submission` WHERE id = #{id} LIMIT 1")
     LessonPracticeSubmission findById(Long id);
 
+    @Select("SELECT * FROM lesson_practice_submission WHERE id = #{id} FOR UPDATE")
+    LessonPracticeSubmission findByIdForUpdate(Long id);
+
+    @Select(
+            """
+            SELECT * FROM lesson_practice_submission
+            WHERE practice_id = #{practiceId} AND user_id = #{userId}
+              AND practice_question_id = #{practiceQuestionId}
+            ORDER BY id DESC LIMIT 1 FOR UPDATE
+            """)
+    LessonPracticeSubmission findByPracticeUserQuestionForUpdate(
+            @Param("practiceId") Long practiceId,
+            @Param("userId") Long userId,
+            @Param("practiceQuestionId") Long practiceQuestionId);
+
+    @Select(
+            """
+            SELECT practice_submission_id FROM practice_submission_binding
+            WHERE question_type = #{type} AND submission_id = #{submissionId}
+            """)
+    Long findBinding(@Param("type") String type, @Param("submissionId") Long submissionId);
+
+    @Select(
+            """
+            SELECT practice_submission_id FROM practice_submission_binding
+            WHERE question_type = #{type} AND submission_id = #{submissionId} FOR UPDATE
+            """)
+    Long lockBinding(@Param("type") String type, @Param("submissionId") Long submissionId);
+
+    @Insert(
+            """
+            INSERT INTO practice_submission_binding (question_type, submission_id, practice_submission_id)
+            VALUES (#{type}, #{submissionId}, #{practiceSubmissionId})
+            ON DUPLICATE KEY UPDATE practice_submission_id = practice_submission_binding.practice_submission_id
+            """)
+    void insertBinding(
+            @Param("type") String type,
+            @Param("submissionId") Long submissionId,
+            @Param("practiceSubmissionId") Long practiceSubmissionId);
+
     @Select(
             """
         SELECT * FROM `lesson_practice_submission`

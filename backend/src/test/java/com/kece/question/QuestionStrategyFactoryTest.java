@@ -36,10 +36,8 @@ class QuestionStrategyFactoryTest {
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
         ObjectMapper objectMapper = new ObjectMapper();
 
-        algoStrategy =
-                new AlgoQuestionStrategy(questionMapper, submissionMapper, redis, objectMapper);
-        dbStrategy =
-                new DbQuestionStrategy(dbQuestionMapper, dbSubmissionMapper, redis, objectMapper);
+        algoStrategy = new AlgoQuestionStrategy(questionMapper, submissionMapper, objectMapper);
+        dbStrategy = new DbQuestionStrategy(dbQuestionMapper, dbSubmissionMapper, objectMapper);
         objectiveStrategy = new ObjectiveQuestionStrategy(objectiveQuestionMapper, objectMapper);
         frontendStrategy = new FrontendQuestionStrategy(redis, objectMapper);
 

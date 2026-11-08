@@ -1,0 +1,38 @@
+# KECE MySQL 专池评测节点 Docker Compose 模板（零 Docker Socket 最小权限模型）
+# 用法:
+#   docker compose -f deploy/judger/compose.mysql.yml --env-file /etc/kece/judger/mysql-1.env -p kece-judger-mysql-1 up -d
+
+services:
+  judger-mysql-node:
+    build:
+      context: ../../judger
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 40s
+    environment:
+      - JUDGE_POOL=mysql
+      - JUDGE_CONTROL_URL=${JUDGE_CONTROL_URL:?Set the reachable HTTPS control-plane URL}
+      - JUDGE_ENROLLMENT_CODE=${JUDGE_ENROLLMENT_CODE:-}
+      - JUDGE_CREDENTIAL_FILE=/data/judge/credential.json
+      - JUDGE_BOOT_ID=${JUDGE_BOOT_ID:-}
+      - JUDGE_LOCAL_SLOTS=${JUDGE_LOCAL_SLOTS:-2}
+      - JUDGE_RUNTIME_SPEC=${JUDGE_RUNTIME_SPEC:-mysql-v1}
+      - JUDGE_RUNTIME_VERSION=${JUDGE_RUNTIME_VERSION:-8.0.36}
+      - JUDGE_HEALTH_ADDR=0.0.0.0:9090
+      - WORKSPACE_DIR=/data/judge/work
+      - JUDGE_ARTIFACT_CACHE_DIR=/data/judge/cache
+      - JUDGE_ARTIFACT_CACHE_LIMIT_MB=${JUDGE_ARTIFACT_CACHE_LIMIT_MB:-2048}
+      - JUDGE_MYSQL_HOST=${JUDGE_MYSQL_HOST:?Set the dedicated judge MySQL host}
+      - JUDGE_MYSQL_PORT=${JUDGE_MYSQL_PORT:-3307}
+      - JUDGE_MYSQL_USER=${JUDGE_MYSQL_USER:?Set the dedicated judge MySQL user}
+      - JUDGE_MYSQL_PASSWORD=${JUDGE_MYSQL_PASSWORD:?Set the dedicated judge MySQL password}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # MySQL 专池节点不挂载 /var/run/docker.sock
+      - judger-mysql-data:/data/judge
+    ports:
+      - "127.0.0.1:${JUDGE_HEALTH_PORT:-0}:9090"
+
+volumes:
+  judger-mysql-data:

@@ -12,6 +12,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
@@ -84,6 +88,20 @@ class ExamSubmissionIntegrationTest extends AbstractIntegrationTest {
                         .andExpect(status().isOk())
                         .andReturn();
         long codeQid = data(code).path("id").asLong();
+        mockMvc.perform(
+                        post("/questions/" + codeQid + "/test-cases")
+                                .header("Authorization", "Bearer " + token)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        objectMapper.writeValueAsString(
+                                                Map.of(
+                                                        "input",
+                                                        "1",
+                                                        "expectedOutput",
+                                                        "1",
+                                                        "isSample",
+                                                        1))))
+                .andExpect(status().isOk());
         MvcResult exam =
                 mockMvc.perform(
                                 post("/exams")
@@ -176,12 +194,30 @@ class ExamSubmissionIntegrationTest extends AbstractIntegrationTest {
                         "language",
                         "cpp"));
 
-        MvcResult submit =
-                mockMvc.perform(
-                                post("/exams/" + examId + "/submit")
-                                        .header("Authorization", "Bearer " + student))
-                        .andExpect(status().isOk())
-                        .andReturn();
+        var start = new CountDownLatch(1);
+        Callable<MvcResult> handIn =
+                () -> {
+                    if (!start.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("hand-in test did not start");
+                    }
+                    return mockMvc.perform(
+                                    post("/exams/" + examId + "/submit")
+                                            .header("Authorization", "Bearer " + student)
+                                            .header("Idempotency-Key", "test-hand-in"))
+                            .andExpect(status().isOk())
+                            .andReturn();
+                };
+        var executor = Executors.newFixedThreadPool(2);
+        MvcResult submit;
+        try {
+            var first = executor.submit(handIn);
+            var second = executor.submit(handIn);
+            start.countDown();
+            submit = first.get(10, TimeUnit.SECONDS);
+            assertThat(data(second.get(10, TimeUnit.SECONDS))).isEqualTo(data(submit));
+        } finally {
+            executor.shutdownNow();
+        }
         assertThat(code(submit)).isEqualTo(200);
         assertThat(data(submit).path("graded").asInt()).isEqualTo(1);
         assertThat(data(submit).path("queued").asInt()).isEqualTo(1);

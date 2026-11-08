@@ -35,6 +35,16 @@
         </foreach>
     </select>
 
+    <insert id="ensureRow">
+        INSERT INTO problem_set_user_progress (set_id, user_id) VALUES (#{setId}, #{userId})
+        ON DUPLICATE KEY UPDATE user_id = problem_set_user_progress.user_id
+    </insert>
+
+    <select id="lockBySetAndUser" resultMap="ProgressMap">
+        SELECT * FROM problem_set_user_progress
+        WHERE set_id = #{setId} AND user_id = #{userId} FOR UPDATE
+    </select>
+
     <select id="findFavoritedSetIds" resultType="long">
         SELECT set_id
         FROM `problem_set_user_progress`

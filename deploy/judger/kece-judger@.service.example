@@ -1,0 +1,22 @@
+[Unit]
+Description=KECE Judge Pool Worker Instance %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/kece/judger
+StateDirectory=kece-judger/%i
+Environment=JUDGE_CREDENTIAL_FILE=/var/lib/kece-judger/%i/credential.json
+Environment=JUDGE_ARTIFACT_CACHE_DIR=/var/lib/kece-judger/%i/cache
+EnvironmentFile=/etc/kece/judger/%i.env
+ExecStart=/opt/kece/judger/judger
+Restart=always
+RestartSec=5s
+TimeoutStopSec=40s
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

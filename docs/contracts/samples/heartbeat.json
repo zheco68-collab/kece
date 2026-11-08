@@ -1,0 +1,22 @@
+{
+  "request": {
+    "runtimeSpec": "python-v1",
+    "runtimeVersion": "3.12.4",
+    "localSlots": 2,
+    "healthy": true,
+    "checkResult": {
+      "checkId": "7",
+      "passed": true,
+      "detail": "ok"
+    }
+  },
+  "response": {
+    "state": "ENABLED",
+    "revision": 3,
+    "maxSlots": 2,
+    "check": {
+      "checkId": "8",
+      "remainingMs": 60000
+    }
+  }
+}

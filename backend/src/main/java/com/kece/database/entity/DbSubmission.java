@@ -14,6 +14,8 @@ public class DbSubmission {
     /** 考试场次 ID（考试数据库题复用评测链路时关联）。 */
     private Long contestId;
 
+    private Long currentJudgeJobId;
+
     /** SQL 方言：MYSQL。 */
     private String dialect;
 

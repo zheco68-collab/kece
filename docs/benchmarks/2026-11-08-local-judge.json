@@ -1,0 +1,1132 @@
+{
+  "tested_at_local": "2026-11-08 Asia/Shanghai",
+  "checkout_base": "c15dfe0",
+  "host": {
+    "cpu": "AMD Ryzen 9 8940HX, 16 cores / 32 threads",
+    "os": "Windows 11 / Docker Desktop WSL2",
+    "docker": "29.8.2",
+    "docker_vm_memory_bytes": 7909638144,
+    "cgroup": "v2 cgroupfs"
+  },
+  "built_artifacts_sha256": {
+    "kece-backend-0.1.0.jar": "c20c4c96b54e72eec892bffa0c4c2955436591a3ece227ed8d6464728a94693d",
+    "judger-final.exe": "8c7c392d61f51f0f5047c3b72eb35fe035a27962d345af3737104c4df19cfc8c"
+  },
+  "docker_image_ids": {
+    "gcc:13": "sha256:b59036579f0622d1b3aa5286aaf2fcef9b9c6f88f31c6762236fc2f136f7f650",
+    "eclipse-temurin:17-jdk": "sha256:5d6042fb8cdc14d614e4e421f52e3211fc5aeadddce44cbf9de8ed37c791f824",
+    "python:3.12-slim": "sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1",
+    "mysql:8.0": "sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b",
+    "kece-sandbox-arkts:latest": "sha256:3cf3500c76071fd9ae6ca711a94fda71152167dfe05a95631ee36164bc5192a2"
+  },
+  "nodes": [
+    {
+      "node_id": "1",
+      "name": "bench-cpp-1-16a583",
+      "pool": "cpp",
+      "slots": 2,
+      "runtime_version": "bench-1.0",
+      "check_id": "1"
+    },
+    {
+      "node_id": "2",
+      "name": "bench-cpp-2-16a583",
+      "pool": "cpp",
+      "slots": 2,
+      "runtime_version": "bench-1.0",
+      "check_id": "2"
+    },
+    {
+      "node_id": "3",
+      "name": "bench-java-1-16a583",
+      "pool": "java",
+      "slots": 2,
+      "runtime_version": "bench-1.0",
+      "check_id": "3"
+    },
+    {
+      "node_id": "4",
+      "name": "bench-java-2-16a583",
+      "pool": "java",
+      "slots": 2,
+      "runtime_version": "bench-1.0",
+      "check_id": "4"
+    },
+    {
+      "node_id": "5",
+      "name": "bench-python-1-16a583",
+      "pool": "python",
+      "slots": 2,
+      "runtime_version": "bench-1.0",
+      "check_id": "5"
+    },
+    {
+      "node_id": "6",
+      "name": "bench-python-2-16a583",
+      "pool": "python",
+      "slots": 2,
+      "runtime_version": "bench-1.0",
+      "check_id": "6"
+    },
+    {
+      "node_id": "7",
+      "name": "bench-mysql-1-16a583",
+      "pool": "mysql",
+      "slots": 2,
+      "runtime_version": "bench-1.0",
+      "check_id": "7"
+    },
+    {
+      "node_id": "8",
+      "name": "bench-mysql-2-16a583",
+      "pool": "mysql",
+      "slots": 2,
+      "runtime_version": "bench-1.0",
+      "check_id": "8"
+    },
+    {
+      "node_id": "9",
+      "name": "bench-arkts-1-16a583",
+      "pool": "arkts",
+      "slots": 2,
+      "runtime_version": "bench-1.0",
+      "check_id": "9"
+    },
+    {
+      "node_id": "10",
+      "name": "bench-arkts-2-16a583",
+      "pool": "arkts",
+      "slots": 2,
+      "runtime_version": "bench-1.0",
+      "check_id": "10"
+    }
+  ],
+  "routes_initial": {
+    "cpp": 1,
+    "java": 1,
+    "python": 1,
+    "mysql": 1,
+    "arkts": 1
+  },
+  "routes_arkts_confirmation": {
+    "arkts": 3
+  },
+  "batches": [
+    {
+      "batch": 1,
+      "run": "main",
+      "pools": [
+        "cpp"
+      ],
+      "unique_requests": 1,
+      "concurrency": 300,
+      "initial_wave": 1,
+      "accepted": 1,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.068,
+      "ingress_rps": 14.63,
+      "ingress_ms": {
+        "p50": 67.61,
+        "p95": 67.61,
+        "p99": 67.61
+      },
+      "completed": 1,
+      "accepted_verdict": 1,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 20.0,
+        "p95": 20.0
+      },
+      "turnaround_ms": {
+        "p50": 2596.37,
+        "p95": 2596.37
+      },
+      "first_completed_s": 2.664,
+      "last_completed_s": 2.664,
+      "effective_completed_per_s": 0.38,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 140.0,
+      "enqueue_to_settled_p95_ms": 2539.0
+    },
+    {
+      "batch": 2,
+      "run": "main",
+      "pools": [
+        "java"
+      ],
+      "unique_requests": 1,
+      "concurrency": 300,
+      "initial_wave": 1,
+      "accepted": 1,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.039,
+      "ingress_rps": 25.54,
+      "ingress_ms": {
+        "p50": 38.7,
+        "p95": 38.7,
+        "p99": 38.7
+      },
+      "completed": 1,
+      "accepted_verdict": 1,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 170.0,
+        "p95": 170.0
+      },
+      "turnaround_ms": {
+        "p50": 3853.4,
+        "p95": 3853.4
+      },
+      "first_completed_s": 3.892,
+      "last_completed_s": 3.892,
+      "effective_completed_per_s": 0.26,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 423.0,
+      "enqueue_to_settled_p95_ms": 3818.0
+    },
+    {
+      "batch": 3,
+      "run": "main",
+      "pools": [
+        "python"
+      ],
+      "unique_requests": 1,
+      "concurrency": 300,
+      "initial_wave": 1,
+      "accepted": 1,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.035,
+      "ingress_rps": 28.82,
+      "ingress_ms": {
+        "p50": 34.37,
+        "p95": 34.37,
+        "p99": 34.37
+      },
+      "completed": 1,
+      "accepted_verdict": 1,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 60.0,
+        "p95": 60.0
+      },
+      "turnaround_ms": {
+        "p50": 1519.57,
+        "p95": 1519.57
+      },
+      "first_completed_s": 1.554,
+      "last_completed_s": 1.554,
+      "effective_completed_per_s": 0.64,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 417.0,
+      "enqueue_to_settled_p95_ms": 1332.0
+    },
+    {
+      "batch": 4,
+      "run": "main",
+      "pools": [
+        "mysql"
+      ],
+      "unique_requests": 1,
+      "concurrency": 300,
+      "initial_wave": 1,
+      "accepted": 1,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.032,
+      "ingress_rps": 31.5,
+      "ingress_ms": {
+        "p50": 31.39,
+        "p95": 31.39,
+        "p99": 31.39
+      },
+      "completed": 1,
+      "accepted_verdict": 1,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 106.0,
+        "p95": 106.0
+      },
+      "turnaround_ms": {
+        "p50": 688.09,
+        "p95": 688.09
+      },
+      "first_completed_s": 0.719,
+      "last_completed_s": 0.719,
+      "effective_completed_per_s": 1.39,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 345.0,
+      "enqueue_to_settled_p95_ms": 513.0
+    },
+    {
+      "batch": 5,
+      "run": "main",
+      "pools": [
+        "arkts"
+      ],
+      "unique_requests": 1,
+      "concurrency": 300,
+      "initial_wave": 1,
+      "accepted": 0,
+      "rejected": 1,
+      "failed": 0,
+      "ingress_elapsed_s": 0.016,
+      "ingress_rps": 0.0,
+      "ingress_ms": {
+        "p50": 15.44,
+        "p95": 15.44,
+        "p99": 15.44
+      },
+      "completed": 0,
+      "accepted_verdict": 0,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 0.0,
+        "p95": 0.0
+      },
+      "turnaround_ms": {
+        "p50": 0.0,
+        "p95": 0.0
+      },
+      "first_completed_s": 0.0,
+      "last_completed_s": 0.034,
+      "effective_completed_per_s": 0.0,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": null,
+      "enqueue_to_settled_p95_ms": null
+    },
+    {
+      "batch": 6,
+      "run": "main",
+      "pools": [
+        "mysql"
+      ],
+      "unique_requests": 30,
+      "concurrency": 300,
+      "initial_wave": 30,
+      "accepted": 30,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.24,
+      "ingress_rps": 124.82,
+      "ingress_ms": {
+        "p50": 176.93,
+        "p95": 229.72,
+        "p99": 233.46
+      },
+      "completed": 30,
+      "accepted_verdict": 30,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 141.5,
+        "p95": 169.65
+      },
+      "turnaround_ms": {
+        "p50": 1794.84,
+        "p95": 2811.61
+      },
+      "first_completed_s": 0.551,
+      "last_completed_s": 3.212,
+      "effective_completed_per_s": 9.34,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 2516.1,
+      "enqueue_to_settled_p95_ms": 2706.7
+    },
+    {
+      "batch": 7,
+      "run": "main",
+      "pools": [
+        "mysql"
+      ],
+      "unique_requests": 100,
+      "concurrency": 300,
+      "initial_wave": 100,
+      "accepted": 100,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.522,
+      "ingress_rps": 191.48,
+      "ingress_ms": {
+        "p50": 359.25,
+        "p95": 479.41,
+        "p99": 496.53
+      },
+      "completed": 100,
+      "accepted_verdict": 100,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 147.0,
+        "p95": 192.5
+      },
+      "turnaround_ms": {
+        "p50": 6014.68,
+        "p95": 9630.44
+      },
+      "first_completed_s": 1.064,
+      "last_completed_s": 10.609,
+      "effective_completed_per_s": 9.43,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 9415.25,
+      "enqueue_to_settled_p95_ms": 9594.25
+    },
+    {
+      "batch": 8,
+      "run": "main",
+      "pools": [
+        "mysql"
+      ],
+      "unique_requests": 300,
+      "concurrency": 300,
+      "initial_wave": 300,
+      "accepted": 300,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 1.014,
+      "ingress_rps": 295.78,
+      "ingress_ms": {
+        "p50": 608.92,
+        "p95": 906.4,
+        "p99": 937.63
+      },
+      "completed": 300,
+      "accepted_verdict": 300,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 154.0,
+        "p95": 232.0
+      },
+      "turnaround_ms": {
+        "p50": 16695.83,
+        "p95": 28853.48
+      },
+      "first_completed_s": 2.687,
+      "last_completed_s": 31.32,
+      "effective_completed_per_s": 9.58,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 28570.9,
+      "enqueue_to_settled_p95_ms": 28767.15
+    },
+    {
+      "batch": 9,
+      "run": "main",
+      "pools": [
+        "python"
+      ],
+      "unique_requests": 30,
+      "concurrency": 300,
+      "initial_wave": 30,
+      "accepted": 30,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.126,
+      "ingress_rps": 238.38,
+      "ingress_ms": {
+        "p50": 85.59,
+        "p95": 119.11,
+        "p99": 119.62
+      },
+      "completed": 30,
+      "accepted_verdict": 30,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 80.0,
+        "p95": 100.0
+      },
+      "turnaround_ms": {
+        "p50": 5529.45,
+        "p95": 9381.45
+      },
+      "first_completed_s": 1.899,
+      "last_completed_s": 10.094,
+      "effective_completed_per_s": 2.97,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 8390.3,
+      "enqueue_to_settled_p95_ms": 9296.25
+    },
+    {
+      "batch": 10,
+      "run": "main",
+      "pools": [
+        "python"
+      ],
+      "unique_requests": 100,
+      "concurrency": 300,
+      "initial_wave": 100,
+      "accepted": 100,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.301,
+      "ingress_rps": 332.36,
+      "ingress_ms": {
+        "p50": 172.83,
+        "p95": 272.72,
+        "p99": 289.6
+      },
+      "completed": 100,
+      "accepted_verdict": 100,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 80.0,
+        "p95": 100.0
+      },
+      "turnaround_ms": {
+        "p50": 15862.6,
+        "p95": 28673.27
+      },
+      "first_completed_s": 1.375,
+      "last_completed_s": 30.178,
+      "effective_completed_per_s": 3.31,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 27642.2,
+      "enqueue_to_settled_p95_ms": 28629.5
+    },
+    {
+      "batch": 11,
+      "run": "main",
+      "pools": [
+        "python"
+      ],
+      "unique_requests": 300,
+      "concurrency": 300,
+      "initial_wave": 300,
+      "accepted": 300,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.739,
+      "ingress_rps": 405.72,
+      "ingress_ms": {
+        "p50": 383.92,
+        "p95": 649.66,
+        "p99": 684.28
+      },
+      "completed": 300,
+      "accepted_verdict": 300,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 80.0,
+        "p95": 100.0
+      },
+      "turnaround_ms": {
+        "p50": 47681.0,
+        "p95": 84525.27
+      },
+      "first_completed_s": 2.244,
+      "last_completed_s": 89.287,
+      "effective_completed_per_s": 3.36,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 83527.25,
+      "enqueue_to_settled_p95_ms": 84446.5
+    },
+    {
+      "batch": 12,
+      "run": "main",
+      "pools": [
+        "python",
+        "mysql"
+      ],
+      "unique_requests": 30,
+      "concurrency": 300,
+      "initial_wave": 30,
+      "accepted": 30,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.081,
+      "ingress_rps": 371.86,
+      "ingress_ms": {
+        "p50": 49.91,
+        "p95": 73.18,
+        "p99": 74.77
+      },
+      "completed": 30,
+      "accepted_verdict": 30,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 126.5,
+        "p95": 333.85
+      },
+      "turnaround_ms": {
+        "p50": 2129.79,
+        "p95": 4902.6
+      },
+      "first_completed_s": 0.851,
+      "last_completed_s": 5.169,
+      "effective_completed_per_s": 5.8,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 3963.9,
+      "enqueue_to_settled_p95_ms": 4833.0
+    },
+    {
+      "batch": 13,
+      "run": "main",
+      "pools": [
+        "python",
+        "mysql"
+      ],
+      "unique_requests": 100,
+      "concurrency": 300,
+      "initial_wave": 100,
+      "accepted": 100,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.246,
+      "ingress_rps": 407.07,
+      "ingress_ms": {
+        "p50": 151.34,
+        "p95": 221.08,
+        "p99": 228.33
+      },
+      "completed": 100,
+      "accepted_verdict": 100,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 118.0,
+        "p95": 243.3
+      },
+      "turnaround_ms": {
+        "p50": 5060.94,
+        "p95": 14223.87
+      },
+      "first_completed_s": 0.881,
+      "last_completed_s": 15.358,
+      "effective_completed_per_s": 6.51,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 13079.25,
+      "enqueue_to_settled_p95_ms": 13999.65
+    },
+    {
+      "batch": 14,
+      "run": "main",
+      "pools": [
+        "python",
+        "mysql"
+      ],
+      "unique_requests": 300,
+      "concurrency": 300,
+      "initial_wave": 300,
+      "accepted": 300,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.914,
+      "ingress_rps": 328.13,
+      "ingress_ms": {
+        "p50": 462.63,
+        "p95": 779.46,
+        "p99": 839.58
+      },
+      "completed": 300,
+      "accepted_verdict": 300,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 116.5,
+        "p95": 217.4
+      },
+      "turnaround_ms": {
+        "p50": 13240.53,
+        "p95": 40207.89
+      },
+      "first_completed_s": 1.729,
+      "last_completed_s": 44.512,
+      "effective_completed_per_s": 6.74,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 39204.3,
+      "enqueue_to_settled_p95_ms": 40075.45
+    },
+    {
+      "batch": 15,
+      "run": "arkts-invalid-source",
+      "pools": [
+        "arkts"
+      ],
+      "unique_requests": 1,
+      "concurrency": 1,
+      "initial_wave": 1,
+      "accepted": 1,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.052,
+      "ingress_rps": 19.31,
+      "ingress_ms": {
+        "p50": 51.15,
+        "p95": 51.15,
+        "p99": 51.15
+      },
+      "completed": 1,
+      "accepted_verdict": 0,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 0.0,
+        "p95": 0.0
+      },
+      "turnaround_ms": {
+        "p50": 1829.84,
+        "p95": 1829.84
+      },
+      "first_completed_s": 1.881,
+      "last_completed_s": 1.881,
+      "effective_completed_per_s": 0.53,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 92.0,
+      "enqueue_to_settled_p95_ms": 1794.0
+    },
+    {
+      "batch": 16,
+      "run": "arkts-confirmed",
+      "pools": [
+        "arkts"
+      ],
+      "unique_requests": 1,
+      "concurrency": 1,
+      "initial_wave": 1,
+      "accepted": 1,
+      "rejected": 0,
+      "failed": 0,
+      "ingress_elapsed_s": 0.028,
+      "ingress_rps": 35.59,
+      "ingress_ms": {
+        "p50": 27.68,
+        "p95": 27.68,
+        "p99": 27.68
+      },
+      "completed": 1,
+      "accepted_verdict": 1,
+      "unconverged": 0,
+      "exec_ms": {
+        "p50": 120.0,
+        "p95": 120.0
+      },
+      "turnaround_ms": {
+        "p50": 3127.34,
+        "p95": 3127.34
+      },
+      "first_completed_s": 3.155,
+      "last_completed_s": 3.155,
+      "effective_completed_per_s": 0.32,
+      "reconcile_healthy": true,
+      "reconcile_violations": 0,
+      "queue_to_first_claim_p95_ms": 377.0,
+      "enqueue_to_settled_p95_ms": 2980.0
+    }
+  ],
+  "reconciliation": {
+    "timestamp": "2026-11-08T07:19:51.958295600Z",
+    "healthy": true,
+    "totalViolations": 0,
+    "violations": [],
+    "jobBacklog": [
+      {
+        "pool": "arkts",
+        "state": "COMPLETED",
+        "count": 2,
+        "oldestCreatedAt": "2026-11-08 07:16:47.832792"
+      },
+      {
+        "pool": "cpp",
+        "state": "COMPLETED",
+        "count": 1,
+        "oldestCreatedAt": "2026-11-08 07:15:41.522798"
+      },
+      {
+        "pool": "java",
+        "state": "COMPLETED",
+        "count": 1,
+        "oldestCreatedAt": "2026-11-08 07:15:44.198228"
+      },
+      {
+        "pool": "mysql",
+        "state": "COMPLETED",
+        "count": 646,
+        "oldestCreatedAt": "2026-11-08 07:15:49.679388"
+      },
+      {
+        "pool": "python",
+        "state": "COMPLETED",
+        "count": 646,
+        "oldestCreatedAt": "2026-11-08 07:15:48.108582"
+      }
+    ],
+    "eventBacklog": [
+      {
+        "eventType": "SUBMISSION_SETTLED",
+        "state": "DONE",
+        "count": 1266
+      },
+      {
+        "eventType": "SUBMISSION_SETTLED",
+        "state": "PENDING",
+        "count": 30
+      }
+    ]
+  },
+  "drain_recheck": {
+    "nodes": [
+      {
+        "node_id": "1",
+        "name": "bench-cpp-1-8af337",
+        "pool": "cpp",
+        "slots": 2,
+        "runtime_version": "bench-1.0",
+        "check_id": "1"
+      },
+      {
+        "node_id": "2",
+        "name": "bench-cpp-2-8af337",
+        "pool": "cpp",
+        "slots": 2,
+        "runtime_version": "bench-1.0",
+        "check_id": "2"
+      },
+      {
+        "node_id": "3",
+        "name": "bench-java-1-8af337",
+        "pool": "java",
+        "slots": 2,
+        "runtime_version": "bench-1.0",
+        "check_id": "3"
+      },
+      {
+        "node_id": "4",
+        "name": "bench-java-2-8af337",
+        "pool": "java",
+        "slots": 2,
+        "runtime_version": "bench-1.0",
+        "check_id": "4"
+      },
+      {
+        "node_id": "5",
+        "name": "bench-python-1-8af337",
+        "pool": "python",
+        "slots": 2,
+        "runtime_version": "bench-1.0",
+        "check_id": "5"
+      },
+      {
+        "node_id": "6",
+        "name": "bench-python-2-8af337",
+        "pool": "python",
+        "slots": 2,
+        "runtime_version": "bench-1.0",
+        "check_id": "6"
+      },
+      {
+        "node_id": "7",
+        "name": "bench-mysql-1-8af337",
+        "pool": "mysql",
+        "slots": 2,
+        "runtime_version": "bench-1.0",
+        "check_id": "7"
+      },
+      {
+        "node_id": "8",
+        "name": "bench-mysql-2-8af337",
+        "pool": "mysql",
+        "slots": 2,
+        "runtime_version": "bench-1.0",
+        "check_id": "8"
+      },
+      {
+        "node_id": "9",
+        "name": "bench-arkts-1-8af337",
+        "pool": "arkts",
+        "slots": 2,
+        "runtime_version": "bench-1.0",
+        "check_id": "9"
+      },
+      {
+        "node_id": "10",
+        "name": "bench-arkts-2-8af337",
+        "pool": "arkts",
+        "slots": 2,
+        "runtime_version": "bench-1.0",
+        "check_id": "10"
+      }
+    ],
+    "routes": {
+      "cpp": 1,
+      "java": 1,
+      "python": 1,
+      "mysql": 1,
+      "arkts": 1
+    },
+    "batches": [
+      {
+        "batch": 17,
+        "run": "drain-recheck",
+        "pools": [
+          "cpp"
+        ],
+        "unique_requests": 1,
+        "concurrency": 300,
+        "initial_wave": 1,
+        "accepted": 1,
+        "rejected": 0,
+        "failed": 0,
+        "ingress_elapsed_s": 0.063,
+        "ingress_rps": 15.87,
+        "ingress_ms": {
+          "p50": 62.65,
+          "p95": 62.65,
+          "p99": 62.65
+        },
+        "completed": 1,
+        "accepted_verdict": 1,
+        "unconverged": 0,
+        "exec_ms": {
+          "p50": 30.0,
+          "p95": 30.0
+        },
+        "turnaround_ms": {
+          "p50": 2923.21,
+          "p95": 2923.21
+        },
+        "first_completed_s": 2.986,
+        "last_completed_s": 2.986,
+        "effective_completed_per_s": 0.33,
+        "reconcile_healthy": true,
+        "reconcile_violations": 0
+      },
+      {
+        "batch": 18,
+        "run": "drain-recheck",
+        "pools": [
+          "java"
+        ],
+        "unique_requests": 1,
+        "concurrency": 300,
+        "initial_wave": 1,
+        "accepted": 1,
+        "rejected": 0,
+        "failed": 0,
+        "ingress_elapsed_s": 0.036,
+        "ingress_rps": 27.82,
+        "ingress_ms": {
+          "p50": 35.56,
+          "p95": 35.56,
+          "p99": 35.56
+        },
+        "completed": 1,
+        "accepted_verdict": 1,
+        "unconverged": 0,
+        "exec_ms": {
+          "p50": 260.0,
+          "p95": 260.0
+        },
+        "turnaround_ms": {
+          "p50": 4482.17,
+          "p95": 4482.17
+        },
+        "first_completed_s": 4.518,
+        "last_completed_s": 4.518,
+        "effective_completed_per_s": 0.22,
+        "reconcile_healthy": true,
+        "reconcile_violations": 0
+      },
+      {
+        "batch": 19,
+        "run": "drain-recheck",
+        "pools": [
+          "python"
+        ],
+        "unique_requests": 1,
+        "concurrency": 300,
+        "initial_wave": 1,
+        "accepted": 1,
+        "rejected": 0,
+        "failed": 0,
+        "ingress_elapsed_s": 0.038,
+        "ingress_rps": 26.35,
+        "ingress_ms": {
+          "p50": 37.64,
+          "p95": 37.64,
+          "p99": 37.64
+        },
+        "completed": 1,
+        "accepted_verdict": 1,
+        "unconverged": 0,
+        "exec_ms": {
+          "p50": 60.0,
+          "p95": 60.0
+        },
+        "turnaround_ms": {
+          "p50": 1386.62,
+          "p95": 1386.62
+        },
+        "first_completed_s": 1.424,
+        "last_completed_s": 1.424,
+        "effective_completed_per_s": 0.7,
+        "reconcile_healthy": true,
+        "reconcile_violations": 0
+      },
+      {
+        "batch": 20,
+        "run": "drain-recheck",
+        "pools": [
+          "mysql"
+        ],
+        "unique_requests": 1,
+        "concurrency": 300,
+        "initial_wave": 1,
+        "accepted": 1,
+        "rejected": 0,
+        "failed": 0,
+        "ingress_elapsed_s": 0.051,
+        "ingress_rps": 19.73,
+        "ingress_ms": {
+          "p50": 50.34,
+          "p95": 50.34,
+          "p99": 50.34
+        },
+        "completed": 1,
+        "accepted_verdict": 1,
+        "unconverged": 0,
+        "exec_ms": {
+          "p50": 137.0,
+          "p95": 137.0
+        },
+        "turnaround_ms": {
+          "p50": 709.68,
+          "p95": 709.68
+        },
+        "first_completed_s": 0.76,
+        "last_completed_s": 0.76,
+        "effective_completed_per_s": 1.32,
+        "reconcile_healthy": true,
+        "reconcile_violations": 0
+      },
+      {
+        "batch": 21,
+        "run": "drain-recheck",
+        "pools": [
+          "arkts"
+        ],
+        "unique_requests": 1,
+        "concurrency": 300,
+        "initial_wave": 1,
+        "accepted": 1,
+        "rejected": 0,
+        "failed": 0,
+        "ingress_elapsed_s": 0.034,
+        "ingress_rps": 29.66,
+        "ingress_ms": {
+          "p50": 33.28,
+          "p95": 33.28,
+          "p99": 33.28
+        },
+        "completed": 1,
+        "accepted_verdict": 1,
+        "unconverged": 0,
+        "exec_ms": {
+          "p50": 180.0,
+          "p95": 180.0
+        },
+        "turnaround_ms": {
+          "p50": 2730.73,
+          "p95": 2730.73
+        },
+        "first_completed_s": 2.764,
+        "last_completed_s": 2.764,
+        "effective_completed_per_s": 0.36,
+        "reconcile_healthy": true,
+        "reconcile_violations": 0
+      },
+      {
+        "batch": 22,
+        "run": "drain-recheck",
+        "pools": [
+          "python",
+          "mysql"
+        ],
+        "unique_requests": 300,
+        "concurrency": 300,
+        "initial_wave": 300,
+        "accepted": 300,
+        "rejected": 0,
+        "failed": 0,
+        "ingress_elapsed_s": 1.102,
+        "ingress_rps": 272.25,
+        "ingress_ms": {
+          "p50": 629.08,
+          "p95": 908.19,
+          "p99": 973.87
+        },
+        "completed": 300,
+        "accepted_verdict": 300,
+        "unconverged": 0,
+        "exec_ms": {
+          "p50": 137.5,
+          "p95": 369.2
+        },
+        "turnaround_ms": {
+          "p50": 16742.23,
+          "p95": 45178.12
+        },
+        "first_completed_s": 2.265,
+        "last_completed_s": 50.561,
+        "effective_completed_per_s": 5.93,
+        "reconcile_healthy": true,
+        "reconcile_violations": 0
+      }
+    ],
+    "reconciliation": {
+      "timestamp": "2026-11-08T07:23:55.846230200Z",
+      "healthy": true,
+      "totalViolations": 0,
+      "violations": [],
+      "jobBacklog": [
+        {
+          "pool": "arkts",
+          "state": "COMPLETED",
+          "count": 1,
+          "oldestCreatedAt": "2026-11-08 07:23:01.401331"
+        },
+        {
+          "pool": "cpp",
+          "state": "COMPLETED",
+          "count": 1,
+          "oldestCreatedAt": "2026-11-08 07:22:51.587248"
+        },
+        {
+          "pool": "java",
+          "state": "COMPLETED",
+          "count": 1,
+          "oldestCreatedAt": "2026-11-08 07:22:54.605989"
+        },
+        {
+          "pool": "mysql",
+          "state": "COMPLETED",
+          "count": 151,
+          "oldestCreatedAt": "2026-11-08 07:23:00.632609"
+        },
+        {
+          "pool": "python",
+          "state": "COMPLETED",
+          "count": 151,
+          "oldestCreatedAt": "2026-11-08 07:22:59.155652"
+        }
+      ],
+      "eventBacklog": [
+        {
+          "eventType": "SUBMISSION_SETTLED",
+          "state": "DONE",
+          "count": 305
+        }
+      ]
+    }
+  }
+}

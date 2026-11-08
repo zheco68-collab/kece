@@ -6,7 +6,7 @@ Atomic Cache Eviction Tool for KECE OJ (Questions & Problem Sets)
 -----------------------------------------------------------------
 安全说明：
 - 仅清理业务数据查询缓存：`question:cache:*`、`pset:*`、`db:question:cache:*`；
-- 严禁触碰判题机运行时心跳键 (`judge:heartbeat:*`、`judge:workers`) 与提交任务状态键 (`sub:*`)。
+- 不触碰登录态、验证码等其他 Redis 键。
 """
 
 import os
@@ -25,10 +25,10 @@ if hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
-DEFAULT_REMOTE_HOST = os.environ.get("KECE_REMOTE_HOST", "10.56.40.238")
+DEFAULT_REMOTE_HOST = os.environ.get("KECE_REMOTE_HOST", "")
 DEFAULT_REMOTE_PORT = int(os.environ.get("KECE_REMOTE_PORT", "22"))
-DEFAULT_REMOTE_USER = os.environ.get("KECE_REMOTE_USER", "zco")
-DEFAULT_REMOTE_PASS = os.environ.get("KECE_REMOTE_PASS", "zco070612")
+DEFAULT_REMOTE_USER = os.environ.get("KECE_REMOTE_USER", "")
+DEFAULT_REMOTE_PASS = os.environ.get("KECE_REMOTE_PASS", "")
 
 def flush_cache(host=DEFAULT_REMOTE_HOST, port=DEFAULT_REMOTE_PORT, user=DEFAULT_REMOTE_USER, password=DEFAULT_REMOTE_PASS):
     print("=" * 60)

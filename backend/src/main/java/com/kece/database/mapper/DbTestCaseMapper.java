@@ -14,6 +14,8 @@ public interface DbTestCaseMapper {
 
     List<DbTestCase> findByQuestionId(Long questionId);
 
+    List<DbTestCase> findForManifest(Long questionId);
+
     /** 该题目的样例测试点 id（数据本就随题面公开）。 */
     List<Long> findSampleCaseIds(Long questionId);
 }

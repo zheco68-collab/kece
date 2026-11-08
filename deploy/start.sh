@@ -22,21 +22,30 @@ docker start kece-judge-mysql >/dev/null 2>&1 || \
 docker start kece-redis >/dev/null 2>&1 || \
     docker run -d --name kece-redis --restart unless-stopped -p 6379:6379 redis:7-alpine
 
-# ---- 2. 判题机 ----
-if pgrep -x judger >/dev/null 2>&1; then
-    echo "判题机已在运行，跳过"
+# ---- 2. 专池判题节点（默认拉起一个本地开发节点，可通过 JUDGE_POOL / JUDGE_NODE_NAME 指定实例） ----
+JUDGE_POOL="${JUDGE_POOL:-python}"
+JUDGE_NODE_NAME="${JUDGE_NODE_NAME:-local-${JUDGE_POOL}-1}"
+JUDGE_PID_FILE="$LOG_DIR/judger-${JUDGE_NODE_NAME}.pid"
+
+if [[ -f "$JUDGE_PID_FILE" ]] && kill -0 "$(cat "$JUDGE_PID_FILE")" 2>/dev/null; then
+    echo "专池判题节点 ($JUDGE_NODE_NAME) 已在运行，跳过"
 else
-    (cd "$ROOT_DIR/judger" && go build -o judger ./cmd/judger)
+    (cd "$ROOT_DIR/judger" && go build -o "$LOG_DIR/kece-judger" ./cmd/judger)
     (cd "$ROOT_DIR/judger" && \
-        REDIS_ADDR="${REDIS_ADDR:-127.0.0.1:6379}" \
-        WORKER_CONCURRENCY="${WORKER_CONCURRENCY:-8}" \
+        JUDGE_POOL="$JUDGE_POOL" \
+        JUDGE_CONTROL_URL="${JUDGE_CONTROL_URL:-http://127.0.0.1:8080/api/v1}" \
+        JUDGE_ENROLLMENT_CODE="${JUDGE_ENROLLMENT_CODE:-}" \
+        JUDGE_CREDENTIAL_FILE="${JUDGE_CREDENTIAL_FILE:-$LOG_DIR/credential-${JUDGE_NODE_NAME}.json}" \
+        JUDGE_LOCAL_SLOTS="${JUDGE_LOCAL_SLOTS:-2}" \
+        WORKSPACE_DIR="${WORKSPACE_DIR:-/tmp/kece-judge-${JUDGE_NODE_NAME}}" \
+        JUDGE_ARTIFACT_CACHE_DIR="${JUDGE_ARTIFACT_CACHE_DIR:-$LOG_DIR/cache-${JUDGE_NODE_NAME}}" \
         JUDGE_MYSQL_HOST="${JUDGE_MYSQL_HOST:-127.0.0.1}" \
         JUDGE_MYSQL_PORT="${JUDGE_MYSQL_PORT:-3307}" \
         JUDGE_MYSQL_USER="${JUDGE_MYSQL_USER:-root}" \
         JUDGE_MYSQL_PASSWORD="${JUDGE_MYSQL_PASSWORD:-judge123}" \
-        TESTCASE_DIR="${TESTCASE_DIR:-$ROOT_DIR/backend/testcases}" \
-        nohup ./judger > "$LOG_DIR/judger.log" 2>&1 &)
-    echo "判题机已启动（日志：$LOG_DIR/judger.log）"
+        nohup "$LOG_DIR/kece-judger" > "$LOG_DIR/judger-${JUDGE_NODE_NAME}.log" 2>&1 & \
+        echo $! > "$JUDGE_PID_FILE")
+    echo "专池判题节点 ($JUDGE_NODE_NAME, pool=$JUDGE_POOL) 已启动（日志：$LOG_DIR/judger-${JUDGE_NODE_NAME}.log）"
 fi
 
 # ---- 3. 后端 ----

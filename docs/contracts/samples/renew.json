@@ -1,0 +1,22 @@
+{
+  "request": {
+    "jobs": [
+      {
+        "jobId": "381",
+        "leaseEpoch": 2,
+        "sequence": 1,
+        "phase": "JUDGING",
+        "finishedCases": 1
+      }
+    ]
+  },
+  "response": {
+    "jobs": [
+      {
+        "jobId": "381",
+        "status": "RENEWED",
+        "leaseRemainingMs": 60000
+      }
+    ]
+  }
+}

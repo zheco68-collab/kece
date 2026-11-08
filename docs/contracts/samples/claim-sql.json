@@ -1,0 +1,64 @@
+{
+  "request": {
+    "slots": 1,
+    "waitMs": 0
+  },
+  "response": {
+    "protocolVersion": 1,
+    "jobs": [
+      {
+        "jobId": "382",
+        "submissionType": "DATABASE",
+        "submissionId": "204",
+        "generation": 1,
+        "pool": "mysql",
+        "runtimeSpec": "mysql-v1",
+        "leaseEpoch": 1,
+        "leaseRemainingMs": 59800,
+        "manifestId": "302",
+        "manifest": {
+          "version": 1,
+          "submissionType": "DATABASE",
+          "timeLimitMs": 5000,
+          "sql": {
+            "dialect": "MYSQL",
+            "type": "DML",
+            "schema": {
+              "digest": "1111111111111111111111111111111111111111111111111111111111111111",
+              "size": 48
+            },
+            "reference": {
+              "digest": "2222222222222222222222222222222222222222222222222222222222222222",
+              "size": 36
+            },
+            "verify": {
+              "digest": "3333333333333333333333333333333333333333333333333333333333333333",
+              "size": 32
+            },
+            "orderSensitive": true
+          },
+          "cases": [
+            {
+              "caseId": 10,
+              "caseNum": 1,
+              "scoreWeight": 100,
+              "sample": true,
+              "seed": {
+                "digest": "4444444444444444444444444444444444444444444444444444444444444444",
+                "size": 40
+              }
+            }
+          ]
+        },
+        "source": {
+          "questionId": 2001,
+          "language": "mysql",
+          "codeContent": {
+            "answer.sql": "UPDATE accounts SET balance = balance + 100 WHERE id = 1;"
+          }
+        },
+        "artifactToken": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+      }
+    ]
+  }
+}

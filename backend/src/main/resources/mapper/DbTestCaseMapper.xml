@@ -17,6 +17,10 @@
         VALUES (#{questionId}, #{caseOrder}, #{seedSql}, #{expectedOutput}, #{isSample})
     </insert>
 
+    <select id="findForManifest" resultMap="BaseResultMap">
+        SELECT * FROM db_test_case WHERE question_id = #{questionId} ORDER BY case_order, id FOR UPDATE
+    </select>
+
     <select id="findByQuestionId" resultMap="BaseResultMap">
         SELECT * FROM `db_test_case` WHERE question_id = #{questionId} ORDER BY case_order, id
     </select>

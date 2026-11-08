@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 /** 数据库SQL题（DB）多态策略实现：支持 MySQL/PostgreSQL 数据定义（DDL）、查询（SELECT）与数据操纵（DML）沙箱评测。 */
@@ -26,7 +25,6 @@ public class DbQuestionStrategy implements QuestionTypeStrategy {
 
     private final DbQuestionMapper dbQuestionMapper;
     private final DbSubmissionMapper dbSubmissionMapper;
-    private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -116,47 +114,8 @@ public class DbQuestionStrategy implements QuestionTypeStrategy {
     public JudgeResultDTO extractJudgeInfo(Long submissionId) {
         if (submissionId == null) return null;
 
-        // 1. 优先读取 Redis 缓存
         try {
-            String redisKey = getRedisStatusKey(submissionId);
-            String cached = redis.opsForValue().get(redisKey);
-            if (cached != null) {
-                JsonNode node = objectMapper.readTree(cached);
-                String status = node.has("status") ? node.get("status").asText() : null;
-                Integer score = null;
-                if (node.has("result") && !node.get("result").isNull()) {
-                    JsonNode resultNode = node.get("result");
-                    if (resultNode.has("score") && !resultNode.get("score").isNull()) {
-                        score = resultNode.get("score").asInt();
-                    } else if (resultNode.has("testCasesReport")
-                            && resultNode.get("testCasesReport").isArray()) {
-                        JsonNode report = resultNode.get("testCasesReport");
-                        if (report.size() > 0) {
-                            int passed = 0;
-                            for (JsonNode tc : report) {
-                                if (tc.has("status")
-                                        && "ACCEPTED".equals(tc.get("status").asText())) {
-                                    passed++;
-                                }
-                            }
-                            score = passed * 100 / report.size();
-                        }
-                    }
-                }
-                if (status != null && !isJudging(status)) {
-                    return new JudgeResultDTO(status, score);
-                }
-            }
-        } catch (Exception e) {
-            log.debug(
-                    "Read redis status exception submissionId={}: {}",
-                    submissionId,
-                    e.getMessage());
-        }
-
-        // 2. 从 MySQL 读取
-        try {
-            DbSubmission ds = dbSubmissionMapper.findById(submissionId);
+            DbSubmission ds = dbSubmissionMapper.findStatusById(submissionId);
             if (ds != null) {
                 Integer score = ds.getScore();
                 if (score == null && ds.getResultJson() != null && !ds.getResultJson().isBlank()) {
@@ -196,16 +155,6 @@ public class DbQuestionStrategy implements QuestionTypeStrategy {
     }
 
     @Override
-    public String getRedisStatusKey(Long submissionId) {
-        return "dbsub:status:" + submissionId;
-    }
-
-    @Override
-    public String getRedisProgressKey(Long submissionId) {
-        return "db_judge:progress:" + submissionId;
-    }
-
-    @Override
     public Optional<ContestSubmissionDTO> findLatestContestSubmission(
             Long examId, Long userId, Long questionId) {
         DbSubmission s = dbSubmissionMapper.findLatestByContest(examId, userId, questionId);
@@ -213,9 +162,5 @@ public class DbQuestionStrategy implements QuestionTypeStrategy {
             return Optional.of(new ContestSubmissionDTO(s.getId(), s.getStatus(), s.getScore()));
         }
         return Optional.empty();
-    }
-
-    private boolean isJudging(String status) {
-        return "PENDING".equals(status) || "COMPILING".equals(status) || "JUDGING".equals(status);
     }
 }

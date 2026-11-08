@@ -16,6 +16,10 @@ public interface DbSubmissionMapper {
 
     DbSubmission findByIdForUpdate(Long id);
 
+    DbSubmission findStatusById(Long id);
+
+    int setCurrentJudgeJob(@Param("id") Long id, @Param("jobId") Long jobId);
+
     List<DbSubmissionListVO> findPage(
             @Param("userId") Long userId,
             @Param("questionId") Long questionId,

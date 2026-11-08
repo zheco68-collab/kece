@@ -6,9 +6,11 @@
         <id column="id" property="id"/>
         <result column="user_id" property="userId"/>
         <result column="question_id" property="questionId"/>
+        <result column="contest_id" property="contestId"/>
         <result column="dialect" property="dialect"/>
         <result column="sql_content" property="sqlContent"/>
         <result column="status" property="status"/>
+        <result column="current_judge_job_id" property="currentJudgeJobId"/>
         <result column="score" property="score"/>
         <result column="time_used_ms" property="timeUsedMs"/>
         <result column="result_json" property="resultJson"/>
@@ -24,6 +26,16 @@
     <select id="findById" resultMap="BaseResultMap">
         SELECT * FROM `db_submission` WHERE id = #{id}
     </select>
+
+    <select id="findStatusById" resultMap="BaseResultMap">
+        SELECT id, user_id, question_id, contest_id, current_judge_job_id, status, score,
+               time_used_ms, result_json
+        FROM `db_submission` WHERE id = #{id}
+    </select>
+
+    <update id="setCurrentJudgeJob">
+        UPDATE `db_submission` SET current_judge_job_id = #{jobId} WHERE id = #{id}
+    </update>
 
     <select id="findByIdForUpdate" resultMap="BaseResultMap">
         SELECT * FROM `db_submission` WHERE id = #{id} FOR UPDATE

@@ -74,7 +74,8 @@ class QuestionServiceCacheTest {
                         userMapper,
                         testCaseStorageService,
                         redis,
-                        objectMapper);
+                        objectMapper,
+                        mock(com.kece.judging.artifact.JudgeManifestService.class));
     }
 
     @AfterEach
@@ -170,6 +171,13 @@ class QuestionServiceCacheTest {
         req.setMemoryLimit(256);
         req.setLanguages("cpp");
 
+        org.mockito.Mockito.doAnswer(
+                        invocation -> {
+                            invocation.<Question>getArgument(0).setId(56L);
+                            return 1;
+                        })
+                .when(questionMapper)
+                .insert(any(Question.class));
         QuestionVO created = questionService.create(req);
 
         assertThat(created).isNotNull();
@@ -188,7 +196,7 @@ class QuestionServiceCacheTest {
         Question q = new Question();
         q.setId(55L);
         q.setCreatedBy(1L);
-        when(questionMapper.findById(55L)).thenReturn(q);
+        when(questionMapper.findByIdForUpdate(55L)).thenReturn(q);
         when(submissionMapper.existsByQuestionId(55L)).thenReturn(false);
         when(setOps.members("question:cache:list_keys"))
                 .thenReturn(Set.of("question:cache:list:1:20:::"));

@@ -2,7 +2,7 @@ package com.kece.question.dto;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 /** 测试用例创建/更新请求。 */
@@ -11,7 +11,7 @@ public class TestCaseRequest {
 
     private String input;
 
-    @NotBlank(message = "期望输出不能为空")
+    @NotNull(message = "请提供期望输出")
     private String expectedOutput;
 
     private Integer caseNum;

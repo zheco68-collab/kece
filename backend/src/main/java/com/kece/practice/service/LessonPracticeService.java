@@ -41,6 +41,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
@@ -51,7 +52,6 @@ public class LessonPracticeService {
     private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String PRACTICE_SUB_CTX_PREFIX = "practice:sub_ctx:";
-    private static final Duration PRACTICE_SUB_CTX_TTL = Duration.ofHours(2);
 
     private final LessonPracticeMapper practiceMapper;
     private final LessonPracticeQuestionMapper questionMapper;
@@ -401,6 +401,7 @@ public class LessonPracticeService {
     }
 
     /** 获取课练房间主页（题目列表与作答概览，强制校验口令入场状态或管理权限）。 */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public PracticeDetailVO getPracticeDetail(String accessCode, Long userId) {
         String code = accessCode.trim().toUpperCase();
         LessonPractice practice = practiceMapper.findByAccessCode(code);
@@ -734,7 +735,7 @@ public class LessonPracticeService {
 
     /** 实操题提交创建时（入 Redis 判题队列前）在同一事务内原子绑定课练记录，彻底消除快判竞态与断网丢单。 */
     @Transactional
-    public void bindPracticalSubmissionOnCreate(
+    public boolean bindPracticalSubmissionOnCreate(
             String accessCode,
             Long userId,
             Long practiceQuestionId,
@@ -747,16 +748,16 @@ public class LessonPracticeService {
                 || practiceQuestionId == null
                 || submissionId == null
                 || questionType == null) {
-            return;
+            return false;
         }
         LessonPractice practice = practiceMapper.findByAccessCode(accessCode.trim().toUpperCase());
         if (practice == null || syncPracticeStatusIfExpired(practice)) {
-            return;
+            return false;
         }
 
-        LessonPracticeMember member = memberMapper.findByPracticeAndUser(practice.getId(), userId);
+        LessonPracticeMember member = memberMapper.lockByPracticeAndUser(practice.getId(), userId);
         if (member == null || Integer.valueOf(1).equals(member.getSubmitted())) {
-            return;
+            return false;
         }
 
         LessonPracticeQuestion pq = questionMapper.findById(practiceQuestionId);
@@ -764,12 +765,12 @@ public class LessonPracticeService {
                 || !Objects.equals(practice.getId(), pq.getPracticeId())
                 || !questionType.equalsIgnoreCase(pq.getQuestionType())
                 || (questionId != null && !Objects.equals(questionId, pq.getQuestionId()))) {
-            return;
+            return false;
         }
 
         LocalDateTime now = LocalDateTime.now();
         LessonPracticeSubmission exist =
-                submissionMapper.findByPracticeUserQuestion(
+                submissionMapper.findByPracticeUserQuestionForUpdate(
                         practice.getId(), userId, practiceQuestionId);
 
         Long lpsId;
@@ -806,15 +807,22 @@ public class LessonPracticeService {
             lpsId = newSub.getId();
         }
 
-        try {
-            redis.opsForValue()
-                    .set(
-                            buildSubCtxKey(questionType, submissionId),
-                            String.valueOf(lpsId),
-                            PRACTICE_SUB_CTX_TTL);
-        } catch (Exception e) {
-            log.debug("写入课练提交上下文缓存异常 subId={}: {}", submissionId, e.getMessage());
+        recordBinding(questionType, submissionId, lpsId);
+        return true;
+    }
+
+    private void recordBinding(String type, Long submissionId, Long practiceSubmissionId) {
+        String key = bindingType(type);
+        submissionMapper.insertBinding(key, submissionId, practiceSubmissionId);
+        if (!Objects.equals(
+                practiceSubmissionId, submissionMapper.lockBinding(key, submissionId))) {
+            throw new BusinessException(ResultCode.CONFLICT, "该提交已关联其他课练作答");
         }
+    }
+
+    private String bindingType(String type) {
+        String normalized = type.trim().toUpperCase(java.util.Locale.ROOT);
+        return "DATABASE".equals(normalized) ? "DB" : normalized;
     }
 
     private String buildSubCtxKey(String questionType, Long submissionId) {
@@ -822,17 +830,20 @@ public class LessonPracticeService {
     }
 
     /**
-     * 原生判题完成回调：由 JudgeResultBlockingListener (Redis BRPOP) 驱动唤醒。 支持连续高频多次提交反查，严格保护已拿到的最高分源码快照
+     * 持久结算事件触发的判题完成回调。处理连续提交和乱序完成，保护已记录的最高分源码快照
      * bestSubmissionId 与首次达成时间 bestAchievedAt。
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void onPracticalJudgeCompleted(String questionType, Long submissionId) {
         if (submissionId == null || questionType == null) {
             return;
         }
-        String normType = questionType.trim().toUpperCase();
+        String normType = bindingType(questionType);
+        Long boundId = submissionMapper.findBinding(normType, submissionId);
         LessonPracticeSubmission sub =
-                submissionMapper.findBySubmissionIdAndType(submissionId, normType);
+                boundId != null
+                        ? submissionMapper.findById(boundId)
+                        : submissionMapper.findBySubmissionIdAndType(submissionId, normType);
         if (sub == null) {
             try {
                 String lpsIdStr = redis.opsForValue().get(buildSubCtxKey(normType, submissionId));
@@ -843,6 +854,14 @@ public class LessonPracticeService {
                 log.debug("读取课练提交上下文缓存异常 subId={}: {}", submissionId, e.getMessage());
             }
         }
+        if (sub == null) {
+            return;
+        }
+
+        if (memberMapper.lockByPracticeAndUser(sub.getPracticeId(), sub.getUserId()) == null) {
+            return;
+        }
+        sub = submissionMapper.findByIdForUpdate(sub.getId());
         if (sub == null) {
             return;
         }
@@ -869,7 +888,7 @@ public class LessonPracticeService {
     }
 
     /** 将编程/数据库实战提交与课练上下文关联并即刻统计（兼容前端直接上报，幂等防重计次）。 */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void recordPracticalSubmission(
             String accessCode,
             Long userId,
@@ -889,7 +908,7 @@ public class LessonPracticeService {
             return;
         }
 
-        LessonPracticeMember member = memberMapper.findByPracticeAndUser(practice.getId(), userId);
+        LessonPracticeMember member = memberMapper.lockByPracticeAndUser(practice.getId(), userId);
         if (member == null || Integer.valueOf(1).equals(member.getSubmitted())) {
             return;
         }
@@ -902,14 +921,10 @@ public class LessonPracticeService {
                 questionType != null ? questionType.trim().toUpperCase() : pq.getQuestionType();
         int fullScore = pq.getScore() != null ? pq.getScore() : 10;
 
-        boolean alreadyBound = false;
-        if (submissionId != null) {
-            try {
-                alreadyBound =
-                        Boolean.TRUE.equals(redis.hasKey(buildSubCtxKey(normType, submissionId)));
-            } catch (Exception ignored) {
-            }
-        }
+        Long boundId =
+                submissionId == null
+                        ? null
+                        : submissionMapper.findBinding(bindingType(normType), submissionId);
 
         JudgeInfo info = null;
         if (submissionId != null) {
@@ -928,24 +943,22 @@ public class LessonPracticeService {
         Integer judgeRawScore = info != null ? info.score() : 0;
 
         LessonPracticeSubmission exist =
-                submissionMapper.findByPracticeUserQuestion(
+                submissionMapper.findByPracticeUserQuestionForUpdate(
                         practice.getId(), userId, practiceQuestionId);
 
+        if (boundId != null && (exist == null || !boundId.equals(exist.getId()))) {
+            throw new BusinessException(ResultCode.CONFLICT, "该提交已关联其他课练作答");
+        }
+        boolean alreadyBound = boundId != null;
+        Long practiceSubmissionId;
         if (exist != null) {
+            practiceSubmissionId = exist.getId();
             boolean sameSub =
                     submissionId != null && Objects.equals(exist.getSubmissionId(), submissionId);
             if (!alreadyBound && !sameSub && submissionId != null) {
                 int attempts = (exist.getAttemptCount() != null ? exist.getAttemptCount() : 1) + 1;
                 exist.setAttemptCount(attempts);
                 exist.setSubmissionId(submissionId);
-                try {
-                    redis.opsForValue()
-                            .set(
-                                    buildSubCtxKey(normType, submissionId),
-                                    String.valueOf(exist.getId()),
-                                    PRACTICE_SUB_CTX_TTL);
-                } catch (Exception ignored) {
-                }
             }
             if (!isJudging(judgeStatus) && !"UNATTEMPTED".equals(judgeStatus)) {
                 applyPracticalJudgeOutcome(
@@ -985,16 +998,10 @@ public class LessonPracticeService {
                             .bestAchievedAt(calculatedScore > 0 ? now : null)
                             .build();
             submissionMapper.insert(newSub);
-            if (submissionId != null) {
-                try {
-                    redis.opsForValue()
-                            .set(
-                                    buildSubCtxKey(normType, submissionId),
-                                    String.valueOf(newSub.getId()),
-                                    PRACTICE_SUB_CTX_TTL);
-                } catch (Exception ignored) {
-                }
-            }
+            practiceSubmissionId = newSub.getId();
+        }
+        if (submissionId != null && !alreadyBound) {
+            recordBinding(normType, submissionId, practiceSubmissionId);
         }
 
         recalculateMemberScore(practice.getId(), userId);

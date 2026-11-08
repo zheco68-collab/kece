@@ -23,11 +23,11 @@ if hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
-DEFAULT_HOST = os.environ.get("KECE_WEB_HOST", "49.235.220.125")
+DEFAULT_HOST = os.environ.get("KECE_WEB_HOST", "")
 DEFAULT_PORT = int(os.environ.get("KECE_WEB_PORT", "22"))
-DEFAULT_USER = os.environ.get("KECE_WEB_USER", "ubuntu")
-DEFAULT_PASS = os.environ.get("KECE_WEB_PASS", "zco070612ZCO@")
-DEFAULT_TARGET_DIR = "/opt/1panel/www/sites/oj.zheco68.asia/index"
+DEFAULT_USER = os.environ.get("KECE_WEB_USER", "")
+DEFAULT_PASS = os.environ.get("KECE_WEB_PASS", "")
+DEFAULT_TARGET_DIR = os.environ.get("KECE_WEB_TARGET_DIR", "/var/www/kece/index")
 
 def deploy(dist_dir="frontend/dist", host=DEFAULT_HOST, port=DEFAULT_PORT,
            user=DEFAULT_USER, password=DEFAULT_PASS, target_dir=DEFAULT_TARGET_DIR):

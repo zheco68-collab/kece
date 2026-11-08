@@ -2,8 +2,6 @@ package judge
 
 import (
 	"testing"
-
-	"github.com/zheco68-collab/KECE/judger/internal/model"
 )
 
 func TestAggregateOverall(t *testing.T) {
@@ -47,7 +45,7 @@ func TestScoreFrom(t *testing.T) {
 		})
 	}
 
-	cases := []model.TestCase{
+	cases := []TestCase{
 		{CaseID: 1, ScoreWeight: 20},
 		{CaseID: 2, ScoreWeight: 80},
 	}
@@ -72,7 +70,7 @@ func TestFilenameFor(t *testing.T) {
 }
 
 func TestExtractCode(t *testing.T) {
-	task := model.Task{CodeContent: map[string]string{"main.py": "print(1)", "main.cpp": "int main(){}"}}
+	task := CodeTask{CodeContent: map[string]string{"main.py": "print(1)", "main.cpp": "int main(){}"}}
 	if got := extractCode(task, "main.py"); got != "print(1)" {
 		t.Fatalf("extractCode = %q", got)
 	}
@@ -80,7 +78,7 @@ func TestExtractCode(t *testing.T) {
 		t.Fatal("expected fallback to any non-empty code")
 	}
 
-	taskArkts := model.Task{CodeContent: map[string]string{"main.ts": "console.log(123);"}}
+	taskArkts := CodeTask{CodeContent: map[string]string{"main.ts": "console.log(123);"}}
 	if got := extractCode(taskArkts, "main.ets"); got != "console.log(123);" {
 		t.Fatalf("extractCode(main.ets) fallback to main.ts = %q", got)
 	}

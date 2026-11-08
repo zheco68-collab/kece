@@ -18,6 +18,8 @@ import com.kece.database.entity.DbTestCase;
 import com.kece.database.mapper.DbQuestionMapper;
 import com.kece.database.mapper.DbSubmissionMapper;
 import com.kece.database.mapper.DbTestCaseMapper;
+import com.kece.judging.JudgeDispatch.Kind;
+import com.kece.judging.artifact.JudgeManifestService;
 import com.kece.practice.service.LessonPracticeService;
 import com.kece.user.entity.User;
 import com.kece.user.mapper.UserMapper;
@@ -50,9 +52,13 @@ public class DbQuestionService {
     private final UserMapper userMapper;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
+    private final JudgeManifestService judgeManifests;
 
     @Autowired(required = false)
     private ObjectProvider<LessonPracticeService> practiceServiceProvider;
+
+    @Autowired(required = false)
+    private com.kece.judging.JudgeDispatch judgeDispatch;
 
     public PageResult<DbQuestionVO> list(
             String type, String keyword, int page, int size, boolean all) {
@@ -204,17 +210,22 @@ public class DbQuestionService {
         question.setCreatedBy(AuthContextHolder.currentUserId());
         questionMapper.insert(question);
         replaceTestCases(question.getId(), request.getTestCases());
+        judgeManifests.publish(Kind.DATABASE, question.getId());
         evictDbQuestionCache(question.getId());
         return toVO(question, true, true);
     }
 
     @Transactional
     public DbQuestionVO update(Long id, DbQuestionRequest request) {
-        DbQuestion question = getQuestionOrThrow(id);
+        DbQuestion question = questionMapper.findByIdForUpdate(id);
+        if (question == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "题目不存在");
+        }
         checkOwnerOrAdmin(question);
         applyRequest(question, request);
         questionMapper.update(question);
         replaceTestCases(question.getId(), request.getTestCases());
+        judgeManifests.publish(Kind.DATABASE, question.getId());
         evictDbQuestionCache(id);
         return toVO(question, true, true);
     }
@@ -222,7 +233,10 @@ public class DbQuestionService {
     /** 删除数据库题：无提交记录时出题人/管理员可删；有提交记录时仅 ADMIN 可强制删除（级联清理提交记录）。 */
     @Transactional
     public void delete(Long id) {
-        DbQuestion question = getQuestionOrThrow(id);
+        DbQuestion question = questionMapper.findByIdForUpdate(id);
+        if (question == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "题目不存在");
+        }
         checkOwnerOrAdmin(question);
         AuthUser user = AuthContextHolder.get();
         boolean admin = user != null && user.hasRole(Role.ADMIN);
@@ -231,8 +245,12 @@ public class DbQuestionService {
         }
         if (admin) {
             submissionMapper.deleteByQuestionId(id);
+            if (judgeDispatch != null) {
+                judgeDispatch.cancelOrphanedQueued();
+            }
         }
         testCaseMapper.deleteByQuestionId(id);
+        judgeManifests.clearCurrent(Kind.DATABASE, id);
         questionMapper.deleteById(id);
         evictDbQuestionCache(id);
     }

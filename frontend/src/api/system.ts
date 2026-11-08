@@ -1,29 +1,5 @@
 import { http } from './request'
 
-export interface JudgerNode {
-  id: string
-  name: string
-  type: 'ALGO' | 'DATABASE' | 'FRONTEND_AI' | string
-  typeLabel: string
-  status: 'IDLE' | 'JUDGING' | 'OFFLINE'
-  statusLabel: string
-  currentTasks: number
-  maxConcurrency: number
-  lastHeartbeatTime: number | null
-  details: string
-}
-
-export interface ClusterStatus {
-  totalNodes: number
-  onlineNodes: number
-  busyNodes: number
-  idleNodes: number
-  offlineNodes: number
-  pendingTasks?: number
-  nodes: JudgerNode[]
-  timestamp: number
-}
-
 export interface DemoSnippet {
   filename: string
   langBadge: string
@@ -32,8 +8,26 @@ export interface DemoSnippet {
   updatedAt?: number
 }
 
+export interface PoolSummary {
+  pool: string
+  name: string
+  state: 'READY' | 'BUSY' | 'OFFLINE' | 'DRAINING' | 'PENDING_SWITCH' | string
+  readyNodes: number
+  totalNodes: number
+  pendingJobs: number
+  activeJobs: number
+}
+
+export interface JudgeClusterSummary {
+  asOf: number
+  freshness: 'FRESH' | 'STALE' | 'DEGRADED' | string
+  readyPools: number
+  totalPools: number
+  pools: PoolSummary[]
+}
+
 export const systemApi = {
-  getClusterStatus: () => http.get<ClusterStatus>('/system/judgers'),
+  getClusterSummary: () => http.get<JudgeClusterSummary>('/system/judgers/summary'),
   getDemoSnippet: () => http.get<DemoSnippet>('/system/demo-snippet'),
 }
 

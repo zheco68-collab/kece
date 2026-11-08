@@ -1,6 +1,8 @@
 package com.kece.exam.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kece.common.exception.BusinessException;
 import com.kece.common.response.ResultCode;
@@ -8,10 +10,8 @@ import com.kece.common.security.AuthContextHolder;
 import com.kece.common.security.AuthUser;
 import com.kece.database.entity.DbQuestion;
 import com.kece.database.entity.DbSubmission;
-import com.kece.database.entity.DbTestCase;
 import com.kece.database.mapper.DbQuestionMapper;
 import com.kece.database.mapper.DbSubmissionMapper;
-import com.kece.database.mapper.DbTestCaseMapper;
 import com.kece.exam.dto.ExamAnswerRequest;
 import com.kece.exam.dto.ExamSubmissionVO;
 import com.kece.exam.dto.SingleSubmitVO;
@@ -20,30 +20,35 @@ import com.kece.exam.entity.Exam;
 import com.kece.exam.entity.ExamQuestion;
 import com.kece.exam.entity.ExamSessionStatus;
 import com.kece.exam.entity.ExamSubmission;
+import com.kece.exam.mapper.ExamCandidateGuardMapper;
 import com.kece.exam.mapper.ExamMapper;
 import com.kece.exam.mapper.ExamQuestionMapper;
 import com.kece.exam.mapper.ExamSubmissionMapper;
+import com.kece.judging.JudgeDispatch;
+import com.kece.judging.JudgeDispatch.Scene;
 import com.kece.objective.dto.AnswerResultVO;
 import com.kece.objective.entity.ObjectiveQuestion;
 import com.kece.objective.mapper.ObjectiveQuestionMapper;
 import com.kece.objective.service.ObjectiveGrader;
 import com.kece.question.entity.Question;
-import com.kece.question.entity.TestCase;
 import com.kece.question.mapper.QuestionMapper;
-import com.kece.question.mapper.TestCaseMapper;
 import com.kece.question.strategy.ContestSubmissionDTO;
 import com.kece.question.strategy.QuestionStrategyFactory;
 import com.kece.submission.entity.Submission;
 import com.kece.submission.enums.SubmissionStatus;
 import com.kece.submission.mapper.SubmissionMapper;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 考试作答与交卷评测：客观题同步判分（快照分折算）；代码/数据库题批量入队复用现有评测链路。 */
@@ -51,31 +56,42 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ExamSubmissionService {
 
-    private static final String CODE_QUEUE_KEY = "judge:queue";
-    private static final String SQL_QUEUE_KEY = "judge:sql:queue";
     private static final List<String> SUPPORTED_LANGUAGES =
             List.of("cpp", "java", "python", "arkts");
 
     private final ExamMapper examMapper;
+    private final ExamCandidateGuardMapper candidateGuard;
     private final ExamQuestionMapper examQuestionMapper;
     private final ExamSubmissionMapper submissionMapper;
     private final QuestionMapper questionMapper;
-    private final TestCaseMapper testCaseMapper;
     private final DbQuestionMapper dbQuestionMapper;
-    private final DbTestCaseMapper dbTestCaseMapper;
     private final ObjectiveQuestionMapper objectiveQuestionMapper;
     private final ObjectiveGrader grader;
     private final SubmissionMapper codeSubmissionMapper;
     private final DbSubmissionMapper dbSubmissionMapper;
-    private final StringRedisTemplate redis;
+    private final JudgeDispatch judging;
     private final ObjectMapper objectMapper;
     private final QuestionStrategyFactory strategyFactory;
 
     /** 保存作答（UPSERT by 考试+考生+快照条目）；已交卷的题目不可再改。 */
     @Transactional
-    public void saveAnswer(Long examId, ExamAnswerRequest request) {
+    public void saveAnswer(Long examId, ExamAnswerRequest request, String key) {
         AuthUser user = requireUser();
+        candidateGuard.lock(examId, user.getId());
         Exam exam = getExamOrThrow(examId);
+        ExamRequest attempt =
+                new ExamRequest(
+                        examId,
+                        user.getId(),
+                        key,
+                        "SAVE\n" + (key == null ? "" : writeJson(request)));
+        JsonNode prior = attempt.replay(JsonNode.class);
+        if (prior != null) {
+            return;
+        }
+        if (candidateGuard.isSubmitted(examId, user.getId())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "该考试已交卷，不能重复提交");
+        }
         ExamSessionStatus status = advanceStatus(exam);
         if (status == ExamSessionStatus.CANCELLED) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "该考试已取消");
@@ -127,13 +143,23 @@ public class ExamSubmissionService {
                             : null,
                     SubmissionStatus.PENDING.name());
         }
+        attempt.remember(Map.of());
     }
 
     /** 交卷评测（OI 统一评测）：客观题同步判分；代码/数据库题批量入队（ACM 已实时提交过的不重复入队）。可重复进入但不重复评测（幂等）。 */
-    @Transactional
-    public SubmitResultVO submit(Long examId) {
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
+    public SubmitResultVO submit(Long examId, String key) {
         AuthUser user = requireUser();
+        candidateGuard.lock(examId, user.getId());
         Exam exam = getExamOrThrow(examId);
+        ExamRequest attempt = new ExamRequest(examId, user.getId(), key, "SUBMIT");
+        SubmitResultVO prior = attempt.replay(SubmitResultVO.class);
+        if (prior != null) {
+            return prior;
+        }
+        if (candidateGuard.isSubmitted(examId, user.getId())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "该考试已交卷，不能重复提交");
+        }
         ExamSessionStatus status = advanceStatus(exam);
         if (status == ExamSessionStatus.CANCELLED) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "该考试已取消");
@@ -180,14 +206,26 @@ public class ExamSubmissionService {
             }
             submissionMapper.markSubmitted(row.getId());
         }
-        return SubmitResultVO.builder().examId(examId).graded(graded).queued(queued).build();
+        candidateGuard.markSubmitted(examId, user.getId());
+        return attempt.remember(
+                SubmitResultVO.builder().examId(examId).graded(graded).queued(queued).build());
     }
 
     /** ACM 赛制考试中单题实时提交：立即入队并返回提交记录 ID，前端轮询判题状态。 OI 赛制与客观题拒绝（客观题交卷后统一判分）。 */
     @Transactional
-    public SingleSubmitVO submitQuestion(Long examId, Long examQuestionId) {
+    public SingleSubmitVO submitQuestion(Long examId, Long examQuestionId, String key) {
         AuthUser user = requireUser();
+        candidateGuard.lock(examId, user.getId());
         Exam exam = getExamOrThrow(examId);
+        ExamRequest attempt =
+                new ExamRequest(examId, user.getId(), key, "SUBMIT_QUESTION\n" + examQuestionId);
+        SingleSubmitVO prior = attempt.replay(SingleSubmitVO.class);
+        if (prior != null) {
+            return prior;
+        }
+        if (candidateGuard.isSubmitted(examId, user.getId())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "该考试已交卷");
+        }
         ExamSessionStatus status = advanceStatus(exam);
         if (status == ExamSessionStatus.CANCELLED) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "该考试已取消");
@@ -226,11 +264,12 @@ public class ExamSubmissionService {
         if (submissionId == null) {
             throw new BusinessException(ResultCode.SYSTEM_ERROR, "题目数据缺失，提交失败");
         }
-        return SingleSubmitVO.builder()
-                .submissionId(submissionId)
-                .questionType(examQuestion.getQuestionType())
-                .status(SubmissionStatus.PENDING.name())
-                .build();
+        return attempt.remember(
+                SingleSubmitVO.builder()
+                        .submissionId(submissionId)
+                        .questionType(examQuestion.getQuestionType())
+                        .status(SubmissionStatus.PENDING.name())
+                        .build());
     }
 
     /** 该考试该考生该题是否已有实时提交（ACM 交卷时避免重复入队）。 */
@@ -366,7 +405,7 @@ public class ExamSubmissionService {
         }
     }
 
-    /** 代码题：写入 submission 行（contest_id=考试）并压 judge:queue；成绩由判题机回写该行。返回提交记录 ID。 */
+    /** 代码题：写入 submission 行（contest_id=考试）并创建持久判题任务；成绩由判题链路回写该行。返回提交记录 ID。 */
     private Long enqueueCode(ExamSubmission row, ExamQuestion examQuestion) {
         Question question = questionMapper.findById(examQuestion.getQuestionId());
         if (question == null) {
@@ -386,42 +425,7 @@ public class ExamSubmissionService {
         submission.setStatus(SubmissionStatus.PENDING.name());
         codeSubmissionMapper.insert(submission);
 
-        List<TestCase> testCases = testCaseMapper.findByQuestionId(examQuestion.getQuestionId());
-        Map<String, Object> task = new HashMap<>();
-        task.put("submissionId", submission.getId());
-        task.put("questionId", examQuestion.getQuestionId());
-        task.put("language", language);
-        task.put("codeContent", code);
-        task.put("timeLimitMs", question.getTimeLimit() == null ? 1000 : question.getTimeLimit());
-        task.put(
-                "memoryLimitMb",
-                question.getMemoryLimit() == null ? 256 : question.getMemoryLimit());
-        task.put(
-                "testCases",
-                testCases.stream()
-                        .map(
-                                tc -> {
-                                    Map<String, Object> c = new HashMap<>();
-                                    c.put("caseId", tc.getId());
-                                    c.put("caseNum", tc.getCaseNum() != null ? tc.getCaseNum() : 1);
-                                    c.put(
-                                            "scoreWeight",
-                                            tc.getScoreWeight() != null ? tc.getScoreWeight() : 10);
-                                    if (tc.getInputPath() != null && !tc.getInputPath().isBlank()) {
-                                        c.put("inputPath", tc.getInputPath());
-                                        c.put("outputPath", tc.getOutputPath());
-                                    } else {
-                                        c.put("input", tc.getInput() != null ? tc.getInput() : "");
-                                        c.put(
-                                                "expectedOutput",
-                                                tc.getExpectedOutput() != null
-                                                        ? tc.getExpectedOutput()
-                                                        : "");
-                                    }
-                                    return c;
-                                })
-                        .toList());
-        redis.opsForList().rightPush(CODE_QUEUE_KEY, writeJson(task));
+        judging.enqueueCode(submission, code, Scene.EXAM);
         submissionMapper.updateJudgeResult(
                 row.getId(),
                 SubmissionStatus.PENDING.name(),
@@ -430,7 +434,7 @@ public class ExamSubmissionService {
         return submission.getId();
     }
 
-    /** 数据库题：写入 db_submission 行（contest_id=考试）并压 judge:sql:queue。返回提交记录 ID。 */
+    /** 数据库题：写入 db_submission 行（contest_id=考试）并创建持久判题任务。返回提交记录 ID。 */
     private Long enqueueDb(ExamSubmission row, ExamQuestion examQuestion) {
         DbQuestion question = dbQuestionMapper.findById(examQuestion.getQuestionId());
         if (question == null) {
@@ -446,33 +450,7 @@ public class ExamSubmissionService {
         submission.setStatus(SubmissionStatus.PENDING.name());
         dbSubmissionMapper.insert(submission);
 
-        List<DbTestCase> testCases =
-                dbTestCaseMapper.findByQuestionId(examQuestion.getQuestionId());
-        Map<String, Object> task = new HashMap<>();
-        task.put("submissionId", submission.getId());
-        task.put("questionId", examQuestion.getQuestionId());
-        task.put("type", "sql");
-        task.put("dialect", question.getDialect());
-        task.put("schemaSql", question.getSchemaSql());
-        task.put("referenceSql", question.getReferenceSql());
-        task.put("verifySql", question.getVerifySql());
-        task.put(
-                "orderSensitive",
-                question.getOrderSensitive() != null && question.getOrderSensitive() == 1);
-        task.put("codeContent", Map.of("answer.sql", row.getAnswerContent()));
-        task.put("timeLimitMs", 5000);
-        task.put(
-                "testCases",
-                testCases.stream()
-                        .map(
-                                tc -> {
-                                    Map<String, Object> c = new HashMap<>();
-                                    c.put("caseId", tc.getId());
-                                    c.put("seedSql", tc.getSeedSql());
-                                    return c;
-                                })
-                        .toList());
-        redis.opsForList().rightPush(SQL_QUEUE_KEY, writeJson(task));
+        judging.enqueueSql(submission, Scene.EXAM);
         submissionMapper.updateJudgeResult(
                 row.getId(),
                 SubmissionStatus.PENDING.name(),
@@ -528,6 +506,59 @@ public class ExamSubmissionService {
             throw new BusinessException(ResultCode.NOT_FOUND, "考试不存在");
         }
         return exam;
+    }
+
+    private final class ExamRequest {
+        private final Long examId;
+        private final Long userId;
+        private final String key;
+        private final String digest;
+
+        private ExamRequest(Long examId, Long userId, String key, String payload) {
+            this.examId = examId;
+            this.userId = userId;
+            this.key = key;
+            if (key != null && !key.matches("[A-Za-z0-9._:-]{1,128}")) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "无效的 Idempotency-Key");
+            }
+            this.digest = key == null ? null : requestDigest(payload);
+        }
+
+        private <T> T replay(Class<T> type) {
+            if (key == null) {
+                return null;
+            }
+            var receipt = candidateGuard.findReceipt(examId, userId, key);
+            if (receipt == null) {
+                return null;
+            }
+            if (!digest.equals(receipt.requestDigest())) {
+                throw new BusinessException(ResultCode.CONFLICT, "该幂等键已用于其他请求");
+            }
+            try {
+                return objectMapper.readValue(receipt.responseJson(), type);
+            } catch (JsonProcessingException e) {
+                throw new IllegalStateException("Cannot read exam request receipt", e);
+            }
+        }
+
+        private <T> T remember(T response) {
+            if (key != null) {
+                candidateGuard.insertReceipt(examId, userId, key, digest, writeJson(response));
+            }
+            return response;
+        }
+    }
+
+    private static String requestDigest(String payload) {
+        try {
+            return HexFormat.of()
+                    .formatHex(
+                            MessageDigest.getInstance("SHA-256")
+                                    .digest(payload.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private String writeJson(Object value) {

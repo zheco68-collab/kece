@@ -1,0 +1,14 @@
+{
+  "request": {
+    "leaseEpoch": 1,
+    "status": "COMPILE_ERROR",
+    "result": {
+      "score": 0,
+      "compileErrorLog": "main.cpp:1:1: error: expected unqualified-id before numeric constant",
+      "testCasesReport": []
+    }
+  },
+  "response": {
+    "status": "COMMITTED"
+  }
+}
