@@ -26,7 +26,7 @@ function handleMouseMove(e: MouseEvent) {
 
   if (rAF) cancelAnimationFrame(rAF)
   rAF = requestAnimationFrame(() => {
-    const maxTilt = 14 // 最大倾角 14 度，3D 倾斜反馈显著清晰
+    const maxTilt = 11.2 // 倾斜幅度较 14 度缩小 20%
     rotateX.value = Number((-normY * maxTilt).toFixed(2))
     rotateY.value = Number((normX * maxTilt).toFixed(2))
     glareX.value = Number(((x / rect.width) * 100).toFixed(1))
@@ -55,7 +55,7 @@ const cardTransformStyle = computed(() => {
     }
   }
   return {
-    transform: `perspective(1200px) rotateX(${rotateX.value}deg) rotateY(${rotateY.value}deg) translateY(-8px) translateZ(24px) scale3d(1.02, 1.02, 1.02)`,
+    transform: `perspective(1200px) rotateX(${rotateX.value}deg) rotateY(${rotateY.value}deg) translateY(-6px) translateZ(16px) scale3d(1.015, 1.015, 1.015)`,
     transition: 'transform 0.08s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease',
   }
 })
@@ -389,7 +389,7 @@ const displayPools = computed<PoolSummary[]>(() => {
   mix-blend-mode: overlay;
 }
 
-/* 绿色扫描线动画层 */
+/* 绿色激光扫描线动画层（超细 1.5px 极精细激光） */
 .scanline-track {
   position: absolute;
   inset: 0;
@@ -402,66 +402,63 @@ const displayPools = computed<PoolSummary[]>(() => {
   position: absolute;
   left: 0;
   right: 0;
-  height: 3px;
+  height: 1.5px;
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(34, 197, 94, 0.5) 15%,
-    #4ade80 45%,
-    #86efac 50%,
-    #4ade80 55%,
-    rgba(34, 197, 94, 0.5) 85%,
+    rgba(34, 197, 94, 0.3) 10%,
+    #22c55e 30%,
+    #4ade80 50%,
+    #22c55e 70%,
+    rgba(34, 197, 94, 0.3) 90%,
     transparent 100%
   );
   box-shadow:
-    0 0 14px 3px #22c55e,
-    0 0 28px 6px rgba(34, 197, 94, 0.7),
-    0 0 45px 10px rgba(34, 197, 94, 0.4);
-  animation: scanline-sweep 1.35s cubic-bezier(0.35, 0, 0.25, 1) forwards;
+    0 0 3px 0.5px #22c55e,
+    0 0 1px 0.5px #86efac;
+  animation: scanline-sweep 1.15s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
 .scanline-glow {
   position: absolute;
   left: 0;
   right: 0;
-  height: 85px;
+  height: 4px;
   background: linear-gradient(
     to top,
-    rgba(34, 197, 94, 0.35) 0%,
-    rgba(34, 197, 94, 0.15) 40%,
-    rgba(34, 197, 94, 0.04) 80%,
+    rgba(34, 197, 94, 0.25) 0%,
     transparent 100%
   );
-  animation: scanline-glow-sweep 1.35s cubic-bezier(0.35, 0, 0.25, 1) forwards;
+  animation: scanline-glow-sweep 1.15s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
 @keyframes scanline-sweep {
   0% {
-    top: -4px;
+    top: 0;
     opacity: 0;
   }
-  8% {
+  4% {
     opacity: 1;
   }
-  88% {
+  95% {
     opacity: 1;
   }
   100% {
-    top: calc(100% + 4px);
+    top: 100%;
     opacity: 0;
   }
 }
 
 @keyframes scanline-glow-sweep {
   0% {
-    top: -64px;
+    top: -4px;
     opacity: 0;
   }
-  8% {
+  4% {
     opacity: 1;
   }
-  88% {
-    opacity: 0.85;
+  95% {
+    opacity: 0.6;
   }
   100% {
     top: 100%;
