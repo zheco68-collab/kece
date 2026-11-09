@@ -70,9 +70,11 @@ export function createJudgeClusterState(intervalMs = 30000): JudgeClusterState {
       error.value = err instanceof Error ? err.message : '获取评测集群状态失败'
     } finally {
       inFlight = false
-      if (!isUnmounted && currentSeq === requestSeq) {
-        initialLoading.value = false
-        if (manual) loading.value = false
+      if (!isUnmounted) {
+        if (currentSeq === requestSeq) {
+          initialLoading.value = false
+        }
+        loading.value = false
       }
     }
   }

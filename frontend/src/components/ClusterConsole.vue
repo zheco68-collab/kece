@@ -83,7 +83,10 @@ function triggerScan() {
   })
 }
 
-function handleRefresh() {
+function handleRefresh(e?: Event) {
+  if (e) {
+    e.stopPropagation()
+  }
   triggerScan()
   cluster.refresh(true)
 }
@@ -244,11 +247,12 @@ const displayPools = computed<PoolSummary[]>(() => {
           </div>
 
           <button
+            type="button"
             class="refresh-btn"
             :class="{ 'is-loading': cluster.loading.value }"
-            :disabled="cluster.loading.value"
             title="手动刷新集群状态"
-            @click="handleRefresh"
+            aria-label="手动刷新集群状态"
+            @click.stop="handleRefresh"
           >
             <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
@@ -358,7 +362,6 @@ const displayPools = computed<PoolSummary[]>(() => {
   position: relative;
   overflow: hidden;
   user-select: none;
-  transform-style: preserve-3d;
   box-shadow:
     0 12px 32px -4px rgba(15, 23, 42, 0.08),
     0 4px 12px -2px rgba(15, 23, 42, 0.04),
@@ -385,7 +388,7 @@ const displayPools = computed<PoolSummary[]>(() => {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 10;
+  z-index: 5;
   mix-blend-mode: overlay;
 }
 
@@ -394,7 +397,7 @@ const displayPools = computed<PoolSummary[]>(() => {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 15;
+  z-index: 8;
   overflow: hidden;
 }
 
@@ -477,6 +480,8 @@ const displayPools = computed<PoolSummary[]>(() => {
 }
 
 .console-head {
+  position: relative;
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -547,20 +552,33 @@ const displayPools = computed<PoolSummary[]>(() => {
 }
 
 .refresh-btn {
-  background: transparent;
-  border: 1px solid var(--line, #e2e8f0);
-  padding: 4px;
-  display: flex;
+  position: relative;
+  z-index: 50;
+  pointer-events: auto;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  background: transparent;
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 4px;
   cursor: pointer;
   color: var(--ink-secondary, #64748b);
   transition: all 0.15s ease;
 }
 
-.refresh-btn:hover:not(:disabled) {
+.refresh-btn:hover {
   background: #f1f5f9;
   color: var(--ink, #0f172a);
+  border-color: #cbd5e1;
+}
+
+.refresh-btn:active {
+  transform: scale(0.92);
 }
 
 .refresh-btn.is-loading .refresh-icon {
@@ -570,6 +588,7 @@ const displayPools = computed<PoolSummary[]>(() => {
 .refresh-icon {
   width: 14px;
   height: 14px;
+  pointer-events: none;
 }
 
 @keyframes spin {
