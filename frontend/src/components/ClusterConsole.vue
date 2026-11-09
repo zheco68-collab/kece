@@ -26,7 +26,7 @@ function handleMouseMove(e: MouseEvent) {
 
   if (rAF) cancelAnimationFrame(rAF)
   rAF = requestAnimationFrame(() => {
-    const maxTilt = 7.5 // 最大倾角 7.5 度
+    const maxTilt = 14 // 最大倾角 14 度，3D 倾斜反馈显著清晰
     rotateX.value = Number((-normY * maxTilt).toFixed(2))
     rotateY.value = Number((normX * maxTilt).toFixed(2))
     glareX.value = Number(((x / rect.width) * 100).toFixed(1))
@@ -50,21 +50,21 @@ function handleMouseLeave() {
 const cardTransformStyle = computed(() => {
   if (!isHovered.value) {
     return {
-      transform: 'perspective(1200px) rotateX(0deg) rotateY(0deg) translateZ(0px)',
-      transition: 'transform 0.6s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.6s ease',
+      transform: 'perspective(1200px) rotateX(0deg) rotateY(0deg) translateY(0px) translateZ(0px) scale3d(1, 1, 1)',
+      transition: 'transform 0.5s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.5s ease, border-color 0.4s ease',
     }
   }
   return {
-    transform: `perspective(1200px) rotateX(${rotateX.value}deg) rotateY(${rotateY.value}deg) translateZ(10px)`,
-    transition: 'transform 0.08s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease',
+    transform: `perspective(1200px) rotateX(${rotateX.value}deg) rotateY(${rotateY.value}deg) translateY(-8px) translateZ(24px) scale3d(1.02, 1.02, 1.02)`,
+    transition: 'transform 0.08s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease',
   }
 })
 
 const glareStyle = computed(() => {
   return {
-    background: `radial-gradient(circle 360px at ${glareX.value}% ${glareY.value}%, rgba(255, 255, 255, 0.45), transparent 75%)`,
+    background: `radial-gradient(circle 380px at ${glareX.value}% ${glareY.value}%, rgba(255, 255, 255, 0.55), transparent 75%)`,
     opacity: isHovered.value ? '1' : '0',
-    transition: 'opacity 0.3s ease',
+    transition: 'opacity 0.25s ease',
   }
 })
 
@@ -352,7 +352,7 @@ const displayPools = computed<PoolSummary[]>(() => {
   width: 100%;
   background: #ffffff;
   border: 1px solid var(--line, #e2e8f0);
-  border-radius: 4px;
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -363,14 +363,21 @@ const displayPools = computed<PoolSummary[]>(() => {
     0 12px 32px -4px rgba(15, 23, 42, 0.08),
     0 4px 12px -2px rgba(15, 23, 42, 0.04),
     0 0 0 1px rgba(15, 23, 42, 0.02);
-  will-change: transform, box-shadow;
+  will-change: transform, box-shadow, border-color;
+  transition: border-color 0.3s ease;
 }
 
 .cluster-console.is-tilting {
+  border-color: rgba(34, 197, 94, 0.45);
   box-shadow:
-    0 24px 50px -8px rgba(15, 23, 42, 0.16),
-    0 12px 24px -4px rgba(15, 23, 42, 0.08),
-    0 0 0 1px rgba(34, 197, 94, 0.2);
+    0 28px 60px -10px rgba(15, 23, 42, 0.22),
+    0 14px 28px -4px rgba(15, 23, 42, 0.1),
+    0 0 24px 2px rgba(34, 197, 94, 0.22),
+    0 0 0 1px rgba(34, 197, 94, 0.35);
+}
+
+.cluster-console.is-scanning {
+  border-color: rgba(34, 197, 94, 0.6);
 }
 
 /* 3D 视差微光反射层 */
@@ -395,34 +402,37 @@ const displayPools = computed<PoolSummary[]>(() => {
   position: absolute;
   left: 0;
   right: 0;
-  height: 2px;
+  height: 3px;
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(34, 197, 94, 0.4) 15%,
-    #22c55e 50%,
-    rgba(34, 197, 94, 0.4) 85%,
+    rgba(34, 197, 94, 0.5) 15%,
+    #4ade80 45%,
+    #86efac 50%,
+    #4ade80 55%,
+    rgba(34, 197, 94, 0.5) 85%,
     transparent 100%
   );
   box-shadow:
-    0 0 10px 2px #22c55e,
-    0 0 20px 4px rgba(34, 197, 94, 0.6),
-    0 0 35px 6px rgba(34, 197, 94, 0.3);
-  animation: scanline-sweep 1.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    0 0 14px 3px #22c55e,
+    0 0 28px 6px rgba(34, 197, 94, 0.7),
+    0 0 45px 10px rgba(34, 197, 94, 0.4);
+  animation: scanline-sweep 1.35s cubic-bezier(0.35, 0, 0.25, 1) forwards;
 }
 
 .scanline-glow {
   position: absolute;
   left: 0;
   right: 0;
-  height: 60px;
+  height: 85px;
   background: linear-gradient(
     to top,
-    rgba(34, 197, 94, 0.15) 0%,
-    rgba(34, 197, 94, 0.04) 50%,
+    rgba(34, 197, 94, 0.35) 0%,
+    rgba(34, 197, 94, 0.15) 40%,
+    rgba(34, 197, 94, 0.04) 80%,
     transparent 100%
   );
-  animation: scanline-glow-sweep 1.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: scanline-glow-sweep 1.35s cubic-bezier(0.35, 0, 0.25, 1) forwards;
 }
 
 @keyframes scanline-sweep {
