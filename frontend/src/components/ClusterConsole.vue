@@ -1,9 +1,112 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useJudgeCluster } from '@/features/judging/composables/useJudgeCluster'
 import type { PoolSummary } from '@/api/system'
 
 const cluster = useJudgeCluster()
+
+// ---- 3D 悬浮与光标倾斜追踪 ----
+const cardRef = ref<HTMLElement | null>(null)
+const rotateX = ref(0)
+const rotateY = ref(0)
+const glareX = ref(50)
+const glareY = ref(50)
+const isHovered = ref(false)
+let rAF: number | null = null
+
+function handleMouseMove(e: MouseEvent) {
+  if (!cardRef.value) return
+  const rect = cardRef.value.getBoundingClientRect()
+  const x = e.clientX - rect.left
+  const y = e.clientY - rect.top
+  const centerX = rect.width / 2
+  const centerY = rect.height / 2
+  const normX = (x - centerX) / centerX
+  const normY = (y - centerY) / centerY
+
+  if (rAF) cancelAnimationFrame(rAF)
+  rAF = requestAnimationFrame(() => {
+    const maxTilt = 7.5 // 最大倾角 7.5 度
+    rotateX.value = Number((-normY * maxTilt).toFixed(2))
+    rotateY.value = Number((normX * maxTilt).toFixed(2))
+    glareX.value = Number(((x / rect.width) * 100).toFixed(1))
+    glareY.value = Number(((y / rect.height) * 100).toFixed(1))
+  })
+}
+
+function handleMouseEnter() {
+  isHovered.value = true
+}
+
+function handleMouseLeave() {
+  isHovered.value = false
+  if (rAF) cancelAnimationFrame(rAF)
+  rotateX.value = 0
+  rotateY.value = 0
+  glareX.value = 50
+  glareY.value = 50
+}
+
+const cardTransformStyle = computed(() => {
+  if (!isHovered.value) {
+    return {
+      transform: 'perspective(1200px) rotateX(0deg) rotateY(0deg) translateZ(0px)',
+      transition: 'transform 0.6s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.6s ease',
+    }
+  }
+  return {
+    transform: `perspective(1200px) rotateX(${rotateX.value}deg) rotateY(${rotateY.value}deg) translateZ(10px)`,
+    transition: 'transform 0.08s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease',
+  }
+})
+
+const glareStyle = computed(() => {
+  return {
+    background: `radial-gradient(circle 360px at ${glareX.value}% ${glareY.value}%, rgba(255, 255, 255, 0.45), transparent 75%)`,
+    opacity: isHovered.value ? '1' : '0',
+    transition: 'opacity 0.3s ease',
+  }
+})
+
+// ---- 绿色扫描线动画 ----
+const isScanning = ref(false)
+let scanTimer: ReturnType<typeof setTimeout> | null = null
+
+function triggerScan() {
+  isScanning.value = false
+  if (scanTimer) clearTimeout(scanTimer)
+  nextTick(() => {
+    isScanning.value = true
+    scanTimer = setTimeout(() => {
+      isScanning.value = false
+    }, 1400)
+  })
+}
+
+function handleRefresh() {
+  triggerScan()
+  cluster.refresh(true)
+}
+
+watch(
+  () => cluster.summary.value?.asOf,
+  (newVal) => {
+    if (newVal) {
+      triggerScan()
+    }
+  }
+)
+
+onMounted(() => {
+  setTimeout(() => {
+    triggerScan()
+  }, 350)
+})
+
+onBeforeUnmount(() => {
+  if (scanTimer) clearTimeout(scanTimer)
+  if (rAF) cancelAnimationFrame(rAF)
+})
 
 const totalPending = computed(() => {
   return cluster.pools.value.reduce((acc, p) => acc + (p.pendingJobs || 0), 0)
@@ -97,8 +200,27 @@ const displayPools = computed<PoolSummary[]>(() => {
 </script>
 
 <template>
-  <div class="cluster-console-wrapper">
-    <div class="cluster-console">
+  <div
+    class="cluster-console-wrapper"
+    @mousemove="handleMouseMove"
+    @mouseenter="handleMouseEnter"
+    @mouseleave="handleMouseLeave"
+  >
+    <div
+      ref="cardRef"
+      class="cluster-console"
+      :class="{ 'is-tilting': isHovered, 'is-scanning': isScanning }"
+      :style="cardTransformStyle"
+    >
+      <!-- 绿色扫描线动画 -->
+      <div v-if="isScanning" class="scanline-track" aria-hidden="true">
+        <div class="scanline-bar"></div>
+        <div class="scanline-glow"></div>
+      </div>
+
+      <!-- 3D 视差微光反射层 -->
+      <div class="glare-overlay" :style="glareStyle" aria-hidden="true"></div>
+
       <!-- 顶栏：系统指标与控制 -->
       <div class="console-head">
         <div class="head-left">
@@ -126,7 +248,7 @@ const displayPools = computed<PoolSummary[]>(() => {
             :class="{ 'is-loading': cluster.loading.value }"
             :disabled="cluster.loading.value"
             title="手动刷新集群状态"
-            @click="cluster.refresh(true)"
+            @click="handleRefresh"
           >
             <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
@@ -222,17 +344,129 @@ const displayPools = computed<PoolSummary[]>(() => {
   width: 100%;
   display: flex;
   position: relative;
+  perspective: 1200px;
+  transform-style: preserve-3d;
 }
 
 .cluster-console {
   width: 100%;
   background: #ffffff;
   border: 1px solid var(--line, #e2e8f0);
-  border-radius: 0;
+  border-radius: 4px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+  position: relative;
+  overflow: hidden;
   user-select: none;
+  transform-style: preserve-3d;
+  box-shadow:
+    0 12px 32px -4px rgba(15, 23, 42, 0.08),
+    0 4px 12px -2px rgba(15, 23, 42, 0.04),
+    0 0 0 1px rgba(15, 23, 42, 0.02);
+  will-change: transform, box-shadow;
+}
+
+.cluster-console.is-tilting {
+  box-shadow:
+    0 24px 50px -8px rgba(15, 23, 42, 0.16),
+    0 12px 24px -4px rgba(15, 23, 42, 0.08),
+    0 0 0 1px rgba(34, 197, 94, 0.2);
+}
+
+/* 3D 视差微光反射层 */
+.glare-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  mix-blend-mode: overlay;
+}
+
+/* 绿色扫描线动画层 */
+.scanline-track {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 15;
+  overflow: hidden;
+}
+
+.scanline-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(34, 197, 94, 0.4) 15%,
+    #22c55e 50%,
+    rgba(34, 197, 94, 0.4) 85%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 10px 2px #22c55e,
+    0 0 20px 4px rgba(34, 197, 94, 0.6),
+    0 0 35px 6px rgba(34, 197, 94, 0.3);
+  animation: scanline-sweep 1.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.scanline-glow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: linear-gradient(
+    to top,
+    rgba(34, 197, 94, 0.15) 0%,
+    rgba(34, 197, 94, 0.04) 50%,
+    transparent 100%
+  );
+  animation: scanline-glow-sweep 1.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes scanline-sweep {
+  0% {
+    top: -4px;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    top: calc(100% + 4px);
+    opacity: 0;
+  }
+}
+
+@keyframes scanline-glow-sweep {
+  0% {
+    top: -64px;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 0.85;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cluster-console {
+    transform: none !important;
+    transition: none !important;
+  }
+  .scanline-track {
+    display: none !important;
+  }
 }
 
 .console-head {
