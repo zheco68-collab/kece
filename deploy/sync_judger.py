@@ -109,17 +109,27 @@ def remote_api(ssh, control_url, method, path, body=None, token=None):
 
 def ensure_linux_binary(bin_path):
     bin_path = os.path.abspath(bin_path)
+    if os.path.isfile(bin_path) and os.path.getsize(bin_path) > 0:
+        return bin_path
     print(f"[*] 正在交叉编译当前源码到 {bin_path} ...")
     os.makedirs(os.path.dirname(bin_path), exist_ok=True)
-    env = os.environ.copy()
-    env.update({"GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0"})
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     judger_dir = os.path.join(repo_root, "judger")
-    subprocess.check_call(
-        ["go", "build", "-trimpath", "-ldflags=-s -w", "-o", bin_path, "./cmd/judger"],
-        cwd=judger_dir,
-        env=env,
-    )
+    go_cmd = shutil.which("go")
+    if go_cmd:
+        env = os.environ.copy()
+        env.update({"GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0"})
+        subprocess.check_call(
+            [go_cmd, "build", "-trimpath", "-ldflags=-s -w", "-o", bin_path, "./cmd/judger"],
+            cwd=judger_dir,
+            env=env,
+        )
+    else:
+        subprocess.check_call(
+            ["docker", "run", "--rm", "-v", f"{repo_root}:/workspace", "-w", "/workspace/judger",
+             "golang:1.22-alpine", "env", "GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0",
+             "go", "build", "-trimpath", "-ldflags=-s -w", "-o", "./bin/judger-linux-amd64", "./cmd/judger"]
+        )
     return bin_path
 
 
