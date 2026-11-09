@@ -3,20 +3,27 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"regexp"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/zheco68-collab/KECE/judger/internal/artifact"
+	"github.com/zheco68-collab/KECE/judger/internal/bootstrap"
 	"github.com/zheco68-collab/KECE/judger/internal/config"
 	"github.com/zheco68-collab/KECE/judger/internal/control"
+	"github.com/zheco68-collab/KECE/judger/internal/discovery"
 	"github.com/zheco68-collab/KECE/judger/internal/health"
+	"github.com/zheco68-collab/KECE/judger/internal/identity"
 	"github.com/zheco68-collab/KECE/judger/internal/judge"
 	"github.com/zheco68-collab/KECE/judger/internal/sandbox"
 	"github.com/zheco68-collab/KECE/judger/internal/worker"
@@ -35,6 +42,8 @@ func main() {
 }
 
 func runPool(ctx context.Context, cfg config.Config) error {
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
 	switch cfg.JudgePool {
 	case "cpp", "java", "python", "mysql", "arkts":
 	default:
@@ -52,6 +61,9 @@ func runPool(ctx context.Context, cfg config.Config) error {
 	if !bootIDPattern.MatchString(cfg.JudgeBootID) {
 		return fmt.Errorf("invalid JUDGE_BOOT_ID %q (must match [A-Za-z0-9_-]{16,64})", cfg.JudgeBootID)
 	}
+	if cfg.JudgeHostIdentityFile != "" && cfg.JudgeHealthAddr == "" {
+		return fmt.Errorf("JUDGE_HEALTH_ADDR is required when JUDGE_HOST_IDENTITY_FILE is set")
+	}
 
 	log.Printf("[judger] starting pool worker: pool=%s, control=%s, slots=%d",
 		cfg.JudgePool, cfg.JudgeControlURL, cfg.JudgeLocalSlots)
@@ -59,6 +71,17 @@ func runPool(ctx context.Context, cfg config.Config) error {
 	client, err := control.NewClient(cfg.JudgeControlURL, &http.Client{Timeout: 35 * time.Second})
 	if err != nil {
 		return fmt.Errorf("control client: %w", err)
+	}
+	var controlPlaneID atomic.Value
+	controlPlaneID.Store("")
+	var nodeIdentity *identity.Identity
+	if cfg.JudgeHostIdentityFile != "" {
+		id, identityErr := identity.LoadOrCreate(cfg.JudgeHostIdentityFile, cfg.JudgeNodeIdentityFile)
+		if identityErr != nil {
+			return fmt.Errorf("load node identity: %w", identityErr)
+		}
+		nodeIdentity = &id
+		go refreshControlPlaneID(ctx, client, &controlPlaneID)
 	}
 
 	cache, err := artifact.NewCache(cfg.JudgeArtifactCacheDir, cfg.JudgeArtifactCacheLimit)
@@ -100,7 +123,6 @@ func runPool(ctx context.Context, cfg config.Config) error {
 			ImagePython:     cfg.Images.Python,
 			ImageArkTS:      cfg.Images.ArkTS,
 		}
-		runner.PrewarmPool(ctx, cfg.JudgePool)
 		codeExec = judge.NewCode(runner, "")
 		image := map[string]string{
 			"cpp": cfg.Images.CPP, "java": cfg.Images.Java,
@@ -114,9 +136,43 @@ func runPool(ctx context.Context, cfg config.Config) error {
 		}
 	}
 
+	var bootstrapAttempt func(context.Context) (bool, error)
+	var migrationProof func(string, int64) *control.IdentityProof
+	if nodeIdentity != nil {
+		migrationProof = func(nodeID string, epoch int64) *control.IdentityProof {
+			controlID := controlPlaneID.Load().(string)
+			if !discovery.ValidControlPlaneID(controlID) || nodeID == "" || epoch < 1 {
+				return nil
+			}
+			message, err := json.Marshal(map[string]any{
+				"controlPlaneId": controlID, "nodeId": nodeID, "sessionEpoch": epoch,
+				"instanceId": nodeIdentity.InstanceID, "hostId": nodeIdentity.HostID,
+				"nodeKeyId": nodeIdentity.NodeKeyID,
+			})
+			if err != nil {
+				return nil
+			}
+			payload := base64.RawURLEncoding.EncodeToString(message)
+			return &control.IdentityProof{
+				PublicKey: nodeIdentity.PublicKey, Payload: payload,
+				Signature: base64.RawURLEncoding.EncodeToString(nodeIdentity.Sign([]byte("KECE-IDENTITY-MIGRATION-V1\n" + payload))),
+			}
+		}
+		binder := &bootstrap.Binder{
+			Identity: *nodeIdentity, ControlURL: client.BaseURL(), HTTPClient: client.HTTPClient(),
+			ControlPlaneID: func() string { return controlPlaneID.Load().(string) },
+			CredentialFile: cfg.JudgeCredentialFile, BootID: cfg.JudgeBootID,
+			Pool: cfg.JudgePool, RuntimeSpec: cfg.JudgeRuntimeSpec,
+			RuntimeVersion: cfg.JudgeRuntimeVersion, LocalSlots: cfg.JudgeLocalSlots,
+		}
+		bootstrapAttempt = binder.Try
+	}
 	w := worker.NewWorker(worker.Config{
 		Pool:              cfg.JudgePool,
 		EnrollmentCode:    cfg.JudgeEnrollmentCode,
+		AwaitConnection:   cfg.JudgeHostIdentityFile != "",
+		Bootstrap:         bootstrapAttempt,
+		MigrationProof:    migrationProof,
 		CredentialFile:    cfg.JudgeCredentialFile,
 		BootID:            cfg.JudgeBootID,
 		RuntimeSpec:       cfg.JudgeRuntimeSpec,
@@ -130,15 +186,76 @@ func runPool(ctx context.Context, cfg config.Config) error {
 	}, client, cache, codeExec, sqlExec, runner)
 
 	if cfg.JudgeHealthAddr != "" {
+		var discoveryHandler http.Handler
+		if cfg.JudgeHostIdentityFile != "" {
+			discoveryHandler = discovery.Handler(*nodeIdentity, func() string {
+				return controlPlaneID.Load().(string)
+			}, cfg.JudgeBootID, cfg.JudgePool, cfg.JudgeRuntimeSpec, cfg.JudgeRuntimeVersion,
+				cfg.JudgePool+"-1", cfg.JudgeLocalSlots, func() (string, string) {
+					status := w.HealthSnapshot()
+					if status.NodeID == "" {
+						return "UNBOUND", "CHECKING"
+					}
+					if status.Healthy {
+						return "BOUND", "READY"
+					}
+					return "BOUND", "UNHEALTHY"
+				})
+		}
+		done, listenErr := health.Start(ctx, cfg.JudgeHealthAddr, w.HealthSnapshot, discoveryHandler)
+		if listenErr != nil {
+			return fmt.Errorf("node API listener: %w", listenErr)
+		}
+		log.Printf("[judger] node API listening on %s", cfg.JudgeHealthAddr)
 		go func() {
-			log.Printf("[judger] internal /healthz listening on %s", cfg.JudgeHealthAddr)
-			if err := health.Serve(ctx, cfg.JudgeHealthAddr, w.HealthSnapshot); err != nil {
-				log.Printf("[judger] health server stopped: %v", err)
+			if serveErr := <-done; serveErr != nil {
+				log.Printf("[judger] node API stopped: %v", serveErr)
+				stop()
 			}
 		}()
 	}
+	if runner != nil {
+		runner.PrewarmPool(ctx, cfg.JudgePool)
+	}
 
 	return w.Run(ctx)
+}
+
+func refreshControlPlaneID(ctx context.Context, client *control.Client, saved *atomic.Value) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		request, err := http.NewRequestWithContext(probeCtx, http.MethodGet,
+			client.BaseURL()+"/internal/judgers/bootstrap/context", nil)
+		if err == nil {
+			var response *http.Response
+			response, err = client.HTTPClient().Do(request)
+			if err == nil {
+				var result struct {
+					ControlPlaneID string `json:"controlPlaneId"`
+				}
+				if response.StatusCode == http.StatusOK {
+					err = json.NewDecoder(io.LimitReader(response.Body, 1024)).Decode(&result)
+				}
+				_ = response.Body.Close()
+				if err == nil && response.StatusCode == http.StatusOK {
+					if current := saved.Load().(string); current == "" &&
+						discovery.ValidControlPlaneID(result.ControlPlaneID) {
+						saved.Store(result.ControlPlaneID)
+					} else if current != "" && current != result.ControlPlaneID {
+						log.Printf("[judger] control plane identity changed; keeping the original identity")
+					}
+				}
+			}
+		}
+		cancel()
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func runSQLOrphanJanitor(ctx context.Context, sqlExec *judge.SQLJudge) {

@@ -28,7 +28,15 @@ type Provider func() Status
 
 // Handler 返回仅开放 GET /healthz 的只读 HTTP Handler。
 func Handler(provider Provider) http.Handler {
+	return HandlerWithDiscovery(provider, nil)
+}
+
+// HandlerWithDiscovery keeps health and discovery on one port without changing health semantics.
+func HandlerWithDiscovery(provider Provider, discovery http.Handler) http.Handler {
 	mux := http.NewServeMux()
+	if discovery != nil {
+		mux.Handle("/v1/node/info", discovery)
+	}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
@@ -50,12 +58,25 @@ func Handler(provider Provider) http.Handler {
 
 // Serve 启动内网健康探测监听并在 ctx 取消时优雅关闭。
 func Serve(ctx context.Context, addr string, provider Provider) error {
-	ln, err := net.Listen("tcp", addr)
+	return ServeWithDiscovery(ctx, addr, provider, nil)
+}
+
+func ServeWithDiscovery(ctx context.Context, addr string, provider Provider, discovery http.Handler) error {
+	done, err := Start(ctx, addr, provider, discovery)
 	if err != nil {
 		return err
 	}
+	return <-done
+}
+
+// Start binds synchronously, so a failed API listener cannot be mistaken for a running worker.
+func Start(ctx context.Context, addr string, provider Provider, discovery http.Handler) (<-chan error, error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
 	srv := &http.Server{
-		Handler:           Handler(provider),
+		Handler:           HandlerWithDiscovery(provider, discovery),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      5 * time.Second,
@@ -67,9 +88,13 @@ func Serve(ctx context.Context, addr string, provider Provider) error {
 		defer cancel()
 		_ = srv.Shutdown(shutCtx)
 	}()
-	err = srv.Serve(ln)
-	if err == http.ErrServerClosed {
-		return nil
-	}
-	return err
+	done := make(chan error, 1)
+	go func() {
+		err := srv.Serve(ln)
+		if err == http.ErrServerClosed {
+			err = nil
+		}
+		done <- err
+	}()
+	return done, nil
 }

@@ -47,6 +47,8 @@ type Config struct {
 	JudgeArtifactCacheLimit int64
 	JudgeHeartbeatInterval  time.Duration
 	JudgeHealthAddr         string
+	JudgeHostIdentityFile   string
+	JudgeNodeIdentityFile   string
 }
 
 // Load 从环境变量读取配置，未设置时使用默认值。
@@ -96,6 +98,8 @@ func Load() Config {
 		JudgeArtifactCacheLimit: int64(getenvInt("JUDGE_ARTIFACT_CACHE_LIMIT_MB", 1024)) * 1024 * 1024,
 		JudgeHeartbeatInterval:  time.Duration(getenvInt("JUDGE_HEARTBEAT_INTERVAL_SECONDS", 10)) * time.Second,
 		JudgeHealthAddr:         getenv("JUDGE_HEALTH_ADDR", ""),
+		JudgeHostIdentityFile:   getenv("JUDGE_HOST_IDENTITY_FILE", ""),
+		JudgeNodeIdentityFile:   getenv("JUDGE_IDENTITY_FILE", filepath.Join(filepath.Dir(getenv("JUDGE_CREDENTIAL_FILE", filepath.Join(defaultWs, "credential.json"))), "identity.json")),
 	}
 }
 

@@ -22,9 +22,14 @@ import (
 
 const maxClaimSlots = 16
 
+var ErrAwaitingConnection = errors.New("waiting for administrator API connection")
+
 type Config struct {
 	Pool              string
 	EnrollmentCode    string
+	AwaitConnection   bool
+	Bootstrap         func(context.Context) (bool, error)
+	MigrationProof    func(nodeID string, epoch int64) *control.IdentityProof
 	CredentialFile    string
 	BootID            string
 	RuntimeSpec       string
@@ -148,10 +153,34 @@ func (w *Worker) Authenticate(ctx context.Context) error {
 			log.Printf("[worker] resumed session for node %s (epoch %d)", sess.NodeID, sess.SessionEpoch)
 			return nil
 		}
-		log.Printf("[worker] session resumption failed: %v, attempting re-join if enrollment code present", err)
+		if w.cfg.AwaitConnection && errors.Is(err, control.ErrUnauthorized) {
+			if removeErr := os.Remove(w.cfg.CredentialFile); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				return fmt.Errorf("remove revoked credential: %w", removeErr)
+			}
+			w.client.SetCredentials("", "", 0)
+			hasCred = false
+		} else {
+			log.Printf("[worker] session resumption failed: %v", err)
+		}
+		if w.cfg.AwaitConnection && w.cfg.EnrollmentCode == "" {
+			if hasCred {
+				return ErrAwaitingConnection
+			}
+		}
 	}
 
 	if w.cfg.EnrollmentCode == "" {
+		if w.cfg.AwaitConnection {
+			if w.cfg.Bootstrap != nil {
+				ready, err := w.cfg.Bootstrap(ctx)
+				if err != nil {
+					log.Printf("[worker] API bootstrap waiting: %v", err)
+				} else if ready {
+					return w.Authenticate(ctx)
+				}
+			}
+			return ErrAwaitingConnection
+		}
 		return fmt.Errorf("no valid credentials in %s and no enrollment code provided", w.cfg.CredentialFile)
 	}
 
@@ -177,8 +206,17 @@ func (w *Worker) Authenticate(ctx context.Context) error {
 }
 
 func (w *Worker) Run(ctx context.Context) error {
-	if err := w.Authenticate(ctx); err != nil {
-		return err
+	for {
+		if err := w.Authenticate(ctx); err == nil {
+			break
+		} else if !errors.Is(err, ErrAwaitingConnection) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(5 * time.Second):
+		}
 	}
 
 	claimCtx, stopClaims := context.WithCancel(ctx)
@@ -344,12 +382,17 @@ func (w *Worker) doHeartbeat(ctx, checkCtx context.Context) error {
 	report := w.lastCheck
 	w.checkMu.Unlock()
 
+	var proof *control.IdentityProof
+	if w.cfg.MigrationProof != nil {
+		proof = w.cfg.MigrationProof(w.client.NodeID(), w.client.Epoch())
+	}
 	hb, err := w.client.Heartbeat(ctx, control.HeartbeatRequest{
 		RuntimeSpec:    w.cfg.RuntimeSpec,
 		RuntimeVersion: w.cfg.RuntimeVersion,
 		LocalSlots:     w.cfg.LocalSlots,
 		Healthy:        w.healthy.Load(),
 		CheckResult:    report,
+		Identity:       proof,
 	})
 	if err != nil {
 		var protocolError *control.ProtocolError

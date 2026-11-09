@@ -7,6 +7,7 @@ import com.kece.common.security.RequireRole;
 import com.kece.common.security.Role;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,9 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class JudgeAdminController {
     private final JudgeNodes nodes;
-    private final JudgeEndpointProbe endpointProbe;
     private final JudgeRouteService routeService;
     private final JudgeReconciliationService reconciliationService;
+    private final JudgeConnections connections;
+    @Value("${kece.judging.legacy-admin-enrollment-enabled:false}")
+    private boolean legacyAdminEnrollmentEnabled;
 
     record HostRequest(String name, int maxSlots) {}
 
@@ -38,6 +42,30 @@ public class JudgeAdminController {
 
     record Revision(long revision) {}
 
+    record ConnectRequest(String apiUrl) {}
+
+    @PostMapping("/admin/judgers/connections")
+    public ApiResponse<JudgeConnections.ConnectionView> connect(
+            @RequestBody ConnectRequest body,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ApiResponse.success(connections.request(body.apiUrl(), idempotencyKey));
+    }
+
+    @GetMapping("/admin/judgers/connections")
+    public ApiResponse<List<JudgeConnections.ConnectionView>> connections() {
+        return ApiResponse.success(connections.list());
+    }
+
+    @GetMapping("/admin/judgers/connections/{id}")
+    public ApiResponse<JudgeConnections.ConnectionView> connection(@PathVariable long id) {
+        return ApiResponse.success(connections.get(id));
+    }
+
+    @PostMapping("/admin/judgers/connections/{id}/cancel")
+    public ApiResponse<JudgeConnections.ConnectionView> cancelConnection(@PathVariable long id) {
+        return ApiResponse.success(connections.cancel(id));
+    }
+
     @GetMapping("/admin/judge-host-groups")
     public ApiResponse<List<JudgeNodes.HostView>> hosts() {
         return ApiResponse.success(nodes.hosts());
@@ -45,6 +73,7 @@ public class JudgeAdminController {
 
     @PostMapping("/admin/judge-host-groups")
     public ApiResponse<JudgeNodes.HostView> host(@RequestBody HostRequest body) {
+        requireLegacyEnrollment();
         return ApiResponse.success(nodes.createHost(body.name(), body.maxSlots()));
     }
 
@@ -69,6 +98,7 @@ public class JudgeAdminController {
     @PostMapping("/admin/judgers")
     public ResponseEntity<ApiResponse<JudgeNodes.Enrollment>> register(
             @RequestBody RegisterRequest body) {
+        requireLegacyEnrollment();
         long host;
         try {
             host = JudgeNodes.parseId(body.hostGroupId());
@@ -89,13 +119,13 @@ public class JudgeAdminController {
     @PostMapping("/admin/judgers/{id}/checks")
     public ApiResponse<JudgeNodes.CheckView> check(@PathVariable long id) {
         var node = nodes.find(id, false);
-        endpointProbe.verify(node);
         return ApiResponse.success(nodes.requestCheck(node));
     }
 
     @PostMapping("/admin/judgers/{id}/enrollment")
     public ResponseEntity<ApiResponse<JudgeNodes.Enrollment>> reset(
             @PathVariable long id, @RequestBody Revision body) {
+        requireLegacyEnrollment();
         return secret(nodes.reset(id, body.revision()));
     }
 
@@ -143,5 +173,11 @@ public class JudgeAdminController {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .body(ApiResponse.success(enrollment));
+    }
+
+    private void requireLegacyEnrollment() {
+        if (!legacyAdminEnrollmentEnabled) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "评测机只能通过 API 地址接入");
+        }
     }
 }

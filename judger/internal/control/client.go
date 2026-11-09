@@ -132,11 +132,19 @@ type CheckReport struct {
 }
 
 type HeartbeatRequest struct {
-	RuntimeSpec    string       `json:"runtimeSpec"`
-	RuntimeVersion string       `json:"runtimeVersion"`
-	LocalSlots     int          `json:"localSlots"`
-	Healthy        bool         `json:"healthy"`
-	CheckResult    *CheckReport `json:"checkResult,omitempty"`
+	RuntimeSpec    string         `json:"runtimeSpec"`
+	RuntimeVersion string         `json:"runtimeVersion"`
+	LocalSlots     int            `json:"localSlots"`
+	Healthy        bool           `json:"healthy"`
+	CheckResult    *CheckReport   `json:"checkResult,omitempty"`
+	Identity       *IdentityProof `json:"identity,omitempty"`
+}
+
+// IdentityProof binds a durable instance key to an already authenticated legacy node.
+type IdentityProof struct {
+	PublicKey string `json:"publicKey"`
+	Payload   string `json:"payload"`
+	Signature string `json:"signature"`
 }
 
 type CheckDirective struct {

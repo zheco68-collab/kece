@@ -28,6 +28,7 @@ public class JudgeNodes {
             """;
     private final JdbcTemplate db;
     private final JudgeEndpointProbe endpointProbe;
+    private final JudgeIdentityMigration identityMigration;
 
     record Access(long nodeId, String hash, long epoch) {}
 
@@ -71,6 +72,15 @@ public class JudgeNodes {
             String runtimeSpec) {}
 
     public record Heartbeat(String state, long revision, int maxSlots, CheckDirective check) {}
+
+    private record ConnectionCheck(
+            long id,
+            long expectedRevision,
+            String credentialDigest,
+            String status,
+            Long checkId,
+            Long checkSessionEpoch,
+            String checkRuntimeVersion) {}
 
     public record CheckDirective(String checkId, long remainingMs) {}
 
@@ -293,6 +303,9 @@ public class JudgeNodes {
                 WHERE id=?
                 """,
                 id);
+        db.update("UPDATE judge_node_identity SET revoked_at=UTC_TIMESTAMP(6),binding_generation=binding_generation+1 WHERE node_id=?", id);
+        db.update("UPDATE judge_node_connection SET status='CANCELLED',active_instance_id=NULL,finished_at=UTC_TIMESTAMP(6),updated_at=UTC_TIMESTAMP(6) WHERE node_id=? AND status IN ('WAITING_BIND','WAITING_HEARTBEAT','CHECKING')", id);
+        db.update("UPDATE judge_node_endpoint SET active_connection_id=NULL,updated_at=UTC_TIMESTAMP(6) WHERE node_id=?", id);
         audit(id, "REVOKE", revision + 1);
     }
 
@@ -404,10 +417,12 @@ public class JudgeNodes {
             String version,
             int slots,
             boolean healthy,
-            CheckReport report) {
+            CheckReport report,
+            JudgeIdentityMigration.Proof identity) {
         Node hint = find(access.nodeId(), false);
         int capacity = hostSlots(hint.host());
         Node n = lock(access, true);
+        identityMigration.accept(n.id(), n.host(), n.epoch(), identity);
         if (!n.runtime().equals(runtime)
                 || version == null
                 || !version.matches("[A-Za-z0-9._+-]{1,100}")
@@ -448,11 +463,125 @@ public class JudgeNodes {
                 version,
                 verified,
                 n.id());
+        ConnectionCheck onboarding = connectionCheck(n.id());
+        String effectiveState = n.state();
+        long effectiveRevision = n.revision();
+        if (onboarding != null && report != null && onboarding.checkId() != null
+                && onboarding.checkId() == parseId(report.checkId())
+                && "CHECKING".equals(onboarding.status())) {
+            boolean matches =
+                    onboarding.expectedRevision() == n.revision()
+                            && Objects.equals(onboarding.credentialDigest(), n.hash())
+                            && Objects.equals(onboarding.checkSessionEpoch(), n.epoch())
+                            && Objects.equals(onboarding.checkRuntimeVersion(), version)
+                            && "PENDING_VERIFICATION".equals(n.state());
+            if (matches && report.passed() && healthy) {
+                db.update(
+                        "UPDATE judge_node SET state='ENABLED',revision=revision+1 WHERE id=?",
+                        n.id());
+                db.update(
+                        "UPDATE judge_node_connection SET status='SUCCEEDED',active_instance_id=NULL,finished_at=UTC_TIMESTAMP(6),updated_at=UTC_TIMESTAMP(6) WHERE id=? AND status='CHECKING'",
+                        onboarding.id());
+                db.update(
+                        "UPDATE judge_node_endpoint SET active_connection_id=NULL,updated_at=UTC_TIMESTAMP(6) WHERE active_connection_id=?",
+                        onboarding.id());
+                systemAudit(n.id(), "API_ENABLE", n.revision() + 1);
+                effectiveState = "ENABLED";
+                effectiveRevision++;
+            } else {
+                failConnection(onboarding.id(), report.passed() ? "CONFIG_CHANGED" : "SELF_CHECK_FAILED", report.detail());
+            }
+        }
+        if (healthy && !verified) {
+            ensureRuntimeCheck(n, version, capacity, onboarding);
+        }
         CheckDirective check = null;
-        if (healthy && !"DISABLED".equals(n.state()) && !"DRAINING".equals(n.state())) {
+        if (healthy && !"DISABLED".equals(effectiveState) && !"DRAINING".equals(effectiveState)) {
             check = directive(n, version, capacity);
         }
-        return new Heartbeat(n.state(), n.revision(), Math.min(slots, n.maxSlots()), check);
+        return new Heartbeat(effectiveState, effectiveRevision, Math.min(slots, n.maxSlots()), check);
+    }
+
+    private ConnectionCheck connectionCheck(long nodeId) {
+        return db.query(
+                        "SELECT id,expected_node_revision,credential_digest,status,check_id,check_session_epoch,check_runtime_version "
+                                + "FROM judge_node_connection WHERE node_id=? AND status IN ('WAITING_HEARTBEAT','CHECKING') AND expires_at>UTC_TIMESTAMP(6) ORDER BY id DESC LIMIT 1 FOR UPDATE",
+                        (r, row) ->
+                                new ConnectionCheck(
+                                        r.getLong(1),
+                                        r.getLong(2),
+                                        r.getString(3),
+                                        r.getString(4),
+                                        (Long) r.getObject(5),
+                                        (Long) r.getObject(6),
+                                        r.getString(7)),
+                        nodeId)
+                .stream()
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void ensureRuntimeCheck(Node n, String version, int capacity, ConnectionCheck onboarding) {
+        boolean firstConnection =
+                onboarding != null && "WAITING_HEARTBEAT".equals(onboarding.status());
+        if (!firstConnection && !"ENABLED".equals(n.state())) {
+            return;
+        }
+        if (firstConnection
+                && (onboarding.expectedRevision() != n.revision()
+                        || !Objects.equals(onboarding.credentialDigest(), n.hash()))) {
+            failConnection(onboarding.id(), "CONFIG_CHANGED", null);
+            return;
+        }
+        if (n.epoch() < 1
+                || n.hash() == null
+                || running(n.id()) > 0
+                || checking(n.id()) > 0
+                || hostUsed(n.host()) >= capacity
+                || db.queryForObject(
+                                "SELECT COUNT(*) FROM judge_node_check WHERE node_id=? AND session_epoch=? AND runtime_version=?",
+                                Integer.class,
+                                n.id(),
+                                n.epoch(),
+                                version)
+                        > 0) {
+            return;
+        }
+        long checkId =
+                insert(
+                        "INSERT INTO judge_node_check (node_id,session_epoch,runtime_version,expires_at,created_at) "
+                                + "VALUES (?,?,?,UTC_TIMESTAMP(6)+INTERVAL 5 MINUTE,UTC_TIMESTAMP(6))",
+                        n.id(),
+                        n.epoch(),
+                        version);
+        if (firstConnection) {
+            db.update(
+                    "UPDATE judge_node_connection SET status='CHECKING',check_id=?,check_session_epoch=?,check_runtime_version=?,updated_at=UTC_TIMESTAMP(6) WHERE id=? AND status='WAITING_HEARTBEAT'",
+                    checkId,
+                    n.epoch(),
+                    version,
+                    onboarding.id());
+        }
+        systemAudit(n.id(), firstConnection ? "API_SELF_TEST" : "AUTO_RECHECK", n.revision());
+    }
+
+    private void failConnection(long id, String code, String detail) {
+        db.update(
+                "UPDATE judge_node_connection SET status='FAILED',error_code=?,error_detail=?,active_instance_id=NULL,finished_at=UTC_TIMESTAMP(6),updated_at=UTC_TIMESTAMP(6) WHERE id=? AND status IN ('WAITING_HEARTBEAT','CHECKING')",
+                code,
+                detail,
+                id);
+        db.update(
+                "UPDATE judge_node_endpoint SET active_connection_id=NULL,updated_at=UTC_TIMESTAMP(6) WHERE active_connection_id=?",
+                id);
+    }
+
+    private void systemAudit(long nodeId, String action, long revision) {
+        db.update(
+                "INSERT INTO judge_node_audit (node_id,actor_id,action,revision,created_at) VALUES (?,0,?,?,UTC_TIMESTAMP(6))",
+                nodeId,
+                action,
+                revision);
     }
 
     private CheckDirective directive(Node n, String version, int capacity) {
