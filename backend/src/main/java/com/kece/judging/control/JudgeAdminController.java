@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -83,6 +84,12 @@ public class JudgeAdminController {
         return ApiResponse.success();
     }
 
+    @DeleteMapping("/admin/judge-host-groups/{id}")
+    public ApiResponse<Void> deleteHost(@PathVariable long id) {
+        nodes.deleteHost(id);
+        return ApiResponse.success();
+    }
+
     @GetMapping("/admin/judgers")
     public ApiResponse<List<JudgeNodes.NodeView>> list(
             @RequestParam(defaultValue = "0") long afterId,
@@ -132,6 +139,12 @@ public class JudgeAdminController {
     @PostMapping("/admin/judgers/{id}/revoke")
     public ApiResponse<Void> revoke(@PathVariable long id, @RequestBody Revision body) {
         nodes.revoke(id, body.revision());
+        return ApiResponse.success();
+    }
+
+    @DeleteMapping("/admin/judgers/{id}")
+    public ApiResponse<Void> deleteNode(@PathVariable long id) {
+        nodes.deleteNode(id);
         return ApiResponse.success();
     }
 

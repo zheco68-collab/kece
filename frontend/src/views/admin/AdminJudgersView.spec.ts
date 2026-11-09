@@ -126,4 +126,48 @@ describe('AdminJudgersView.vue', () => {
     await flushPromises()
     expect(connect).toHaveBeenCalledWith('http://10.20.0.15:19091', expect.any(String))
   })
+
+  it('点击删除节点触发确认并调用 deleteNode', async () => {
+    const deleteSpy = vi.spyOn(judgersApi, 'deleteNode').mockResolvedValue(undefined as unknown as void)
+    const wrapper = mount(AdminJudgersView)
+    await flushPromises()
+
+    const disclosure = wrapper.get('.actions-disclosure')
+    await disclosure.get('summary').trigger('click')
+    const deleteBtn = disclosure.findAll('button').find((b) => b.text().includes('删除节点'))!
+    await deleteBtn.trigger('click')
+    await flushPromises()
+
+    expect(deleteSpy).toHaveBeenCalledWith('1')
+  })
+
+  it('宿主机弹窗支持删除空分组并禁用有节点的分组', async () => {
+    const deleteHostSpy = vi.spyOn(judgersApi, 'deleteHostGroup').mockResolvedValue(undefined as unknown as void)
+    const mockEmptyHosts: HostGroupView[] = [
+      { id: '1', name: 'host-with-nodes', maxSlots: 4, revision: 1, nodeCount: 2 },
+      { id: '2', name: 'host-empty', maxSlots: 2, revision: 1, nodeCount: 0 },
+    ]
+    vi.spyOn(judgersApi, 'getHostGroups').mockResolvedValue(mockEmptyHosts)
+
+    const wrapper = mount(AdminJudgersView)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('宿主机额度'))!.trigger('click')
+    await flushPromises()
+
+    const rows = wrapper.findAll('.record-table tbody tr')
+    expect(rows).toHaveLength(2)
+
+    // First row has nodeCount: 2 -> delete button is disabled
+    const firstDelete = rows[0].get('.btn-delete')
+    expect(firstDelete.attributes('disabled')).toBeDefined()
+
+    // Second row has nodeCount: 0 -> delete button is enabled
+    const secondDelete = rows[1].get('.btn-delete')
+    expect(secondDelete.attributes('disabled')).toBeUndefined()
+    await secondDelete.trigger('click')
+    await flushPromises()
+
+    expect(deleteHostSpy).toHaveBeenCalledWith('2')
+  })
 })

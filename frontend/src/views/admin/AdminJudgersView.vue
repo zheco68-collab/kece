@@ -327,6 +327,26 @@ async function handleRevoke(node: JudgeNodeView) {
   }
 }
 
+// ---- 删除节点 ----
+async function handleDeleteNode(node: JudgeNodeView) {
+  openActions.value = null
+  const ok = await confirm({
+    title: '删除评测节点',
+    message: `确定彻底删除评测节点「${node.name}」吗？关联的凭据与接入记录将被移除。如果该实例仍在运行，请先在评测机上停止服务。`,
+    confirmText: '删除节点',
+    danger: true,
+  })
+  if (!ok) return
+
+  try {
+    await judgersApi.deleteNode(node.nodeId)
+    toast.success('评测节点已成功删除')
+    await loadData()
+  } catch (err: unknown) {
+    toast.error(err instanceof ApiError ? err.message : '删除评测节点失败')
+  }
+}
+
 // ---- 详情抽屉/弹窗 ----
 const showDetailModal = ref(false)
 const detailLoading = ref(false)
@@ -374,6 +394,34 @@ async function saveHostBudget(host: HostGroupView) {
     hostSlotsDraft.value = Object.fromEntries(hostGroups.value.map((item) => [item.id, item.maxSlots]))
   } catch (err: unknown) {
     hostError.value = err instanceof ApiError ? err.message : '更新宿主机额度失败'
+  } finally {
+    hostSubmitting.value = false
+  }
+}
+
+async function handleDeleteHost(host: HostGroupView) {
+  if (host.nodeCount && host.nodeCount > 0) {
+    toast.error(`该分组下仍有 ${host.nodeCount} 个评测节点，请先删除节点后再删除分组`)
+    return
+  }
+  const ok = await confirm({
+    title: '删除宿主机分组',
+    message: `确定要删除宿主机分组「${host.name}」吗？`,
+    confirmText: '删除分组',
+    danger: true,
+  })
+  if (!ok) return
+
+  hostSubmitting.value = true
+  hostError.value = ''
+  try {
+    await judgersApi.deleteHostGroup(host.id)
+    toast.success('宿主机分组已删除')
+    hostGroups.value = await judgersApi.getHostGroups()
+    hostSlotsDraft.value = Object.fromEntries(hostGroups.value.map((item) => [item.id, item.maxSlots]))
+    await loadData()
+  } catch (err: unknown) {
+    hostError.value = err instanceof ApiError ? err.message : '删除宿主机分组失败'
   } finally {
     hostSubmitting.value = false
   }
@@ -524,6 +572,7 @@ async function saveHostBudget(host: HostGroupView) {
                     <button class="action-btn" @click="handleCheck(row)">发起自检</button>
                     <button class="action-btn" @click="openEditModal(row)">调整配置</button>
                     <button v-if="row.state !== 'DISABLED'" class="action-btn btn-danger" @click="handleRevoke(row)">注销节点凭据</button>
+                    <button class="action-btn btn-danger" @click="handleDeleteNode(row)">删除节点</button>
                   </div>
                 </details>
               </div>
@@ -773,6 +822,7 @@ async function saveHostBudget(host: HostGroupView) {
                   <th>GROUP ID</th>
                   <th>分组名称</th>
                   <th>共享槽位</th>
+                  <th>关联节点</th>
                   <th>版本号</th>
                   <th>操作</th>
                 </tr>
@@ -782,8 +832,21 @@ async function saveHostBudget(host: HostGroupView) {
                   <td>{{ h.id }}</td>
                   <td class="font-bold">{{ h.name }}</td>
                   <td><input v-model.number="hostSlotsDraft[h.id]" type="number" min="1" max="256" class="form-input mono slots-input" :aria-label="`${h.name} 共享槽位`" /></td>
+                  <td><span class="count-tag" :class="{ 'count-empty': !h.nodeCount }">{{ h.nodeCount ?? 0 }} 台</span></td>
                   <td>REV: {{ h.revision }}</td>
-                  <td><button class="btn btn-outline" :disabled="hostSubmitting || hostSlotsDraft[h.id] === h.maxSlots" @click="saveHostBudget(h)">保存</button></td>
+                  <td>
+                    <div class="host-actions">
+                      <button class="btn btn-outline" :disabled="hostSubmitting || hostSlotsDraft[h.id] === h.maxSlots" @click="saveHostBudget(h)">保存</button>
+                      <button
+                        class="btn btn-outline btn-delete"
+                        :disabled="hostSubmitting || (h.nodeCount != null && h.nodeCount > 0)"
+                        :title="h.nodeCount && h.nodeCount > 0 ? '分组下存在关联节点，请先删除节点' : '删除宿主机分组'"
+                        @click="handleDeleteHost(h)"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1193,5 +1256,30 @@ async function saveHostBudget(host: HostGroupView) {
 
 .error-text {
   color: #b91c1c;
+}
+
+.host-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-delete {
+  color: #c53030 !important;
+  border-color: #feb2b2 !important;
+}
+
+.btn-delete:hover:not(:disabled) {
+  background: #fff5f5 !important;
+  border-color: #fc8181 !important;
+}
+
+.btn-delete:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.count-empty {
+  color: var(--ink-secondary, #94a3b8) !important;
 }
 </style>

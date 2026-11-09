@@ -421,4 +421,41 @@ class JudgeControlIntegrationTest extends AbstractIntegrationTest {
     private static String random() {
         return UUID.randomUUID().toString();
     }
+
+    @Test
+    void canDeleteJudgeNodeAndHostGroup() throws Exception {
+        String admin = loginToken("admin", "admin123");
+        String hostId = host(admin);
+        Node node = ready(admin, hostId, "python");
+
+        // Trying to delete host when it still has nodes should fail
+        var failHost =
+                mockMvc.perform(
+                                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                                                "/admin/judge-host-groups/" + hostId)
+                                        .header("Authorization", "Bearer " + admin))
+                        .andExpect(status().isOk())
+                        .andReturn();
+        assertThat(code(failHost)).isEqualTo(4001);
+
+        // Delete the node
+        var deleteNode =
+                mockMvc.perform(
+                                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                                                "/admin/judgers/" + node.id())
+                                        .header("Authorization", "Bearer " + admin))
+                        .andExpect(status().isOk())
+                        .andReturn();
+        assertThat(code(deleteNode)).isEqualTo(200);
+
+        // Now delete the empty host group
+        var deleteHost =
+                mockMvc.perform(
+                                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                                                "/admin/judge-host-groups/" + hostId)
+                                        .header("Authorization", "Bearer " + admin))
+                        .andExpect(status().isOk())
+                        .andReturn();
+        assertThat(code(deleteHost)).isEqualTo(200);
+    }
 }

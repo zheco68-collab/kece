@@ -5,6 +5,7 @@ export interface HostGroupView {
   name: string
   maxSlots: number
   revision: number
+  nodeCount?: number
 }
 
 export interface JudgeNodeView {
@@ -85,6 +86,8 @@ export const judgersApi = {
   getHostGroups: () => http.get<HostGroupView[]>('/admin/judge-host-groups'),
   updateHostGroup: (id: string | number, data: UpdateHostGroupRequest) =>
     http.patch<void>(`/admin/judge-host-groups/${id}`, data),
+  deleteHostGroup: (id: string | number) =>
+    http.delete<void>(`/admin/judge-host-groups/${id}`),
 
   // 评测节点管理
   getNodes: (params?: { afterId?: string | number; limit?: number }) =>
@@ -103,4 +106,6 @@ export const judgersApi = {
     http.post<JudgeCheckView>(`/admin/judgers/${id}/checks`),
   revokeNode: (id: string | number, revision: number) =>
     http.post<void>(`/admin/judgers/${id}/revoke`, { revision }),
+  deleteNode: (id: string | number) =>
+    http.delete<void>(`/admin/judgers/${id}`),
 }

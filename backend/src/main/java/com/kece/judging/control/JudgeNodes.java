@@ -52,7 +52,11 @@ public class JudgeNodes {
             String baseUrl,
             LocalDateTime heartbeatAt) {}
 
-    public record HostView(String id, String name, int maxSlots, long revision) {}
+    public record HostView(String id, String name, int maxSlots, long revision, int nodeCount) {
+        public HostView(String id, String name, int maxSlots, long revision) {
+            this(id, name, maxSlots, revision, 0);
+        }
+    }
 
     public record Enrollment(String nodeId, String enrollmentCode, int expiresInSeconds) {}
 
@@ -121,13 +125,47 @@ public class JudgeNodes {
 
     public List<HostView> hosts() {
         return db.query(
-                "SELECT * FROM judge_host_group ORDER BY id LIMIT 256",
+                """
+                SELECT g.id, g.name, g.max_slots, g.revision, COUNT(n.id) AS node_count
+                FROM judge_host_group g
+                LEFT JOIN judge_node n ON n.host_group_id = g.id
+                GROUP BY g.id, g.name, g.max_slots, g.revision
+                ORDER BY g.id LIMIT 256
+                """,
                 (r, i) ->
                         new HostView(
                                 r.getString("id"),
                                 r.getString("name"),
                                 r.getInt("max_slots"),
-                                r.getLong("revision")));
+                                r.getLong("revision"),
+                                r.getInt("node_count")));
+    }
+
+    @Transactional
+    public void deleteHost(long id) {
+        Integer nodeCount =
+                db.queryForObject(
+                        "SELECT COUNT(*) FROM judge_node WHERE host_group_id = ?",
+                        Integer.class,
+                        id);
+        if (nodeCount != null && nodeCount > 0) {
+            throw new BusinessException(
+                    ResultCode.PARAM_ERROR, "该分组下仍有 " + nodeCount + " 个评测节点，请先删除节点后再删除分组");
+        }
+        Integer activeJobs =
+                db.queryForObject(
+                        "SELECT COUNT(*) FROM judge_job WHERE host_group_id = ? AND state IN ('QUEUED', 'CLAIMED', 'RUNNING')",
+                        Integer.class,
+                        id);
+        if (activeJobs != null && activeJobs > 0) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "该分组下仍有运行中的评测任务，无法删除");
+        }
+        db.update("UPDATE judge_job SET host_group_id = NULL WHERE host_group_id = ?", id);
+        db.update("DELETE FROM judge_host_identity WHERE host_group_id = ?", id);
+        int deleted = db.update("DELETE FROM judge_host_group WHERE id = ?", id);
+        if (deleted == 0) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "宿主机分组不存在");
+        }
     }
 
     @Transactional
@@ -307,6 +345,31 @@ public class JudgeNodes {
         db.update("UPDATE judge_node_connection SET status='CANCELLED',active_instance_id=NULL,finished_at=UTC_TIMESTAMP(6),updated_at=UTC_TIMESTAMP(6) WHERE node_id=? AND status IN ('WAITING_BIND','WAITING_HEARTBEAT','CHECKING')", id);
         db.update("UPDATE judge_node_endpoint SET active_connection_id=NULL,updated_at=UTC_TIMESTAMP(6) WHERE node_id=?", id);
         audit(id, "REVOKE", revision + 1);
+    }
+
+    @Transactional
+    public void deleteNode(long id) {
+        Node n = find(id, true);
+        Integer activeJobs =
+                db.queryForObject(
+                        "SELECT COUNT(*) FROM judge_job WHERE node_id = ? AND state IN ('QUEUED', 'CLAIMED', 'RUNNING')",
+                        Integer.class,
+                        id);
+        if (activeJobs != null && activeJobs > 0) {
+            throw new BusinessException(
+                    ResultCode.PARAM_ERROR, "该节点仍有运行中的评测任务，无法删除，请先排空或等待任务完成");
+        }
+        db.update("UPDATE judge_job SET node_id = NULL WHERE node_id = ?", id);
+        db.update("DELETE FROM judge_node_endpoint WHERE node_id = ?", id);
+        db.update("DELETE FROM judge_node_connection WHERE node_id = ?", id);
+        db.update("DELETE FROM judge_node_identity WHERE node_id = ?", id);
+        db.update("DELETE FROM judge_node_boot WHERE node_id = ?", id);
+        db.update("DELETE FROM judge_node_check WHERE node_id = ?", id);
+        db.update("DELETE FROM judge_node_audit WHERE node_id = ?", id);
+        int deleted = db.update("DELETE FROM judge_node WHERE id = ?", id);
+        if (deleted != 1) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "评测节点不存在");
+        }
     }
 
     @Transactional
