@@ -261,7 +261,7 @@ public class JudgeConnections {
             return;
         }
         long nodeId = Long.parseLong(rows.get(0)[0]);
-        int changed = db.update("UPDATE judge_node SET credential_hash=NULL,state='DISABLED',healthy=FALSE,verified=FALSE,revision=revision+1,session_epoch=session_epoch+1 WHERE id=? AND credential_hash=? AND state='PENDING_VERIFICATION'",
+        int changed = db.update("UPDATE judge_node SET credential_hash=NULL,state='DISABLED',healthy=FALSE,verified=FALSE,revision=revision+1,session_epoch=session_epoch+1 WHERE id=? AND credential_hash=? AND state IN ('PENDING_VERIFICATION','DRAINING','DISABLED')",
                 nodeId, rows.get(0)[1]);
         if (changed == 1) {
             db.update("UPDATE judge_node_identity SET revoked_at=UTC_TIMESTAMP(6),binding_generation=binding_generation+1 WHERE node_id=?", nodeId);
@@ -302,6 +302,10 @@ public class JudgeConnections {
                             Long.class,
                             found.hostId());
         }
+        if (Boolean.TRUE.equals(db.queryForObject(
+                "SELECT retired_at IS NOT NULL FROM judge_host_group WHERE id=?", Boolean.class, host))) {
+            throw new BusinessException(ResultCode.CONFLICT, "宿主机分组已删除，不能自动恢复");
+        }
         Long node =
                 db.query(
                         "SELECT node_id FROM judge_node_identity WHERE instance_id=?",
@@ -340,6 +344,10 @@ public class JudgeConnections {
                     found.instanceId(),
                     found.publicKey(),
                     found.keyFingerprint());
+        }
+        if (Boolean.TRUE.equals(db.queryForObject(
+                "SELECT retired_at IS NOT NULL FROM judge_node WHERE id=?", Boolean.class, node))) {
+            throw new BusinessException(ResultCode.CONFLICT, "节点已删除，不能自动恢复");
         }
         long nodeId = node;
         long hostId = host;
@@ -405,13 +413,14 @@ public class JudgeConnections {
                                 ? "WAITING_HEARTBEAT"
                                 : "SUCCEEDED";
         if (db.update(
-                        "UPDATE judge_node_connection SET instance_id=?,active_instance_id=?,node_id=?,capability_digest=?,binding_generation=?,expected_node_revision=?,status=?,runner_id=NULL,runner_lease_until=NULL,finished_at=IF(?='SUCCEEDED',UTC_TIMESTAMP(6),NULL),updated_at=UTC_TIMESTAMP(6) WHERE id=? AND status='DISCOVERING' AND runner_id=?",
+                        "UPDATE judge_node_connection SET instance_id=?,active_instance_id=?,node_id=?,capability_digest=?,binding_generation=?,expected_node_revision=?,credential_digest=?,status=?,runner_id=NULL,runner_lease_until=NULL,finished_at=IF(?='SUCCEEDED',UTC_TIMESTAMP(6),NULL),updated_at=UTC_TIMESTAMP(6) WHERE id=? AND status='DISCOVERING' AND runner_id=?",
                         found.instanceId(),
                         "SUCCEEDED".equals(target) ? null : found.instanceId(),
                         nodeId,
                         found.capabilityDigest(),
                         binding.generation(),
                         expectedRevision,
+                        binding.credential(),
                         target,
                         target,
                         id,

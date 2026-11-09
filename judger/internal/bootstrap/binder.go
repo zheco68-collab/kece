@@ -129,6 +129,17 @@ func (b *Binder) Try(ctx context.Context) (bool, error) {
 	if response.StatusCode == http.StatusNoContent {
 		return false, nil
 	}
+	if response.StatusCode == http.StatusConflict {
+		var rejected struct {
+			Code string `json:"code"`
+		}
+		if json.NewDecoder(io.LimitReader(response.Body, 1024)).Decode(&rejected) == nil && rejected.Code == "STALE_NODE_CLAIM" {
+			if err := os.Remove(bindingPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return false, err
+			}
+			return false, nil
+		}
+	}
 	if response.StatusCode != http.StatusOK {
 		return false, fmt.Errorf("bootstrap claim rejected: HTTP %d", response.StatusCode)
 	}

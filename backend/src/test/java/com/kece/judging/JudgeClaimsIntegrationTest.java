@@ -164,6 +164,34 @@ class JudgeClaimsIntegrationTest extends AbstractIntegrationTest {
         assertThat(checkId).isNotBlank();
         assertThat(db.queryForObject("SELECT status FROM judge_node_connection WHERE id=?", String.class, connection))
                 .isEqualTo("CHECKING");
+        mockMvc.perform(post("/internal/judgers/heartbeat")
+                        .header("Authorization", "Bearer " + credential)
+                        .header("X-Judge-Session-Epoch", epoch)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "runtimeSpec", "python-v1", "runtimeVersion", "test-1",
+                                "localSlots", 2, "healthy", true,
+                                "checkResult", Map.of("checkId", checkId, "passed", false, "detail", "missing image")))))
+                .andExpect(status().isOk());
+        assertThat(db.queryForObject("SELECT status FROM judge_node_connection WHERE id=?", String.class, connection))
+                .isEqualTo("FAILED");
+        String retryKey = UUID.randomUUID().toString();
+        db.update("INSERT INTO judge_node_connection (actor_id,idempotency_key,request_digest,endpoint_hash,normalized_url,instance_id,active_instance_id,node_id,capability_digest,binding_generation,expected_node_revision,credential_digest,status,next_run_at,created_at,updated_at,expires_at) "
+                        + "VALUES (1,?,?,?,?,?,?,?,?,1,1,?,'WAITING_HEARTBEAT',UTC_TIMESTAMP(6),UTC_TIMESTAMP(6),UTC_TIMESTAMP(6),UTC_TIMESTAMP(6)+INTERVAL 10 MINUTE)",
+                retryKey, fakeHash, fakeHash, "http://10.77.0.29:19091", instance, instance, node, capability,
+                hex(MessageDigest.getInstance("SHA-256").digest(credential.getBytes(StandardCharsets.UTF_8))));
+        long retriedConnection = db.queryForObject("SELECT id FROM judge_node_connection WHERE idempotency_key=?", Long.class, retryKey);
+        var repeatedHeartbeat = mockMvc.perform(post("/internal/judgers/heartbeat")
+                        .header("Authorization", "Bearer " + credential)
+                        .header("X-Judge-Session-Epoch", epoch)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "runtimeSpec", "python-v1", "runtimeVersion", "test-1",
+                                "localSlots", 2, "healthy", true))))
+                .andExpect(status().isOk()).andReturn();
+        String retryCheckId = objectMapper.readTree(repeatedHeartbeat.getResponse().getContentAsString())
+                .path("check").path("checkId").asText();
+        assertThat(retryCheckId).isNotBlank().isNotEqualTo(checkId);
         var checked = mockMvc.perform(post("/internal/judgers/heartbeat")
                         .header("Authorization", "Bearer " + credential)
                         .header("X-Judge-Session-Epoch", epoch)
@@ -171,14 +199,22 @@ class JudgeClaimsIntegrationTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "runtimeSpec", "python-v1", "runtimeVersion", "test-1",
                                 "localSlots", 2, "healthy", true,
-                                "checkResult", Map.of("checkId", checkId, "passed", true, "detail", "ok")))))
+                                "checkResult", Map.of("checkId", retryCheckId, "passed", true, "detail", "ok")))))
                 .andExpect(status().isOk()).andReturn();
         assertThat(objectMapper.readTree(checked.getResponse().getContentAsString()).path("state").asText())
                 .isEqualTo("ENABLED");
-        assertThat(db.queryForObject("SELECT status FROM judge_node_connection WHERE id=?", String.class, connection))
+        assertThat(db.queryForObject("SELECT status FROM judge_node_connection WHERE id=?", String.class, retriedConnection))
                 .isEqualTo("SUCCEEDED");
         assertThat(db.queryForObject("SELECT verified FROM judge_node WHERE id=?", Boolean.class, node))
                 .isTrue();
+
+        db.update("UPDATE judge_node_connection SET status='CANCELLED' WHERE id=?", connection);
+        db.update("UPDATE judge_node SET credential_hash=NULL WHERE id=?", node);
+        var stale = mockMvc.perform(post("/internal/judgers/bootstrap/claim")
+                        .contentType(MediaType.APPLICATION_JSON).content(request))
+                .andExpect(status().isConflict()).andReturn();
+        assertThat(objectMapper.readTree(stale.getResponse().getContentAsString()).path("code").asText())
+                .isEqualTo("STALE_NODE_CLAIM");
     }
 
     private static String token() {

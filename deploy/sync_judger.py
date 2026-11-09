@@ -301,7 +301,7 @@ def main():
     parser.add_argument(
         "--control-url",
         default="http://127.0.0.1:8080/api/v1",
-        help="控制面 API 地址（跨机部署填 http://<后端IP>:8080/api/v1）",
+        help="控制面 API 地址（跨机器须使用 HTTPS；同机回环可用 HTTP）",
     )
     parser.add_argument("--api-host", default="", help="管理员后台可访问的节点 API 主机名或 IP，默认 SSH 主机")
     parser.add_argument("--api-port-base", type=int, default=19091, help="首个专池节点 API 端口")
@@ -313,6 +313,15 @@ def main():
     parser.add_argument("--admin-password", default="", help="OJ 管理员密码（可选）")
     parser.add_argument("--mysql-password", default=DEFAULT_MYSQL_PASS, help="独立判题 MySQL root 密码")
     args = parser.parse_args()
+    pools = [pool.strip() for pool in args.pools.split(",") if pool.strip()]
+    if not args.host or not args.user or not args.password:
+        parser.error("必须指定 --host、--user 和 --password 或对应环境变量")
+    if not pools or len(set(pools)) != len(pools) or any(pool not in {"cpp", "java", "python", "mysql", "arkts"} for pool in pools):
+        parser.error("--pools 必须是无重复的 cpp,java,python,mysql,arkts 列表")
+    if args.slots < 1 or args.slots > 256:
+        parser.error("--slots 必须在 1 到 256 之间")
+    if args.api_port_base < 1 or args.api_port_base + len(pools) - 1 > 65535:
+        parser.error("API 端口范围无效")
     deploy(args)
 
 

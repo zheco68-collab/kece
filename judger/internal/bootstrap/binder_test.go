@@ -122,3 +122,55 @@ func TestBinderRejectsInsecureRemoteControlPlane(t *testing.T) {
 		t.Fatal("remote HTTP credential channel accepted")
 	}
 }
+
+func TestBinderRotatesOnlyExplicitlyStaleClaim(t *testing.T) {
+	dir := t.TempDir()
+	id, err := identity.LoadOrCreate(filepath.Join(dir, "host.json"), filepath.Join(dir, "node.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var signed envelope
+		if err := json.NewDecoder(r.Body).Decode(&signed); err != nil {
+			t.Error(err)
+			return
+		}
+		raw, err := base64.RawURLEncoding.DecodeString(signed.Payload)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		var request payload
+		if err := json.Unmarshal(raw, &request); err != nil {
+			t.Error(err)
+			return
+		}
+		claims = append(claims, request.ClaimID)
+		if len(claims) == 1 {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if len(claims) == 2 {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"code":"STALE_NODE_CLAIM"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	file := filepath.Join(dir, "credential.json")
+	binder := &Binder{Identity: id, ControlURL: server.URL, HTTPClient: server.Client(),
+		ControlPlaneID: func() string { return "7cf26574-3858-4e57-a685-8fc947dc4b81" },
+		CredentialFile: file, BootID: "0123456789abcdef0123456789abcdef",
+		Pool: "python", RuntimeSpec: "python-v1", RuntimeVersion: "test-1", LocalSlots: 2}
+	for attempt := 0; attempt < 3; attempt++ {
+		ready, err := binder.Try(context.Background())
+		if err != nil || ready {
+			t.Fatalf("attempt %d: ready=%v err=%v", attempt, ready, err)
+		}
+	}
+	if claims[0] != claims[1] || claims[1] == claims[2] {
+		t.Fatalf("claim rotation invalid: %v", claims)
+	}
+}

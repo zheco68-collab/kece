@@ -127,18 +127,34 @@ describe('AdminJudgersView.vue', () => {
     expect(connect).toHaveBeenCalledWith('http://10.20.0.15:19091', expect.any(String))
   })
 
+  it('主页面不显示接入记录，弹窗内可恢复接入进度', async () => {
+    vi.spyOn(judgersApi, 'getConnections').mockResolvedValue([{
+      connectionId: '104', apiUrl: 'http://10.20.0.15:19091', nodeId: '1',
+      status: 'SUCCEEDED', errorCode: null, errorDetail: null, retryCount: 0,
+      createdAt: '2026-11-09T00:00:00', updatedAt: '2026-11-09T00:00:00',
+    }])
+    const wrapper = mount(AdminJudgersView)
+    await flushPromises()
+    expect(wrapper.find('.connection-panel').exists()).toBe(false)
+
+    await wrapper.findAll('button').find((button) => button.text().includes('接入评测机'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.connection-history').exists()).toBe(true)
+    await wrapper.get('.connection-history summary').trigger('click')
+    await wrapper.get('.connection-row').trigger('click')
+    expect(wrapper.text()).toContain('接入进度 · #104')
+  })
+
   it('点击删除节点触发确认并调用 deleteNode', async () => {
     const deleteSpy = vi.spyOn(judgersApi, 'deleteNode').mockResolvedValue(undefined as unknown as void)
     const wrapper = mount(AdminJudgersView)
     await flushPromises()
 
-    const disclosure = wrapper.get('.actions-disclosure')
-    await disclosure.get('summary').trigger('click')
-    const deleteBtn = disclosure.findAll('button').find((b) => b.text().includes('删除节点'))!
+    const deleteBtn = wrapper.get('.action-remove')
     await deleteBtn.trigger('click')
     await flushPromises()
 
-    expect(deleteSpy).toHaveBeenCalledWith('1')
+    expect(deleteSpy).toHaveBeenCalledWith('2')
   })
 
   it('宿主机弹窗支持删除空分组并禁用有节点的分组', async () => {

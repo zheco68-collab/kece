@@ -84,6 +84,10 @@ function hostName(id: string) {
   return hostGroupMap.value.get(id) ?? `宿主机 #${id}`
 }
 
+function hostNodeCount(host: HostGroupView) {
+  return host.nodeCount ?? nodes.value.filter((node) => node.hostGroupId === String(host.id)).length
+}
+
 const filteredNodes = computed(() => {
   const keyword = search.value.trim().toLowerCase()
   return nodes.value.filter((node) => {
@@ -131,14 +135,12 @@ async function loadData() {
   loading.value = true
   loadError.value = ''
   try {
-    const [nodeList, hostList, connectionList] = await Promise.all([
+    const [nodeList, hostList] = await Promise.all([
       fetchNodes(),
       judgersApi.getHostGroups(),
-      judgersApi.getConnections(),
     ])
     nodes.value = nodeList
     hostGroups.value = hostList
-    connections.value = connectionList
     lastUpdatedAt.value = new Date()
   } catch (err: unknown) {
     loadError.value = err instanceof Error ? err.message : '加载评测机列表失败'
@@ -195,12 +197,21 @@ function connectionLabel(status: string): string {
   } as Record<string, string>)[status] ?? status
 }
 
+async function loadConnections() {
+  try {
+    connections.value = await judgersApi.getConnections()
+  } catch {
+    // 接入记录加载失败不影响新节点接入。
+  }
+}
+
 function openConnectModal(connection?: JudgeConnectionView) {
   connectUrl.value = connection?.apiUrl ?? ''
   activeConnection.value = connection ?? null
   connectKey.value = ''
   connectError.value = ''
   showConnectModal.value = true
+  void loadConnections()
 }
 
 async function submitConnect() {
@@ -215,7 +226,7 @@ async function submitConnect() {
   if (!connectKey.value) connectKey.value = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}${Math.random().toString(36).slice(2)}`
   try {
     activeConnection.value = await judgersApi.connectNode(apiUrl, connectKey.value)
-    await loadData()
+    await Promise.all([loadData(), loadConnections()])
   } catch (err: unknown) {
     connectError.value = err instanceof ApiError ? err.message : '接入请求失败，请重试'
   } finally {
@@ -245,7 +256,7 @@ async function cancelConnection() {
   if (!activeConnection.value || !pendingStatuses.has(activeConnection.value.status)) return
   try {
     activeConnection.value = await judgersApi.cancelConnection(activeConnection.value.connectionId)
-    await loadData()
+    await Promise.all([loadData(), loadConnections()])
   } catch (err: unknown) {
     connectError.value = err instanceof ApiError ? err.message : '取消接入失败'
   }
@@ -332,7 +343,7 @@ async function handleDeleteNode(node: JudgeNodeView) {
   openActions.value = null
   const ok = await confirm({
     title: '删除评测节点',
-    message: `确定彻底删除评测节点「${node.name}」吗？关联的凭据与接入记录将被移除。如果该实例仍在运行，请先在评测机上停止服务。`,
+    message: `确定删除评测节点「${node.name}」吗？节点需要已停用，且不能有在途任务或自检。删除后不会再出现在节点列表中。`,
     confirmText: '删除节点',
     danger: true,
   })
@@ -400,8 +411,9 @@ async function saveHostBudget(host: HostGroupView) {
 }
 
 async function handleDeleteHost(host: HostGroupView) {
-  if (host.nodeCount && host.nodeCount > 0) {
-    toast.error(`该分组下仍有 ${host.nodeCount} 个评测节点，请先删除节点后再删除分组`)
+  const count = hostNodeCount(host)
+  if (count > 0) {
+    toast.error(`该分组下仍有 ${count} 个评测节点，请先删除节点后再删除分组`)
     return
   }
   const ok = await confirm({
@@ -452,13 +464,7 @@ async function handleDeleteHost(host: HostGroupView) {
     </header>
 
     <section class="pool-overview" aria-labelledby="judge-pools-title" :aria-busy="loading">
-      <div class="pool-heading">
-        <div>
-          <h2 id="judge-pools-title">评测专池</h2>
-          <p>按池查看健康且已启用的节点</p>
-        </div>
-        <span v-if="lastUpdatedAt" class="pool-total"><strong>{{ healthyPools }}</strong> / {{ poolSummary.length }} 池有健康节点</span>
-      </div>
+      <div class="pool-heading"><h2 id="judge-pools-title">专池</h2><span v-if="lastUpdatedAt" class="pool-total">{{ healthyPools }} / {{ poolSummary.length }} 正常</span></div>
       <div class="pool-grid" role="group" aria-label="选择评测专池">
         <button
           v-for="pool in poolSummary" :key="pool.value" type="button" class="pool-cell"
@@ -466,27 +472,12 @@ async function handleDeleteHost(host: HostGroupView) {
           :aria-describedby="`judge-pool-${pool.value}`"
           @click="filterPool = filterPool === pool.value ? '' : pool.value; openActions = null"
         >
-          <span class="pool-cell-top">
-            <strong>{{ pool.label }}</strong>
-            <span v-if="lastUpdatedAt" class="pool-dot" :class="{ 'is-healthy': pool.healthy > 0 }" aria-hidden="true"></span>
-          </span>
+          <span v-if="lastUpdatedAt" class="pool-dot" :class="{ 'is-healthy': pool.healthy > 0 }" aria-hidden="true"></span>
+          <strong class="pool-cell-name">{{ pool.label }}</strong>
           <span :id="`judge-pool-${pool.value}`" class="pool-cell-count">
-            <template v-if="lastUpdatedAt"><strong>{{ pool.healthy }}</strong> / {{ pool.total }} 节点</template>
+            <template v-if="lastUpdatedAt"><strong>{{ pool.healthy }}</strong>/{{ pool.total }}</template>
             <template v-else>{{ loading ? '加载中' : '暂无数据' }}</template>
           </span>
-        </button>
-      </div>
-    </section>
-
-    <section v-if="connections.length" class="connection-panel" aria-labelledby="judge-connections-title">
-      <div class="node-panel-head">
-        <div class="node-panel-title"><h2 id="judge-connections-title">最近接入</h2><span class="count-tag">{{ connections.length }} 条</span></div>
-      </div>
-      <div class="connection-list">
-        <button v-for="item in connections.slice(0, 5)" :key="item.connectionId" class="connection-row" @click="openConnectModal(item)">
-          <span class="connection-address" :title="item.apiUrl">{{ item.apiUrl }}</span>
-          <span class="connection-state" :class="{ 'is-done': item.status === 'SUCCEEDED', 'is-error': ['FAILED', 'EXPIRED'].includes(item.status) }">{{ connectionLabel(item.status) }}</span>
-          <span class="connection-open">查看 →</span>
         </button>
       </div>
     </section>
@@ -564,6 +555,7 @@ async function handleDeleteHost(host: HostGroupView) {
             <td role="cell" class="row-operations">
               <div class="actions-group">
                 <button class="action-btn action-detail" @click="openDetailModal(row)">详情</button>
+                <button v-if="row.state === 'DISABLED' && row.running === 0" class="action-btn action-remove" @click="handleDeleteNode(row)">删除</button>
                 <details :open="openActions === row.nodeId" class="actions-disclosure" @focusout="closeUnfocusedActions" @keydown.esc.stop="closeActions">
                   <summary :aria-label="`${row.name} 的更多操作`" @click.prevent="openActions = openActions === row.nodeId ? null : row.nodeId">
                     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
@@ -572,7 +564,8 @@ async function handleDeleteHost(host: HostGroupView) {
                     <button class="action-btn" @click="handleCheck(row)">发起自检</button>
                     <button class="action-btn" @click="openEditModal(row)">调整配置</button>
                     <button v-if="row.state !== 'DISABLED'" class="action-btn btn-danger" @click="handleRevoke(row)">注销节点凭据</button>
-                    <button class="action-btn btn-danger" @click="handleDeleteNode(row)">删除节点</button>
+                    <button v-if="row.state === 'DISABLED' && row.running === 0" class="action-btn btn-danger" @click="handleDeleteNode(row)">删除节点</button>
+                    <span v-else class="action-hint">停用并排空后可删除</span>
                   </div>
                 </details>
               </div>
@@ -599,8 +592,18 @@ async function handleDeleteHost(host: HostGroupView) {
             <strong :class="{ 'is-error': ['FAILED', 'EXPIRED'].includes(activeConnection.status) }">{{ connectionLabel(activeConnection.status) }}</strong>
             <p v-if="activeConnection.errorDetail">{{ activeConnection.errorDetail }}</p>
             <p v-else-if="activeConnection.status === 'SUCCEEDED'">节点 #{{ activeConnection.nodeId }} 已通过自检，可以在节点列表中查看。</p>
-            <p v-else-if="pendingStatuses.has(activeConnection.status)">接入正在后台进行，关闭弹窗后可从「最近接入」继续查看。</p>
+            <p v-else-if="pendingStatuses.has(activeConnection.status)">接入正在后台进行。关闭弹窗后仍可在此处的接入记录中查看进度。</p>
           </div>
+          <details v-if="connections.length" class="connection-history">
+            <summary>接入记录 <span>{{ connections.length }}</span></summary>
+            <div class="connection-list">
+              <button v-for="item in connections.slice(0, 10)" :key="item.connectionId" class="connection-row" @click="openConnectModal(item)">
+                <span class="connection-address" :title="item.apiUrl">{{ item.apiUrl }}</span>
+                <span class="connection-state" :class="{ 'is-done': item.status === 'SUCCEEDED', 'is-error': ['FAILED', 'EXPIRED'].includes(item.status) }">{{ connectionLabel(item.status) }}</span>
+                <span class="connection-open">查看 →</span>
+              </button>
+            </div>
+          </details>
           <div v-if="connectError" class="form-error-msg" role="alert">{{ connectError }}</div>
         </div>
         <div class="modal-foot">
@@ -832,15 +835,15 @@ async function handleDeleteHost(host: HostGroupView) {
                   <td>{{ h.id }}</td>
                   <td class="font-bold">{{ h.name }}</td>
                   <td><input v-model.number="hostSlotsDraft[h.id]" type="number" min="1" max="256" class="form-input mono slots-input" :aria-label="`${h.name} 共享槽位`" /></td>
-                  <td><span class="count-tag" :class="{ 'count-empty': !h.nodeCount }">{{ h.nodeCount ?? 0 }} 台</span></td>
+                  <td><span class="count-tag" :class="{ 'count-empty': !hostNodeCount(h) }">{{ hostNodeCount(h) }} 台</span></td>
                   <td>REV: {{ h.revision }}</td>
                   <td>
                     <div class="host-actions">
                       <button class="btn btn-outline" :disabled="hostSubmitting || hostSlotsDraft[h.id] === h.maxSlots" @click="saveHostBudget(h)">保存</button>
                       <button
                         class="btn btn-outline btn-delete"
-                        :disabled="hostSubmitting || (h.nodeCount != null && h.nodeCount > 0)"
-                        :title="h.nodeCount && h.nodeCount > 0 ? '分组下存在关联节点，请先删除节点' : '删除宿主机分组'"
+                        :disabled="hostSubmitting || hostNodeCount(h) > 0"
+                        :title="hostNodeCount(h) > 0 ? '分组下存在关联节点，请先删除节点' : '删除宿主机分组'"
                         @click="handleDeleteHost(h)"
                       >
                         删除
@@ -882,7 +885,7 @@ async function handleDeleteHost(host: HostGroupView) {
 
 .page-head { margin: 4px 0 22px; }
 .page-title { margin: 0; font-size: clamp(26px, 3cqw, 34px); line-height: 1.18; letter-spacing: -.035em; }
-.page-desc, .pool-heading p { margin: 6px 0 0; font-size: 14px; color: var(--ink-secondary); }
+.page-desc { margin: 6px 0 0; font-size: 14px; color: var(--ink-secondary); }
 .head-actions, .refresh-group, .node-panel-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 .btn {
@@ -907,11 +910,13 @@ async function handleDeleteHost(host: HostGroupView) {
 .btn-icon { width: 16px; height: 16px; flex: 0 0 16px; }
 .action-count { padding-inline: 5px; background: var(--surface-hover); font-variant-numeric: tabular-nums; }
 
-.pool-overview, .node-panel, .connection-panel { border: 1px solid var(--judge-rule); background: var(--judge-panel); }
-.pool-overview { margin-bottom: 22px; }
-.connection-panel { margin-bottom: 22px; }
-.connection-list { border-top: 1px solid var(--judge-rule); }
-.connection-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 18px; width: 100%; min-height: 47px; padding: 8px 18px; border-top: 1px solid var(--judge-rule); text-align: left; font-size: 13px; }
+.pool-overview, .node-panel { border: 1px solid var(--judge-rule); background: var(--judge-panel); }
+.pool-overview { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: stretch; margin-bottom: 14px; }
+.connection-history { margin-top: 16px; border: 1px solid var(--judge-rule); background: var(--judge-panel); }
+.connection-history summary { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.connection-history summary span { color: var(--ink-secondary); font-variant-numeric: tabular-nums; }
+.connection-list { max-height: 220px; overflow-y: auto; border-top: 1px solid var(--judge-rule); }
+.connection-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; width: 100%; min-height: 38px; padding: 6px 12px; border-top: 1px solid var(--judge-rule); text-align: left; font-size: 12px; }
 .connection-row:first-child { border-top: 0; }
 .connection-row:hover, .connection-row:focus-visible { background: var(--judge-hover); }
 .connection-address { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, monospace); }
@@ -920,30 +925,32 @@ async function handleDeleteHost(host: HostGroupView) {
 .connection-state.is-error { color: #9f3037; }
 .connection-open { font-weight: 700; white-space: nowrap; }
 @container judges (max-width: 560px) { .connection-row { grid-template-columns: minmax(0, 1fr) auto; } .connection-open { display: none; } }
-.pool-heading, .node-panel-head { padding: 14px 18px; }
+.pool-heading { display: flex; align-items: baseline; justify-content: flex-start; flex-wrap: nowrap; gap: 8px; padding: 10px 14px; border-right: 1px solid var(--judge-rule); white-space: nowrap; }
+.node-panel-head { padding: 14px 18px; }
 .pool-heading h2, .node-panel-title h2 { margin: 0; font-size: 17px; line-height: 1.4; }
-.pool-heading p { margin-top: 2px; font-size: 12px; }
-.pool-total { color: var(--ink-secondary); font-size: 13px; font-variant-numeric: tabular-nums; }
-.pool-total strong { color: var(--ink); font-size: 16px; }
+.pool-heading h2 { font-size: 14px; }
+.pool-total { color: var(--ink-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
 .pool-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .pool-cell {
   position: relative;
-  display: grid;
-  gap: 6px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--judge-rule);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px 12px;
   border-right: 1px solid var(--judge-rule);
   text-align: left;
+  font-size: 12px;
 }
 .pool-cell:last-child { border-right: none; }
 .pool-cell:hover, .pool-cell[aria-pressed='true'] { background: var(--judge-hover); }
-.pool-cell[aria-pressed='true'] { box-shadow: inset 0 -3px var(--ink); }
+.pool-cell[aria-pressed='true'] { box-shadow: inset 0 -2px var(--ink); }
 .pool-cell:focus-visible { outline-offset: -3px; }
-.pool-cell-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
-.pool-dot { width: 7px; height: 7px; background: #9299a1; flex: 0 0 7px; }
+.pool-cell-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pool-dot { width: 6px; height: 6px; background: #9299a1; flex: 0 0 6px; }
 .pool-dot.is-healthy { background: #187349; }
-.pool-cell-count { color: var(--ink-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
-.pool-cell-count strong { color: var(--ink); font-size: 17px; }
+.pool-cell-count { margin-left: auto; color: var(--ink-secondary); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pool-cell-count strong { color: var(--ink); font-size: 12px; }
 
 .node-panel-head { min-height: 64px; }
 .count-tag { background: var(--surface-hover); color: var(--ink-secondary); padding: 2px 7px; font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -1000,6 +1007,9 @@ async function handleDeleteHost(host: HostGroupView) {
 .actions-disclosure summary svg { width: 19px; height: 19px; }
 .actions-popover { position: absolute; top: calc(100% + 4px); right: 0; z-index: 5; display: grid; min-width: 138px; padding: 4px; border: 1px solid var(--judge-rule); background: var(--judge-panel); box-shadow: var(--shadow-md); }
 .actions-popover .action-btn { justify-items: start; }
+.action-remove { color: #912d34; }
+.action-remove:hover { color: #791e26; background: #f8e9ea; }
+.action-hint { padding: 7px; color: var(--ink-secondary); font-size: 11px; white-space: nowrap; }
 .actions-popover .btn-danger { color: #972b34; }
 .actions-popover .btn-danger:hover { background: #f8e9ea; }
 
@@ -1018,10 +1028,11 @@ async function handleDeleteHost(host: HostGroupView) {
   .actions-group { justify-content: flex-end; }
 }
 @container judges (max-width: 470px) {
-  .pool-grid { display: flex; flex-wrap: wrap; }
-  .pool-cell { flex: 1 0 33.333%; padding: 9px 12px; }
-  .pool-cell:nth-child(3) { border-right: 0; }
-  .pool-heading, .node-panel-head { padding: 12px; }
+  .pool-overview { display: block; }
+  .pool-heading { padding: 9px 12px; border-right: 0; border-bottom: 1px solid var(--judge-rule); }
+  .pool-grid { overflow-x: auto; grid-template-columns: repeat(5, minmax(105px, 1fr)); }
+  .pool-cell { padding: 9px 12px; }
+  .node-panel-head { padding: 12px; }
   .filter-bar { padding-inline: 12px; }
   .node-search { flex-basis: 100%; max-width: none; }
   .filter-select { flex: 1; min-width: 0; }

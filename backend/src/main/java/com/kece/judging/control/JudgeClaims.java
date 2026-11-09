@@ -129,8 +129,8 @@ public class JudgeClaims {
                     || approved.generation() != identity.generation()
                     || !digest.equals(approved.credentialDigest())
                     || !digest.equals(nodeCredential)
-                    || "CANCELLED".equals(approved.status())) {
-                throw invalid();
+                    || List.of("CANCELLED", "EXPIRED", "FAILED").contains(approved.status())) {
+                throw new JudgeProtocolException(409, "STALE_NODE_CLAIM");
             }
             return confirmation(approved, payload);
         }

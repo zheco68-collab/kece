@@ -438,7 +438,26 @@ class JudgeControlIntegrationTest extends AbstractIntegrationTest {
                         .andReturn();
         assertThat(code(failHost)).isEqualTo(4001);
 
-        // Delete the node
+        // An enabled node must first be stopped and disabled.
+        var refused =
+                mockMvc.perform(
+                                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                                                "/admin/judgers/" + node.id())
+                                        .header("Authorization", "Bearer " + admin))
+                        .andExpect(status().isOk())
+                        .andReturn();
+        assertThat(code(refused)).isEqualTo(4009);
+        long revision = db.queryForObject("SELECT revision FROM judge_node WHERE id=?", Long.class, Long.parseLong(node.id()));
+        var disabled = mockMvc.perform(patch("/admin/judgers/" + node.id())
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("revision", revision, "state", "DISABLED"))))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(code(disabled)).isEqualTo(200);
+
+        int auditsBefore = db.queryForObject("SELECT COUNT(*) FROM judge_node_audit WHERE node_id=?", Integer.class, Long.parseLong(node.id()));
+        int checksBefore = db.queryForObject("SELECT COUNT(*) FROM judge_node_check WHERE node_id=?", Integer.class, Long.parseLong(node.id()));
+        // Retire the node without erasing its historical records.
         var deleteNode =
                 mockMvc.perform(
                                 org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
@@ -447,6 +466,12 @@ class JudgeControlIntegrationTest extends AbstractIntegrationTest {
                         .andExpect(status().isOk())
                         .andReturn();
         assertThat(code(deleteNode)).isEqualTo(200);
+        assertThat(db.queryForObject("SELECT retired_at IS NOT NULL FROM judge_node WHERE id=?", Boolean.class, Long.parseLong(node.id()))).isTrue();
+        assertThat(db.queryForObject("SELECT credential_hash FROM judge_node WHERE id=?", String.class, Long.parseLong(node.id()))).isNull();
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM judge_node_audit WHERE node_id=?", Integer.class, Long.parseLong(node.id()))).isEqualTo(auditsBefore + 1);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM judge_node_check WHERE node_id=?", Integer.class, Long.parseLong(node.id()))).isEqualTo(checksBefore);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM judge_node WHERE id=? AND host_group_id=?", Integer.class,
+                Long.parseLong(node.id()), Long.parseLong(hostId))).isEqualTo(1);
 
         // Now delete the empty host group
         var deleteHost =
@@ -457,5 +482,7 @@ class JudgeControlIntegrationTest extends AbstractIntegrationTest {
                         .andExpect(status().isOk())
                         .andReturn();
         assertThat(code(deleteHost)).isEqualTo(200);
+        assertThat(db.queryForObject("SELECT retired_at IS NOT NULL FROM judge_host_group WHERE id=?", Boolean.class, Long.parseLong(hostId))).isTrue();
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM judge_node WHERE host_group_id=?", Integer.class, Long.parseLong(hostId))).isEqualTo(1);
     }
 }

@@ -128,7 +128,8 @@ public class JudgeNodes {
                 """
                 SELECT g.id, g.name, g.max_slots, g.revision, COUNT(n.id) AS node_count
                 FROM judge_host_group g
-                LEFT JOIN judge_node n ON n.host_group_id = g.id
+                LEFT JOIN judge_node n ON n.host_group_id = g.id AND n.retired_at IS NULL
+                WHERE g.retired_at IS NULL
                 GROUP BY g.id, g.name, g.max_slots, g.revision
                 ORDER BY g.id LIMIT 256
                 """,
@@ -143,11 +144,13 @@ public class JudgeNodes {
 
     @Transactional
     public void deleteHost(long id) {
-        Integer nodeCount =
-                db.queryForObject(
-                        "SELECT COUNT(*) FROM judge_node WHERE host_group_id = ?",
-                        Integer.class,
-                        id);
+        List<Long> hosts = db.query("SELECT id FROM judge_host_group WHERE id=? AND retired_at IS NULL FOR UPDATE",
+                (r, i) -> r.getLong(1), id);
+        if (hosts.isEmpty()) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "宿主机分组不存在或已删除");
+        }
+        Integer nodeCount = db.queryForObject(
+                "SELECT COUNT(*) FROM judge_node WHERE host_group_id=? AND retired_at IS NULL", Integer.class, id);
         if (nodeCount != null && nodeCount > 0) {
             throw new BusinessException(
                     ResultCode.PARAM_ERROR, "该分组下仍有 " + nodeCount + " 个评测节点，请先删除节点后再删除分组");
@@ -160,12 +163,14 @@ public class JudgeNodes {
         if (activeJobs != null && activeJobs > 0) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "该分组下仍有运行中的评测任务，无法删除");
         }
-        db.update("UPDATE judge_job SET host_group_id = NULL WHERE host_group_id = ?", id);
-        db.update("DELETE FROM judge_host_identity WHERE host_group_id = ?", id);
-        int deleted = db.update("DELETE FROM judge_host_group WHERE id = ?", id);
-        if (deleted == 0) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "宿主机分组不存在");
+        Integer pending = db.queryForObject(
+                "SELECT COUNT(*) FROM judge_node_connection c JOIN judge_node n ON n.id=c.node_id "
+                        + "WHERE n.host_group_id=? AND c.status IN ('REQUESTED','DISCOVERING','WAITING_BIND','WAITING_HEARTBEAT','CHECKING')",
+                Integer.class, id);
+        if (pending != null && pending > 0) {
+            throw new BusinessException(ResultCode.CONFLICT, "该分组仍有接入中的评测节点，请先取消接入");
         }
+        db.update("UPDATE judge_host_group SET retired_at=UTC_TIMESTAMP(6),revision=revision+1 WHERE id=? AND retired_at IS NULL", id);
     }
 
     @Transactional
@@ -177,14 +182,14 @@ public class JudgeNodes {
                         "INSERT INTO judge_host_group (name, max_slots) VALUES (?, ?)",
                         name.trim(),
                         slots);
-        return new HostView(Long.toString(id), name.trim(), slots, 1);
+        return new HostView(Long.toString(id), name.trim(), slots, 1, 0);
     }
 
     @Transactional
     public void changeHost(long id, long revision, int slots) {
         checkSlots(slots);
         if (db.update(
-                        "UPDATE judge_host_group SET max_slots=?, revision=revision+1 WHERE id=? AND revision=?",
+                        "UPDATE judge_host_group SET max_slots=?, revision=revision+1 WHERE id=? AND revision=? AND retired_at IS NULL",
                         slots,
                         id,
                         revision)
@@ -229,7 +234,7 @@ public class JudgeNodes {
         }
         return db
                 .query(
-                        NODE_SELECT + " WHERE id > ? ORDER BY id LIMIT ?",
+                        NODE_SELECT + " WHERE id > ? AND retired_at IS NULL ORDER BY id LIMIT ?",
                         (r, i) -> node(r),
                         afterId,
                         limit)
@@ -350,6 +355,9 @@ public class JudgeNodes {
     @Transactional
     public void deleteNode(long id) {
         Node n = find(id, true);
+        if (!"DISABLED".equals(n.state())) {
+            throw new BusinessException(ResultCode.CONFLICT, "请先停用节点，再执行删除");
+        }
         Integer activeJobs =
                 db.queryForObject(
                         "SELECT COUNT(*) FROM judge_job WHERE node_id = ? AND state IN ('QUEUED', 'CLAIMED', 'RUNNING')",
@@ -359,17 +367,24 @@ public class JudgeNodes {
             throw new BusinessException(
                     ResultCode.PARAM_ERROR, "该节点仍有运行中的评测任务，无法删除，请先排空或等待任务完成");
         }
-        db.update("UPDATE judge_job SET node_id = NULL WHERE node_id = ?", id);
-        db.update("DELETE FROM judge_node_endpoint WHERE node_id = ?", id);
-        db.update("DELETE FROM judge_node_connection WHERE node_id = ?", id);
-        db.update("DELETE FROM judge_node_identity WHERE node_id = ?", id);
-        db.update("DELETE FROM judge_node_boot WHERE node_id = ?", id);
-        db.update("DELETE FROM judge_node_check WHERE node_id = ?", id);
-        db.update("DELETE FROM judge_node_audit WHERE node_id = ?", id);
-        int deleted = db.update("DELETE FROM judge_node WHERE id = ?", id);
-        if (deleted != 1) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "评测节点不存在");
+        Integer activeChecks = db.queryForObject(
+                "SELECT COUNT(*) FROM judge_node_check WHERE node_id=? AND state IN ('QUEUED','RUNNING') AND expires_at>UTC_TIMESTAMP(6)",
+                Integer.class, id);
+        if (activeChecks != null && activeChecks > 0) {
+            throw new BusinessException(ResultCode.CONFLICT, "节点自检尚未结束，请稍后删除");
         }
+        Integer activeConnections = db.queryForObject(
+                "SELECT COUNT(*) FROM judge_node_connection WHERE node_id=? AND status IN ('REQUESTED','DISCOVERING','WAITING_BIND','WAITING_HEARTBEAT','CHECKING')",
+                Integer.class, id);
+        if (activeConnections != null && activeConnections > 0) {
+            throw new BusinessException(ResultCode.CONFLICT, "节点仍在接入中，请先取消接入");
+        }
+        db.update("UPDATE judge_node SET retired_at=UTC_TIMESTAMP(6),credential_hash=NULL,enrollment_hash=NULL,enrollment_until=NULL,"
+                        + "healthy=FALSE,verified=FALSE,heartbeat_at=NULL,session_epoch=session_epoch+1,revision=revision+1 "
+                        + "WHERE id=? AND retired_at IS NULL", id);
+        db.update("UPDATE judge_node_identity SET revoked_at=UTC_TIMESTAMP(6),binding_generation=binding_generation+1 WHERE node_id=?", id);
+        db.update("UPDATE judge_node_endpoint SET active_connection_id=NULL,updated_at=UTC_TIMESTAMP(6) WHERE node_id=?", id);
+        audit(id, "DELETE", n.revision() + 1);
     }
 
     @Transactional
@@ -553,9 +568,11 @@ public class JudgeNodes {
                 effectiveRevision++;
             } else {
                 failConnection(onboarding.id(), report.passed() ? "CONFIG_CHANGED" : "SELF_CHECK_FAILED", report.detail());
+                verified = false;
+                db.update("UPDATE judge_node SET verified=FALSE WHERE id=?", n.id());
             }
         }
-        if (healthy && !verified) {
+        if (healthy && (!verified || (onboarding != null && "WAITING_HEARTBEAT".equals(onboarding.status())))) {
             ensureRuntimeCheck(n, version, capacity, onboarding);
         }
         CheckDirective check = null;
@@ -602,12 +619,17 @@ public class JudgeNodes {
                 || checking(n.id()) > 0
                 || hostUsed(n.host()) >= capacity
                 || db.queryForObject(
-                                "SELECT COUNT(*) FROM judge_node_check WHERE node_id=? AND session_epoch=? AND runtime_version=?",
+                                "SELECT COUNT(*) FROM judge_node_check WHERE node_id=? AND session_epoch=? AND runtime_version=? AND state IN ('QUEUED','RUNNING')",
                                 Integer.class,
                                 n.id(),
                                 n.epoch(),
                                 version)
                         > 0) {
+            return;
+        }
+        if (!firstConnection
+                && db.queryForObject("SELECT COUNT(*) FROM judge_node_check WHERE node_id=? AND session_epoch=? AND runtime_version=?",
+                        Integer.class, n.id(), n.epoch(), version) > 0) {
             return;
         }
         long checkId =
@@ -733,7 +755,7 @@ public class JudgeNodes {
     Node find(long id, boolean lock) {
         return db
                 .query(
-                        NODE_SELECT + " WHERE id=?" + (lock ? " FOR UPDATE" : ""),
+                        NODE_SELECT + " WHERE id=? AND retired_at IS NULL" + (lock ? " FOR UPDATE" : ""),
                         (r, i) -> node(r),
                         id)
                 .stream()
@@ -744,7 +766,7 @@ public class JudgeNodes {
     int hostSlots(long id) {
         return db
                 .query(
-                        "SELECT max_slots FROM judge_host_group WHERE id=? FOR UPDATE",
+                        "SELECT max_slots FROM judge_host_group WHERE id=? AND retired_at IS NULL FOR UPDATE",
                         (r, i) -> r.getInt(1),
                         id)
                 .stream()
