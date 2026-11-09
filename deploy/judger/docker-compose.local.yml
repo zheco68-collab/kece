@@ -1,0 +1,88 @@
+# KECE 本机 Docker 评测机编排配置 (2 个 Java 评测节点 + 1 个 C++ 评测节点)
+# 启动命令: docker compose -f deploy/judger/docker-compose.local.yml up -d
+# 停止命令: docker compose -f deploy/judger/docker-compose.local.yml down
+
+services:
+  local-judger-java-1:
+    image: kece-judger:latest
+    container_name: kece-local-java-1
+    restart: unless-stopped
+    stop_grace_period: 40s
+    environment:
+      - JUDGE_POOL=java
+      - JUDGE_RUNTIME_SPEC=java-v1
+      - JUDGE_RUNTIME_VERSION=17
+      - JUDGE_REMOTE_BACKEND=${JUDGE_REMOTE_BACKEND:-host.docker.internal:8080}
+      - JUDGE_LOCAL_SLOTS=2
+      - JUDGE_CREDENTIAL_FILE=/data/judge/credential.json
+      - JUDGE_HOST_IDENTITY_FILE=/data/host/host.json
+      - JUDGE_IDENTITY_FILE=/data/judge/identity.json
+      - JUDGE_HEALTH_ADDR=0.0.0.0:9090
+      - WORKSPACE_DIR=/var/lib/kece-work
+      - JUDGE_ARTIFACT_CACHE_DIR=/data/judge/cache
+      - IMAGE_JAVA=eclipse-temurin:17-jdk
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/kece-work:/var/lib/kece-work
+      - kece-local-java-1-data:/data/judge
+      - kece-local-host-identity:/data/host
+    ports:
+      - "0.0.0.0:19101:9090"
+
+  local-judger-java-2:
+    image: kece-judger:latest
+    container_name: kece-local-java-2
+    restart: unless-stopped
+    stop_grace_period: 40s
+    environment:
+      - JUDGE_POOL=java
+      - JUDGE_RUNTIME_SPEC=java-v1
+      - JUDGE_RUNTIME_VERSION=17
+      - JUDGE_REMOTE_BACKEND=${JUDGE_REMOTE_BACKEND:-host.docker.internal:8080}
+      - JUDGE_LOCAL_SLOTS=2
+      - JUDGE_CREDENTIAL_FILE=/data/judge/credential.json
+      - JUDGE_HOST_IDENTITY_FILE=/data/host/host.json
+      - JUDGE_IDENTITY_FILE=/data/judge/identity.json
+      - JUDGE_HEALTH_ADDR=0.0.0.0:9090
+      - WORKSPACE_DIR=/var/lib/kece-work
+      - JUDGE_ARTIFACT_CACHE_DIR=/data/judge/cache
+      - IMAGE_JAVA=eclipse-temurin:17-jdk
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/kece-work:/var/lib/kece-work
+      - kece-local-java-2-data:/data/judge
+      - kece-local-host-identity:/data/host
+    ports:
+      - "0.0.0.0:19102:9090"
+
+  local-judger-cpp-1:
+    image: kece-judger:latest
+    container_name: kece-local-cpp-1
+    restart: unless-stopped
+    stop_grace_period: 40s
+    environment:
+      - JUDGE_POOL=cpp
+      - JUDGE_RUNTIME_SPEC=cpp-v1
+      - JUDGE_RUNTIME_VERSION=13
+      - JUDGE_REMOTE_BACKEND=${JUDGE_REMOTE_BACKEND:-host.docker.internal:8080}
+      - JUDGE_LOCAL_SLOTS=2
+      - JUDGE_CREDENTIAL_FILE=/data/judge/credential.json
+      - JUDGE_HOST_IDENTITY_FILE=/data/host/host.json
+      - JUDGE_IDENTITY_FILE=/data/judge/identity.json
+      - JUDGE_HEALTH_ADDR=0.0.0.0:9090
+      - WORKSPACE_DIR=/var/lib/kece-work
+      - JUDGE_ARTIFACT_CACHE_DIR=/data/judge/cache
+      - IMAGE_CPP=gcc:13
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/kece-work:/var/lib/kece-work
+      - kece-local-cpp-1-data:/data/judge
+      - kece-local-host-identity:/data/host
+    ports:
+      - "0.0.0.0:19103:9090"
+
+volumes:
+  kece-local-java-1-data:
+  kece-local-java-2-data:
+  kece-local-cpp-1-data:
+  kece-local-host-identity:

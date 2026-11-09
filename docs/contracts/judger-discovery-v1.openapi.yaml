@@ -1,0 +1,131 @@
+openapi: 3.0.3
+info:
+  title: KECE worker discovery
+  version: 1.0.0
+  description: Read-only node identity discovery. The job and result protocol is specified in judger-v1.openapi.yaml.
+paths:
+  /v1/node/info:
+    post:
+      summary: Discover one worker instance by its API base URL
+      operationId: discoverJudger
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiscoveryRequest'
+      responses:
+        '200':
+          description: Signed discovery payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryEnvelope'
+        '400':
+          description: Malformed request or nonce
+        '405':
+          description: POST is required
+        '409':
+          description: Protocol or control-plane identity mismatch
+        '503':
+          description: The worker has not obtained its control-plane identity
+components:
+  schemas:
+    DiscoveryRequest:
+      type: object
+      additionalProperties: false
+      required: [discoveryVersion, controlPlaneId, nonce]
+      properties:
+        discoveryVersion:
+          type: integer
+          enum: [1]
+        controlPlaneId:
+          type: string
+          format: uuid
+        nonce:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+    DiscoveryEnvelope:
+      type: object
+      additionalProperties: false
+      required: [publicKey, payload, signature]
+      properties:
+        publicKey:
+          type: string
+          description: Base64URL, unpadded, of Ed25519 SubjectPublicKeyInfo DER.
+        payload:
+          type: string
+          description: Base64URL, unpadded, of exact UTF-8 DiscoveryPayload JSON bytes.
+        signature:
+          type: string
+          description: Base64URL, unpadded, of Ed25519 signature over ASCII KECE-DISCOVERY-V1 followed by LF and payload text.
+    DiscoveryPayload:
+      type: object
+      additionalProperties: false
+      required:
+        - discoveryVersion
+        - jobProtocolVersion
+        - controlPlaneId
+        - instanceId
+        - hostId
+        - nodeKeyId
+        - bootId
+        - pool
+        - runtimeSpec
+        - runtimeVersion
+        - displayName
+        - localSlots
+        - bindingState
+        - dependencyState
+        - capabilityDigest
+        - nonce
+      properties:
+        discoveryVersion:
+          type: integer
+          enum: [1]
+        jobProtocolVersion:
+          type: integer
+          enum: [1]
+        controlPlaneId:
+          type: string
+          format: uuid
+        instanceId:
+          type: string
+          format: uuid
+        hostId:
+          type: string
+          format: uuid
+        nodeKeyId:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        bootId:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{16,64}$'
+        pool:
+          type: string
+          enum: [cpp, java, python, mysql, arkts]
+        runtimeSpec:
+          type: string
+          maxLength: 64
+        runtimeVersion:
+          type: string
+          maxLength: 100
+        displayName:
+          type: string
+          maxLength: 100
+        localSlots:
+          type: integer
+          minimum: 1
+          maximum: 256
+        bindingState:
+          type: string
+          enum: [UNBOUND, BOUND]
+        dependencyState:
+          type: string
+          enum: [CHECKING, READY, UNHEALTHY]
+        capabilityDigest:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        nonce:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'

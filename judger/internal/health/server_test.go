@@ -1,11 +1,24 @@
 package health
 
 import (
+	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
+
+func TestStartRejectsOccupiedAPIAddress(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if _, err := Start(context.Background(), listener.Addr().String(), func() Status { return Status{} }, nil); err == nil {
+		t.Fatal("occupied API address was accepted")
+	}
+}
 
 func TestHealthzEndpointReadOnlyAndStructured(t *testing.T) {
 	h := Handler(func() Status {

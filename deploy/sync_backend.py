@@ -28,7 +28,7 @@ DEFAULT_HOST = os.environ.get("KECE_BACKEND_HOST", "")
 DEFAULT_PORT = int(os.environ.get("KECE_BACKEND_PORT", "22"))
 DEFAULT_USER = os.environ.get("KECE_BACKEND_USER", "")
 DEFAULT_PASS = os.environ.get("KECE_BACKEND_PASS", "")
-DEFAULT_REMOTE_DIR = os.environ.get("KECE_BACKEND_REMOTE_DIR", "/opt/kece")
+DEFAULT_REMOTE_DIR = os.environ.get("KECE_BACKEND_REMOTE_DIR", "/home/zco/kece")
 DEFAULT_SERVICE_NAME = "kece-backend"
 
 
@@ -75,26 +75,22 @@ def deploy(jar_path, host=DEFAULT_HOST, port=DEFAULT_PORT, user=DEFAULT_USER, pa
     sock = open_direct_socket(host, port, timeout=20)
     ssh.connect(host, port=port, username=user, password=password, sock=sock, timeout=20, banner_timeout=20)
 
-    # 1. 备份现有 jar
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    backup_cmd = f"cp {DEFAULT_REMOTE_DIR}/kece-backend.jar {DEFAULT_REMOTE_DIR}/kece-backend.jar.bak_{timestamp}"
-    print(f" 正在备份当前 jar -> kece-backend.jar.bak_{timestamp} ...")
-    _, out_b, _ = ssh.exec_command(backup_cmd)
-    out_b.channel.recv_exit_status()
-
-    # 2. 上传新 jar
-    remote_temp_jar = f"{DEFAULT_REMOTE_DIR}/kece-backend.jar.new"
+    # 1. 上传新 jar 到 /tmp
+    remote_temp_jar = "/tmp/kece-backend.jar.new"
     print(f" 正在上传新 Jar 至 {remote_temp_jar} ...")
     sftp = ssh.open_sftp()
     sftp.put(jar_path, remote_temp_jar)
     sftp.close()
 
-    # 3. 原子覆盖并重启服务
-    print(" 正在替换文件并重启 systemd 服务...")
+    # 2. 备份现有 jar、原子覆盖并重启服务
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    print(f" 正在备份当前 jar -> kece-backend.jar.bak_{timestamp} 并替换重启 systemd 服务...")
     cmd = (
-        f"mv {remote_temp_jar} {DEFAULT_REMOTE_DIR}/kece-backend.jar && "
+        f"echo '{password}' | sudo -S bash -c \""
+        f"cp -f {DEFAULT_REMOTE_DIR}/kece-backend.jar {DEFAULT_REMOTE_DIR}/kece-backend.jar.bak_{timestamp} 2>/dev/null || true; "
+        f"mv -f {remote_temp_jar} {DEFAULT_REMOTE_DIR}/kece-backend.jar && "
         f"chmod 755 {DEFAULT_REMOTE_DIR}/kece-backend.jar && "
-        f"echo '{password}' | sudo -S systemctl restart {DEFAULT_SERVICE_NAME}"
+        f"systemctl restart {DEFAULT_SERVICE_NAME}\""
     )
     _, stdout, _ = ssh.exec_command(cmd)
     stdout.channel.set_combine_stderr(True)

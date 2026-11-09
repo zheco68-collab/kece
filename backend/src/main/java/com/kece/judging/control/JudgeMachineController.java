@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -23,7 +24,9 @@ public class JudgeMachineController {
     private final JudgeNodes nodes;
     private final JudgeScheduler scheduler;
     private final JudgeMaintenance maintenance;
+    private final JudgeClaims claims;
     private final ObjectMapper json;
+    @Value("${kece.judging.legacy-admin-enrollment-enabled:false}") private boolean legacyEnrollmentEnabled;
 
     record JoinRequest(String enrollmentCode, String bootId, int protocolVersion) {}
 
@@ -34,7 +37,8 @@ public class JudgeMachineController {
             String runtimeVersion,
             int localSlots,
             boolean healthy,
-            JudgeNodes.CheckReport checkResult) {}
+            JudgeNodes.CheckReport checkResult,
+            JudgeIdentityMigration.Proof identity) {}
 
     record ClaimRequest(int slots, int waitMs) {}
 
@@ -42,10 +46,25 @@ public class JudgeMachineController {
 
     @PostMapping("/join")
     public ResponseEntity<JudgeNodes.Joined> join(HttpServletRequest request) throws IOException {
+        if (!legacyEnrollmentEnabled) {
+            throw new JudgeProtocolException(410, "LEGACY_ENROLLMENT_DISABLED");
+        }
         var body = read(request, JoinRequest.class);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .body(nodes.join(body.enrollmentCode(), body.bootId(), body.protocolVersion()));
+    }
+
+    @PostMapping("/bootstrap/claim")
+    public ResponseEntity<JudgeClaims.Confirmation> bootstrapClaim(HttpServletRequest request)
+            throws IOException {
+        var confirmation = claims.claim(read(request, JudgeClaims.Envelope.class, 16 * 1024));
+        if (confirmation == null) {
+            return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
+        }
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(confirmation);
     }
 
     @PostMapping("/session")
@@ -63,7 +82,8 @@ public class JudgeMachineController {
                 body.runtimeVersion(),
                 body.localSlots(),
                 body.healthy(),
-                body.checkResult());
+                body.checkResult(),
+                body.identity());
     }
 
     @PostMapping("/jobs/claim")
@@ -104,11 +124,16 @@ public class JudgeMachineController {
     }
 
     private <T> T read(HttpServletRequest request, Class<T> type) throws IOException {
-        if (request.getContentLengthLong() > MAX_REQUEST) {
+        return read(request, type, MAX_REQUEST);
+    }
+
+    private <T> T read(HttpServletRequest request, Class<T> type, int maxBytes)
+            throws IOException {
+        if (request.getContentLengthLong() > maxBytes) {
             throw new JudgeProtocolException(413, "BODY_TOO_LARGE");
         }
-        byte[] bytes = request.getInputStream().readNBytes(MAX_REQUEST + 1);
-        if (bytes.length > MAX_REQUEST) {
+        byte[] bytes = request.getInputStream().readNBytes(maxBytes + 1);
+        if (bytes.length > maxBytes) {
             throw new JudgeProtocolException(413, "BODY_TOO_LARGE");
         }
         try {

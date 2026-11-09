@@ -25,6 +25,25 @@ type mockExecutor struct {
 	onExec func(ctx context.Context, task judge.CodeTask, progress judge.ProgressSink) (judge.Verdict, error)
 }
 
+func TestUnboundAPIWorkerWaitsUntilStopped(t *testing.T) {
+	client, err := control.NewClient("http://127.0.0.1:1/api/v1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := NewWorker(Config{
+		Pool: "python", AwaitConnection: true,
+		CredentialFile: filepath.Join(t.TempDir(), "missing-credential.json"),
+	}, client, nil, nil, nil, nil)
+	ctx, stop := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer stop()
+	if err := w.Run(ctx); err != nil {
+		t.Fatalf("unbound worker exited with error instead of waiting: %v", err)
+	}
+	if status := w.HealthSnapshot(); status.NodeID != "" || status.Healthy {
+		t.Fatalf("unbound worker reported as active: %+v", status)
+	}
+}
+
 func (m *mockExecutor) Execute(ctx context.Context, task judge.CodeTask, progress judge.ProgressSink) (judge.Verdict, error) {
 	if m.onExec != nil {
 		return m.onExec(ctx, task, progress)

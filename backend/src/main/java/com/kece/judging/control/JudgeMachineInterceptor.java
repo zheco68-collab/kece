@@ -24,12 +24,20 @@ public class JudgeMachineInterceptor implements HandlerInterceptor {
             throws Exception {
         // These exact handlers authenticate their own single-purpose credentials.
         if (handler instanceof HandlerMethod method) {
+            if (method.getBeanType() == JudgeBootstrapController.class
+                    && "context".equals(method.getMethod().getName())) {
+                return true;
+            }
             if (method.getBeanType() == JudgeArtifactController.class
                     && "download".equals(method.getMethod().getName())) {
                 return true;
             }
             if (method.getBeanType() == JudgeMachineController.class
                     && "join".equals(method.getMethod().getName())) {
+                return true;
+            }
+            if (method.getBeanType() == JudgeMachineController.class
+                    && "bootstrapClaim".equals(method.getMethod().getName())) {
                 return true;
             }
         }

@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-KECE OJ 专池评测机生产同步、注册、题库清单回填与启用工具
+KECE OJ 专池评测机生产同步工具。节点接入仅通过后台粘贴 API 地址完成。
 Deploy judger/bin/judger-linux-amd64 & systemd multi-pool instances to remote host
 """
 
 import argparse
-import base64
-import hashlib
-import hmac
 import json
 import os
 import socket
@@ -34,9 +31,6 @@ DEFAULT_USER = os.environ.get("KECE_BACKEND_USER", "")
 DEFAULT_PASS = os.environ.get("KECE_BACKEND_PASS", "")
 DEFAULT_POOLS = "python,cpp,java,mysql,arkts"
 DEFAULT_MYSQL_PASS = os.environ.get("JUDGE_MYSQL_PASSWORD", "judge123")
-DEFAULT_JWT_SECRET = os.environ.get(
-    "JWT_SECRET", "kece-default-jwt-secret-key-please-change-in-production-min-32-chars"
-)
 
 SYSTEMD_UNIT = """[Unit]
 Description=KECE Judge Pool Worker Instance %i
@@ -85,38 +79,6 @@ def open_direct_socket(host, port, timeout=20):
     return sock
 
 
-def mint_ephemeral_admin_jwt(secret, user_id="1", username="kece"):
-    def b64url(raw_bytes):
-        return base64.urlsafe_b64encode(raw_bytes).rstrip(b"=").decode("ascii")
-
-    key_bytes = secret.encode("utf-8")
-    if len(key_bytes) >= 64:
-        alg, digest = "HS512", hashlib.sha512
-    elif len(key_bytes) >= 48:
-        alg, digest = "HS384", hashlib.sha384
-    else:
-        alg, digest = "HS256", hashlib.sha256
-
-    now = int(time.time())
-    header = b64url(json.dumps({"alg": alg, "typ": "JWT"}, separators=(",", ":")).encode("utf-8"))
-    payload = b64url(
-        json.dumps(
-            {
-                "sub": str(user_id),
-                "username": username,
-                "roles": ["ADMIN"],
-                "type": "access",
-                "iat": now,
-                "exp": now + 900,
-            },
-            separators=(",", ":"),
-        ).encode("utf-8")
-    )
-    signing_input = f"{header}.{payload}".encode("ascii")
-    sig = b64url(hmac.new(key_bytes, signing_input, digest).digest())
-    return f"{header}.{payload}.{sig}"
-
-
 def ssh_sudo(ssh, password, cmd):
     wrapped = f"echo '{password}' | sudo -S bash -c {repr(cmd)}"
     _, stdout, _ = ssh.exec_command(wrapped)
@@ -147,23 +109,31 @@ def remote_api(ssh, control_url, method, path, body=None, token=None):
 
 def ensure_linux_binary(bin_path):
     bin_path = os.path.abspath(bin_path)
-    if os.path.isfile(bin_path):
+    if os.path.isfile(bin_path) and os.path.getsize(bin_path) > 0:
         return bin_path
-    print(f"[*] 本地未找到 {bin_path}，正在交叉编译 Linux amd64 judger ...")
+    print(f"[*] 正在交叉编译当前源码到 {bin_path} ...")
     os.makedirs(os.path.dirname(bin_path), exist_ok=True)
-    env = os.environ.copy()
-    env.update({"GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0"})
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     judger_dir = os.path.join(repo_root, "judger")
-    subprocess.check_call(
-        ["go", "build", "-trimpath", "-ldflags=-s -w", "-o", bin_path, "./cmd/judger"],
-        cwd=judger_dir,
-        env=env,
-    )
+    go_cmd = shutil.which("go")
+    if go_cmd:
+        env = os.environ.copy()
+        env.update({"GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0"})
+        subprocess.check_call(
+            [go_cmd, "build", "-trimpath", "-ldflags=-s -w", "-o", bin_path, "./cmd/judger"],
+            cwd=judger_dir,
+            env=env,
+        )
+    else:
+        subprocess.check_call(
+            ["docker", "run", "--rm", "-v", f"{repo_root}:/workspace", "-w", "/workspace/judger",
+             "golang:1.22-alpine", "env", "GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0",
+             "go", "build", "-trimpath", "-ldflags=-s -w", "-o", "./bin/judger-linux-amd64", "./cmd/judger"]
+        )
     return bin_path
 
 
-def build_env_content(pool, instance, slots, enrollment_code, mysql_pass, control_url):
+def build_env_content(pool, instance, slots, api_port, mysql_pass, control_url):
     lines = [
         f"JUDGE_POOL={pool}",
         f"JUDGE_RUNTIME_SPEC={pool}-v1",
@@ -171,10 +141,11 @@ def build_env_content(pool, instance, slots, enrollment_code, mysql_pass, contro
         f"JUDGE_CONTROL_URL={control_url.rstrip('/')}",
         f"JUDGE_LOCAL_SLOTS={slots}",
         f"WORKSPACE_DIR=/var/lib/kece-judger/{instance}/work",
+        "JUDGE_HOST_IDENTITY_FILE=/var/lib/kece-judger/host.json",
+        f"JUDGE_IDENTITY_FILE=/var/lib/kece-judger/{instance}/identity.json",
+        f"JUDGE_HEALTH_ADDR=0.0.0.0:{api_port}",
         "JUDGE_HEARTBEAT_INTERVAL_SECONDS=5",
     ]
-    if enrollment_code:
-        lines.append(f"JUDGE_ENROLLMENT_CODE={enrollment_code}")
     if pool == "mysql":
         lines.extend(
             [
@@ -275,90 +246,28 @@ def deploy(args):
                 raise RuntimeError(f"启动 kece-judge-mysql 失败: {out}")
             print(" [OK] 独立判题库 kece-judge-mysql (127.0.0.1:3307) 已就绪")
 
-        # 3. 获取管理员令牌
-        if args.admin_token:
-            token = args.admin_token
-        elif args.admin_user and args.admin_password:
-            login = remote_api(
-                ssh, control_url, "POST", "/auth/login", {"username": args.admin_user, "password": args.admin_password}
-            )
-            if login.get("code") != 200:
-                raise RuntimeError(f"管理员登录失败: {login}")
-            token = login["data"]["token"]
-        else:
-            token = mint_ephemeral_admin_jwt(args.jwt_secret)
-
-        # 4. 回填存量 ALGO 与 DATABASE 题目的制品清单
-        if not args.skip_backfill:
+        # 制品清单回填是独立的维护任务，不参与节点接入。
+        if args.backfill:
+            if args.admin_token:
+                token = args.admin_token
+            elif args.admin_user and args.admin_password:
+                login = remote_api(
+                    ssh, control_url, "POST", "/auth/login", {"username": args.admin_user, "password": args.admin_password}
+                )
+                if login.get("code") != 200:
+                    raise RuntimeError(f"管理员登录失败: {login}")
+                token = login["data"]["token"]
+            else:
+                raise RuntimeError("--backfill 需要 --admin-token 或管理员账号密码")
             backfill_manifests(ssh, control_url, token, "ALGO")
             backfill_manifests(ssh, control_url, token, "DATABASE")
 
-        # 5. 对账宿主机组与各池节点
-        hosts_resp = remote_api(ssh, control_url, "GET", "/admin/judge-host-groups", token=token)
-        if hosts_resp.get("code") != 200:
-            raise RuntimeError(f"查询宿主机组失败: {hosts_resp}")
-        host_group = next(
-            (h for h in (hosts_resp.get("data") or []) if h.get("name") == args.host_group),
-            None,
-        )
-        if not host_group:
-            total_budget = max(len(pools) * args.slots, 10)
-            hg_create = remote_api(
-                ssh,
-                control_url,
-                "POST",
-                "/admin/judge-host-groups",
-                {"name": args.host_group, "maxSlots": total_budget},
-                token=token,
-            )
-            if hg_create.get("code") != 200:
-                raise RuntimeError(f"创建宿主机组失败: {hg_create}")
-            host_group = hg_create["data"]
-        host_group_id = str(host_group["id"])
-        print(f" [OK] 宿主机预算组: {host_group['name']} (id={host_group_id}, maxSlots={host_group['maxSlots']})")
-
-        existing_nodes = {
-            n["name"]: n
-            for n in (remote_api(ssh, control_url, "GET", "/admin/judgers?limit=100", token=token).get("data") or [])
-        }
-
-        enrolled = []
-        for pool in pools:
+        # 只部署 API 节点。后端在管理员粘贴地址后自动发现、分组和启用。
+        for offset, pool in enumerate(pools):
             instance = f"{pool}-1"
-            node_name = f"{args.node_prefix}-{instance}"
-            cred_check_rc, _ = ssh_sudo(ssh, args.password, f"test -s /var/lib/kece-judger/{instance}/credential.json")
-            has_cred = cred_check_rc == 0
-
-            node_id = None
-            enrollment_code = ""
-            if node_name in existing_nodes and has_cred:
-                node_id = str(existing_nodes[node_name]["nodeId"])
-                print(f" [*] 复用已注册节点 {node_name} (id={node_id}) 并滚动重启...")
-            elif node_name in existing_nodes and not has_cred:
-                node_id = str(existing_nodes[node_name]["nodeId"])
-                rev = existing_nodes[node_name]["revision"]
-                reset_resp = remote_api(
-                    ssh, control_url, "POST", f"/admin/judgers/{node_id}/enrollment", {"revision": rev}, token=token
-                )
-                if reset_resp.get("code") != 200:
-                    raise RuntimeError(f"重置节点 {node_name} 接入码失败: {reset_resp}")
-                enrollment_code = reset_resp["data"]["enrollmentCode"]
-            else:
-                reg_resp = remote_api(
-                    ssh,
-                    control_url,
-                    "POST",
-                    "/admin/judgers",
-                    {"hostGroupId": host_group_id, "name": node_name, "pool": pool, "maxSlots": args.slots},
-                    token=token,
-                )
-                if reg_resp.get("code") != 200:
-                    raise RuntimeError(f"注册节点 {node_name} 失败: {reg_resp}")
-                node_id = str(reg_resp["data"]["nodeId"])
-                enrollment_code = reg_resp["data"]["enrollmentCode"]
-
+            api_port = args.api_port_base + offset
             env_text = build_env_content(
-                pool, instance, args.slots, enrollment_code, args.mysql_password, control_url
+                pool, instance, args.slots, api_port, args.mysql_password, control_url
             )
             sftp = ssh.open_sftp()
             with sftp.file(f"/tmp/{instance}.env", "w") as f:
@@ -376,75 +285,8 @@ def deploy(args):
             )
             if rc != 0:
                 raise RuntimeError(f"启动 kece-judger@{instance} 失败: {out}")
-            enrolled.append((pool, instance, node_name, node_id, bool(enrollment_code)))
-
-        # 6. 等待心跳、执行自检并启用节点，切流 PERSISTENT
-        for pool, instance, node_name, node_id, strip_code in enrolled:
-            deadline = time.monotonic() + 45.0
-            node_obj = {}
-            while time.monotonic() < deadline:
-                detail = (
-                    remote_api(ssh, control_url, "GET", f"/admin/judgers/{node_id}", token=token).get("data") or {}
-                )
-                node_obj = detail.get("node") or {}
-                if node_obj.get("heartbeatAt") and node_obj.get("health") in ("UNVERIFIED", "HEALTHY"):
-                    break
-                time.sleep(1.0)
-            else:
-                raise RuntimeError(f"节点 {node_name} 未在 45s 内上报心跳")
-
-            if strip_code:
-                ssh_sudo(ssh, args.password, f"sed -i '/^JUDGE_ENROLLMENT_CODE=/d' /etc/kece/judger/{instance}.env")
-
-            if node_obj.get("health") != "HEALTHY":
-                sc = remote_api(ssh, control_url, "POST", f"/admin/judgers/{node_id}/checks", {}, token=token)
-                if sc.get("code") != 200:
-                    raise RuntimeError(f"节点 {node_name} 发起自检失败: {sc}")
-                check_id = sc["data"]["checkId"]
-                deadline = time.monotonic() + 75.0
-                while time.monotonic() < deadline:
-                    detail = (
-                        remote_api(ssh, control_url, "GET", f"/admin/judgers/{node_id}", token=token).get("data")
-                        or {}
-                    )
-                    node_obj = detail.get("node") or {}
-                    chk = next((c for c in (detail.get("checks") or []) if c.get("checkId") == check_id), {})
-                    if chk.get("state") == "PASSED" and node_obj.get("health") == "HEALTHY":
-                        break
-                    if chk.get("state") in ("FAILED", "EXPIRED"):
-                        print(f" [WARN] 节点 {node_name} 自检未通过: {chk}")
-                        break
-                    time.sleep(1.5)
-
-            if node_obj.get("health") == "HEALTHY" and node_obj.get("state") != "ENABLED":
-                en = remote_api(
-                    ssh,
-                    control_url,
-                    "PATCH",
-                    f"/admin/judgers/{node_id}",
-                    {"revision": node_obj["revision"], "state": "ENABLED"},
-                    token=token,
-                )
-                if en.get("code") != 200:
-                    raise RuntimeError(f"启用节点 {node_name} 失败: {en}")
-                print(f" [OK] 节点 {node_name} (pool={pool}, ver={node_obj.get('runtimeVersion')}) 自检 PASSED 并已置为 ENABLED")
-            else:
-                print(f" [*] 节点 {node_name} 当前状态: state={node_obj.get('state')}, health={node_obj.get('health')}")
-
-            for scene in ("PROBLEM", "PRACTICE", "EXAM"):
-                remote_api(
-                    ssh,
-                    control_url,
-                    "PUT",
-                    f"/admin/judge-routes/{pool}/{scene}",
-                    {"dispatchMode": "PERSISTENT"},
-                    token=token,
-                )
-
-        # 7. 全局一致性对账校验
-        rec = remote_api(ssh, control_url, "GET", "/admin/judgers/reconciliation", token=token)
-        rec_data = rec.get("data") or {}
-        print(f"\n [OK] 专池评测集群同步完成！对账结果 totalViolations = {rec_data.get('totalViolations')}")
+            print(f" [OK] {pool}: http://{args.api_host or args.host}:{api_port}")
+        print("请在管理后台「评测机管理 → 接入评测机」逐条粘贴上述 API 地址；接入、自检和启用将自动完成。")
     finally:
         ssh.close()
 
@@ -459,19 +301,27 @@ def main():
     parser.add_argument(
         "--control-url",
         default="http://127.0.0.1:8080/api/v1",
-        help="控制面 API 地址（跨机部署填 http://<后端IP>:8080/api/v1）",
+        help="控制面 API 地址（跨机器须使用 HTTPS；同机回环可用 HTTP）",
     )
-    parser.add_argument("--node-prefix", default="prod", help="节点名称前缀（如 prod、worker2）")
-    parser.add_argument("--host-group", default="prod-host-main", help="宿主机预算分组名称")
+    parser.add_argument("--api-host", default="", help="管理员后台可访问的节点 API 主机名或 IP，默认 SSH 主机")
+    parser.add_argument("--api-port-base", type=int, default=19091, help="首个专池节点 API 端口")
     parser.add_argument("--pools", default=DEFAULT_POOLS, help="逗号分隔的部署池列表")
     parser.add_argument("--slots", type=int, default=2, help="单池并发槽位数")
-    parser.add_argument("--skip-backfill", action="store_true", help="跳过题库制品清单回填（扩容新机器时使用）")
+    parser.add_argument("--backfill", action="store_true", help="可选：独立执行题库制品清单回填")
     parser.add_argument("--admin-token", default="", help="管理员 Bearer Token（可选）")
     parser.add_argument("--admin-user", default="", help="OJ 管理员账号（可选）")
     parser.add_argument("--admin-password", default="", help="OJ 管理员密码（可选）")
-    parser.add_argument("--jwt-secret", default=DEFAULT_JWT_SECRET, help="后端 JWT_SECRET")
     parser.add_argument("--mysql-password", default=DEFAULT_MYSQL_PASS, help="独立判题 MySQL root 密码")
     args = parser.parse_args()
+    pools = [pool.strip() for pool in args.pools.split(",") if pool.strip()]
+    if not args.host or not args.user or not args.password:
+        parser.error("必须指定 --host、--user 和 --password 或对应环境变量")
+    if not pools or len(set(pools)) != len(pools) or any(pool not in {"cpp", "java", "python", "mysql", "arkts"} for pool in pools):
+        parser.error("--pools 必须是无重复的 cpp,java,python,mysql,arkts 列表")
+    if args.slots < 1 or args.slots > 256:
+        parser.error("--slots 必须在 1 到 256 之间")
+    if args.api_port_base < 1 or args.api_port_base + len(pools) - 1 > 65535:
+        parser.error("API 端口范围无效")
     deploy(args)
 
 

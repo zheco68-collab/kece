@@ -9,6 +9,9 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o /judger ./cmd/judger
 
 FROM alpine:3.19
-RUN apk add --no-cache docker-cli
+RUN apk add --no-cache docker-cli socat
 COPY --from=build /judger /usr/local/bin/judger
-ENTRYPOINT ["judger"]
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["judger"]

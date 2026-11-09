@@ -12,8 +12,9 @@ services:
     environment:
       - JUDGE_POOL=mysql
       - JUDGE_CONTROL_URL=${JUDGE_CONTROL_URL:?Set the reachable HTTPS control-plane URL}
-      - JUDGE_ENROLLMENT_CODE=${JUDGE_ENROLLMENT_CODE:-}
       - JUDGE_CREDENTIAL_FILE=/data/judge/credential.json
+      - JUDGE_HOST_IDENTITY_FILE=/data/host/host.json
+      - JUDGE_IDENTITY_FILE=/data/judge/identity.json
       - JUDGE_BOOT_ID=${JUDGE_BOOT_ID:-}
       - JUDGE_LOCAL_SLOTS=${JUDGE_LOCAL_SLOTS:-2}
       - JUDGE_RUNTIME_SPEC=${JUDGE_RUNTIME_SPEC:-mysql-v1}
@@ -31,8 +32,9 @@ services:
     volumes:
       # MySQL 专池节点不挂载 /var/run/docker.sock
       - judger-mysql-data:/data/judge
+      - ${JUDGE_HOST_IDENTITY_DIR:-/var/lib/kece-judger/identity}:/data/host
     ports:
-      - "127.0.0.1:${JUDGE_HEALTH_PORT:-0}:9090"
+      - "${JUDGE_API_BIND:-0.0.0.0}:${JUDGE_HEALTH_PORT:-19091}:9090"
 
 volumes:
   judger-mysql-data:
