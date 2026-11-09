@@ -368,16 +368,16 @@ const displayPools = computed<PoolSummary[]>(() => {
 }
 
 .cluster-console.is-tilting {
-  border-color: rgba(34, 197, 94, 0.45);
+  border-color: #0f172a;
   box-shadow:
-    0 28px 60px -10px rgba(15, 23, 42, 0.22),
-    0 14px 28px -4px rgba(15, 23, 42, 0.1),
-    0 0 24px 2px rgba(34, 197, 94, 0.22),
-    0 0 0 1px rgba(34, 197, 94, 0.35);
+    0 32px 70px -12px rgba(0, 0, 0, 0.36),
+    0 16px 32px -6px rgba(0, 0, 0, 0.22),
+    0 0 30px 4px rgba(0, 0, 0, 0.25),
+    0 0 0 1px #0f172a;
 }
 
 .cluster-console.is-scanning {
-  border-color: rgba(34, 197, 94, 0.6);
+  border-color: #0f172a;
 }
 
 /* 3D 视差微光反射层 */
