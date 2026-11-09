@@ -27,7 +27,7 @@ DEFAULT_HOST = os.environ.get("KECE_WEB_HOST", "")
 DEFAULT_PORT = int(os.environ.get("KECE_WEB_PORT", "22"))
 DEFAULT_USER = os.environ.get("KECE_WEB_USER", "")
 DEFAULT_PASS = os.environ.get("KECE_WEB_PASS", "")
-DEFAULT_TARGET_DIR = os.environ.get("KECE_WEB_TARGET_DIR", "/var/www/kece/index")
+DEFAULT_TARGET_DIR = os.environ.get("KECE_WEB_TARGET_DIR", "/opt/1panel/www/sites/oj.zheco68.asia/index")
 
 def deploy(dist_dir="frontend/dist", host=DEFAULT_HOST, port=DEFAULT_PORT,
            user=DEFAULT_USER, password=DEFAULT_PASS, target_dir=DEFAULT_TARGET_DIR):
@@ -72,7 +72,8 @@ def deploy(dist_dir="frontend/dist", host=DEFAULT_HOST, port=DEFAULT_PORT,
         f"mkdir -p {target_dir} && "
         f"tar -xzf {remote_tar} -C {target_dir} && "
         f"chmod -R 755 {target_dir} && "
-        f"rm -f {remote_tar}"
+        f"rm -f {remote_tar} && "
+        f"(docker exec openresty openresty -s reload 2>/dev/null || true)"
     )
     # 使用 sudo 执行
     sudo_cmd = f"echo '{password}' | sudo -S bash -c \"{cmd}\""
