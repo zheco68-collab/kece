@@ -302,16 +302,17 @@ public class JudgeConnections {
                             Long.class,
                             found.hostId());
         }
-        if (Boolean.TRUE.equals(db.queryForObject(
-                "SELECT retired_at IS NOT NULL FROM judge_host_group WHERE id=?", Boolean.class, host))) {
-            throw new BusinessException(ResultCode.CONFLICT, "宿主机分组已删除，不能自动恢复");
-        }
+        boolean retiredHost = Boolean.TRUE.equals(db.queryForObject(
+                "SELECT retired_at IS NOT NULL FROM judge_host_group WHERE id=? FOR UPDATE", Boolean.class, host));
         Long node =
                 db.query(
                         "SELECT node_id FROM judge_node_identity WHERE instance_id=?",
                         r -> r.next() ? r.getLong(1) : null,
                         found.instanceId());
         if (node == null) {
+            if (retiredHost) {
+                throw new BusinessException(ResultCode.CONFLICT, "已删除分组只能由原节点身份重新接入");
+            }
             if (!"UNBOUND".equals(found.bindingState())) {
                 throw new BusinessException(ResultCode.CONFLICT, "节点已绑定至其他控制面");
             }
@@ -345,10 +346,6 @@ public class JudgeConnections {
                     found.publicKey(),
                     found.keyFingerprint());
         }
-        if (Boolean.TRUE.equals(db.queryForObject(
-                "SELECT retired_at IS NOT NULL FROM judge_node WHERE id=?", Boolean.class, node))) {
-            throw new BusinessException(ResultCode.CONFLICT, "节点已删除，不能自动恢复");
-        }
         long nodeId = node;
         long hostId = host;
         List<NodeBinding> identity =
@@ -373,6 +370,20 @@ public class JudgeConnections {
         }
         NodeBinding binding = identity.get(0);
         long expectedRevision = binding.revision();
+        if (retiredHost) {
+            // Reopen the archived host only after the original node key has been verified.
+            db.update("UPDATE judge_host_group SET retired_at=NULL,revision=revision+1 WHERE id=?", hostId);
+        }
+        if (Boolean.TRUE.equals(db.queryForObject(
+                "SELECT retired_at IS NOT NULL FROM judge_node WHERE id=?", Boolean.class, nodeId))) {
+            if (!binding.revoked() || binding.credential() != null || !"DISABLED".equals(binding.state())
+                    || !"UNBOUND".equals(found.bindingState())) {
+                throw new BusinessException(ResultCode.CONFLICT, "已删除节点尚未准备好重新接入");
+            }
+            // Identity and public key were verified above; preserve the old node ID and audit history.
+            db.update("UPDATE judge_node SET retired_at=NULL,revision=revision+1 WHERE id=?", nodeId);
+            expectedRevision++;
+        }
         if (binding.revoked()) {
             if (binding.credential() != null || !"DISABLED".equals(binding.state())
                     || !"UNBOUND".equals(found.bindingState())) {

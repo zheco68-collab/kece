@@ -60,7 +60,7 @@ MySQL 位于节点宿主机时，可以把 `JUDGE_MYSQL_HOST` 设置为 `host.do
 sudo docker compose -f deploy/judger/compose.pool.yml --env-file /etc/kece/judger/python-1.env -p kece-judger-py1 down
 ```
 
-需要从管理页删除节点时，先停用并等待在途任务和自检结束，再执行「删除」。删除会撤销凭据并把节点标记为退役，历史任务、接入记录和审计仍可追溯。宿主机分组下的所有节点均已退役，且没有运行中的任务或接入流程后，才可删除该分组；退役身份不会被再次粘贴相同 API 地址自动恢复。
+需要从管理页删除节点时，先停用并等待在途任务和自检结束，再执行「删除」。删除会撤销凭据并把节点标记为退役，历史任务、接入记录和审计仍可追溯。宿主机分组下的所有节点均已退役，且没有运行中的任务或接入流程后，才可删除该分组。若后来再次粘贴同一节点 API 地址，后端仅在签名身份、公钥和宿主身份均与历史记录一致，且节点已清除旧凭据时，恢复原节点与分组记录并重新执行绑定、自检；历史任务不会丢失。
 
 ## 5. 原生 systemd 实例与内网反向代理
 - 若在 Linux 物理机使用 systemd 管理多实例，可将 `deploy/judger/kece-judger@.service.example` 安装至 `/etc/systemd/system/kece-judger@.service`，按 `/etc/kece/judger/<instance>.env` 独立启停（如 `systemctl enable --now kece-judger@python-1`）。**切勿对同一节点同时启用 Docker Compose 与 systemd**。
