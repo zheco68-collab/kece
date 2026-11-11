@@ -1,108 +1,89 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
-import { ref, computed } from 'vue'
-import ClusterConsole from './ClusterConsole.vue'
-import * as judgeClusterModule from '@/features/judging/composables/useJudgeCluster'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mount } from '@vue/test-utils';
+import { computed, ref } from 'vue';
+import type { JudgeClusterSummary } from '@/api/system';
+import ClusterConsole from './ClusterConsole.vue';
+import * as judgeClusterModule from '@/features/judging/composables/useJudgeCluster';
 
-describe('ClusterConsole.vue', () => {
-  const refreshMock = vi.fn().mockResolvedValue(undefined)
-  const mockState = {
-    summary: ref({
-      asOf: 1700000000000,
-      freshness: 'FRESH' as const,
-      readyPools: 5,
-      totalPools: 5,
-      pools: [
-        { pool: 'cpp', name: 'C++', state: 'READY', readyNodes: 2, totalNodes: 2, pendingJobs: 0, activeJobs: 0 },
-        { pool: 'java', name: 'Java', state: 'READY', readyNodes: 3, totalNodes: 3, pendingJobs: 0, activeJobs: 0 },
-        { pool: 'python', name: 'Python', state: 'READY', readyNodes: 1, totalNodes: 1, pendingJobs: 0, activeJobs: 0 },
-        { pool: 'mysql', name: 'MySQL', state: 'READY', readyNodes: 1, totalNodes: 1, pendingJobs: 0, activeJobs: 0 },
-        { pool: 'arkts', name: 'ArkTS', state: 'READY', readyNodes: 1, totalNodes: 1, pendingJobs: 0, activeJobs: 0 },
-      ],
-    }),
-    loading: ref(false),
-    initialLoading: ref(false),
-    error: ref<string | null>(null),
-    isStale: computed(() => false),
-    isUnavailable: computed(() => false),
-    readyPools: computed(() => 5),
-    totalPools: computed(() => 5),
-    pools: computed(() => [
-      { pool: 'cpp', name: 'C++', state: 'READY', readyNodes: 2, totalNodes: 2, pendingJobs: 0, activeJobs: 0 },
-      { pool: 'java', name: 'Java', state: 'READY', readyNodes: 3, totalNodes: 3, pendingJobs: 0, activeJobs: 0 },
-      { pool: 'python', name: 'Python', state: 'READY', readyNodes: 1, totalNodes: 1, pendingJobs: 0, activeJobs: 0 },
-      { pool: 'mysql', name: 'MySQL', state: 'READY', readyNodes: 1, totalNodes: 1, pendingJobs: 0, activeJobs: 0 },
-      { pool: 'arkts', name: 'ArkTS', state: 'READY', readyNodes: 1, totalNodes: 1, pendingJobs: 0, activeJobs: 0 },
-    ]),
-    refresh: refreshMock,
-  }
+describe('ClusterConsole', () => {
+  const summary = ref<JudgeClusterSummary | null>(null);
+  const loading = ref(false);
+  const initialLoading = ref(false);
+  const error = ref<string | null>(null);
+  const refresh = vi.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
-    vi.spyOn(judgeClusterModule, 'useJudgeCluster').mockReturnValue(mockState)
-  })
+    summary.value = {
+      asOf: 1700000000000,
+      freshness: 'FRESH',
+      readyPools: 1,
+      totalPools: 2,
+      pools: [
+        {
+          pool: 'cpp',
+          name: 'C++',
+          state: 'READY',
+          readyNodes: 2,
+          totalNodes: 2,
+          pendingJobs: 0,
+          activeJobs: 1,
+        },
+        {
+          pool: 'java',
+          name: 'Java',
+          state: 'OFFLINE',
+          readyNodes: 0,
+          totalNodes: 3,
+          pendingJobs: 4,
+          activeJobs: 0,
+        },
+      ],
+    };
+    loading.value = false;
+    initialLoading.value = false;
+    error.value = null;
+    refresh.mockClear();
+    vi.spyOn(judgeClusterModule, 'useJudgeCluster').mockReturnValue({
+      summary,
+      loading,
+      initialLoading,
+      error,
+      isStale: computed(() => summary.value?.freshness === 'STALE'),
+      isUnavailable: computed(() => !summary.value && !!error.value && !initialLoading.value),
+      readyPools: computed(() => summary.value?.readyPools ?? 0),
+      totalPools: computed(() => summary.value?.totalPools ?? 5),
+      pools: computed(() => summary.value?.pools ?? []),
+      refresh,
+    });
+  });
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
+  afterEach(() => vi.restoreAllMocks());
 
-  it('正常渲染集群监控面板内容', async () => {
-    const wrapper = mount(ClusterConsole)
-    await flushPromises()
+  it('汇总各专池任务并显示离线专池和节点数量', () => {
+    const wrapper = mount(ClusterConsole);
+    expect(wrapper.findAll('dd').map((item) => item.text())).toEqual(['1 / 2', '1', '4']);
+    const [, java] = wrapper.findAll('tbody tr');
+    expect(java.get('th').text()).toBe('Java');
+    expect(java.findAll('td').map((item) => item.text())).toEqual(['离线', '0/3', '0', '4']);
+    wrapper.unmount();
+  });
 
-    expect(wrapper.text()).toContain('KECE // POOLS')
-    expect(wrapper.text()).toContain('评测机集群遥测')
-    expect(wrapper.text()).toContain('5/5 POOLS READY')
-    expect(wrapper.text()).toContain('C++')
-    expect(wrapper.text()).toContain('Java')
-  })
+  it('保留过期快照并标注数据来源', () => {
+    summary.value!.freshness = 'STALE';
+    const wrapper = mount(ClusterConsole);
+    expect(wrapper.text()).toContain('显示上次数据');
+    expect(wrapper.text()).toContain('Java');
+    wrapper.unmount();
+  });
 
-  it('鼠标悬停在卡片上触发 3D 倾斜与光标跟随', async () => {
-    const wrapper = mount(ClusterConsole)
-    await flushPromises()
-
-    const card = wrapper.get('.cluster-console')
-    const wrapperEl = wrapper.get('.cluster-console-wrapper')
-
-    // Mock getBoundingClientRect
-    vi.spyOn(card.element, 'getBoundingClientRect').mockReturnValue({
-      left: 100,
-      top: 100,
-      width: 400,
-      height: 300,
-      right: 500,
-      bottom: 400,
-      x: 100,
-      y: 100,
-      toJSON: () => {},
-    })
-
-    // Mouse enter & move
-    await wrapperEl.trigger('mouseenter')
-    await wrapperEl.trigger('mousemove', { clientX: 200, clientY: 200 })
-    await flushPromises()
-
-    expect(card.classes()).toContain('is-tilting')
-    expect(card.attributes('style')).toContain('perspective(1200px)')
-
-    // Mouse leave resets tilt
-    await wrapperEl.trigger('mouseleave')
-    await flushPromises()
-
-    expect(card.classes()).not.toContain('is-tilting')
-    expect(card.attributes('style')).toContain('rotateX(0deg) rotateY(0deg)')
-  })
-
-  it('点击刷新按钮触发扫描线动画与状态更新', async () => {
-    const wrapper = mount(ClusterConsole)
-    await flushPromises()
-
-    const refreshBtn = wrapper.get('.refresh-btn')
-    await refreshBtn.trigger('click')
-    await flushPromises()
-
-    expect(refreshMock).toHaveBeenCalledWith(true)
-    expect(wrapper.find('.scanline-track').exists()).toBe(true)
-    expect(wrapper.find('.scanline-bar').exists()).toBe(true)
-    expect(wrapper.find('.scanline-glow').exists()).toBe(true)
-  })
-})
+  it('接口失败时显示不可用并允许手动刷新', async () => {
+    summary.value = null;
+    error.value = 'request failed';
+    const wrapper = mount(ClusterConsole);
+    expect(wrapper.text()).toContain('暂时无法获取评测状态');
+    expect(wrapper.findAll('dd').map((item) => item.text())).toEqual(['—', '—', '—']);
+    await wrapper.get('button[aria-label="刷新评测状态"]').trigger('click');
+    expect(refresh).toHaveBeenCalledWith(true);
+    wrapper.unmount();
+  });
+});
