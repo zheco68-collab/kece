@@ -86,4 +86,91 @@ describe('ClusterConsole', () => {
     expect(refresh).toHaveBeenCalledWith(true);
     wrapper.unmount();
   });
+
+  it('在鼠标悬停时提供不超过 1.5° 的阻尼倾斜并保持刷新按钮可点击', async () => {
+    const wrapper = mount(ClusterConsole);
+    const panel = wrapper.get('section.cluster-console');
+
+    vi.spyOn(panel.element, 'getBoundingClientRect').mockReturnValue({
+      left: 100,
+      top: 50,
+      width: 400,
+      height: 300,
+      right: 500,
+      bottom: 350,
+      x: 100,
+      y: 50,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    await panel.trigger('mousemove', { clientX: 700, clientY: 500 });
+    const transform = (panel.element as HTMLElement).style.transform;
+    expect(transform).toContain('perspective(900px)');
+
+    const rotateX = Number(transform.match(/rotateX\((-?[\d.]+)deg\)/)?.[1]);
+    const rotateY = Number(transform.match(/rotateY\((-?[\d.]+)deg\)/)?.[1]);
+    expect(Math.abs(rotateX)).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(rotateY)).toBeLessThanOrEqual(1.5);
+    expect(rotateX).toBe(-1.5);
+    expect(rotateY).toBe(1.5);
+
+    await wrapper.get('button[aria-label="刷新评测状态"]').trigger('click');
+    expect(refresh).toHaveBeenCalledWith(true);
+
+    await panel.trigger('mouseleave');
+    expect((panel.element as HTMLElement).style.transform).toBe('');
+    wrapper.unmount();
+  });
+
+  it('在减少动态效果偏好下禁用 3D 倾斜并在加载时旋转刷新图标', async () => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query.includes('prefers-reduced-motion'),
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    try {
+      const wrapper = mount(ClusterConsole);
+      const panel = wrapper.get('section.cluster-console');
+
+      vi.spyOn(panel.element, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 400,
+        height: 300,
+        right: 400,
+        bottom: 300,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      } as DOMRect);
+
+      await panel.trigger('mousemove', { clientX: 400, clientY: 300 });
+      expect((panel.element as HTMLElement).style.transform).toBe('');
+
+      loading.value = true;
+      await wrapper.vm.$nextTick();
+      const refreshBtn = wrapper.get('button[aria-label="刷新评测状态"]');
+      expect(refreshBtn.attributes('disabled')).toBeDefined();
+      expect(refreshBtn.text()).toContain('刷新中');
+      expect(refreshBtn.get('svg').classes()).toContain('is-spinning');
+      wrapper.unmount();
+    } finally {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        writable: true,
+        value: originalMatchMedia,
+      });
+    }
+  });
 });
