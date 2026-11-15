@@ -471,7 +471,10 @@ function difficultyTone(value: string) {
             :disabled="loading"
             @click="exitRandomMode"
           >
-            返回列表
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M15 10H5m0 0 4-4m-4 4 4 4" />
+            </svg>
+            <span>返回列表</span>
           </button>
         </div>
 
@@ -546,18 +549,21 @@ function difficultyTone(value: string) {
             <span v-else class="page-count">
               {{ loading ? '正在更新…' : error ? '等待重新加载' : '共 0 道题目' }}
             </span>
-            <span class="hud-telemetry mono" :class="{ ready: !error && !loading, warning: !!error }">
+            <span
+              v-if="mode !== 'random5'"
+              class="hud-telemetry mono"
+              :class="{ ready: !error && !loading, warning: !!error }"
+            >
               {{ footerTelemetry }}
             </span>
           </div>
-          <div v-if="mode === 'random5'" class="page-actions">
-            <button type="button" :disabled="loading" @click="drawRandomFive">
-              换一批 5 题
-            </button>
-            <button type="button" :disabled="loading" @click="exitRandomMode">
-              返回列表
-            </button>
-          </div>
+          <span
+            v-if="mode === 'random5'"
+            class="hud-telemetry mono"
+            :class="{ ready: !error && !loading, warning: !!error }"
+          >
+            {{ footerTelemetry }}
+          </span>
           <div v-else class="page-actions">
             <button type="button" :disabled="page <= 1 || loading || total === null" @click="goPage(page - 1)">
               上一页
@@ -784,6 +790,7 @@ function difficultyTone(value: string) {
 
 .btn-random-5 svg,
 .all-questions svg,
+.btn-back-browse svg,
 .row-arrow,
 .search-field svg {
   width: 16px;
@@ -1128,6 +1135,18 @@ function difficultyTone(value: string) {
 .page-actions {
   display: flex;
   gap: 8px;
+}
+
+.btn-back-browse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.btn-back-browse:not(:disabled):hover svg {
+  transform: translateX(-2px);
 }
 
 .btn-back-browse,

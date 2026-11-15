@@ -237,6 +237,9 @@ describe('HomePracticeBoard', () => {
     expect(wrapper.get('.practice-total').text()).toContain('828')
     expect(wrapper.get('.btn-random-5').text()).toBe('换一批 5 题')
     expect(wrapper.find('.btn-back-browse').exists()).toBe(true)
+    expect(wrapper.find('.page-actions').exists()).toBe(false)
+    expect(wrapper.findAll('button').filter((btn) => btn.text() === '换一批 5 题')).toHaveLength(1)
+    expect(wrapper.findAll('button').filter((btn) => btn.text() === '返回列表')).toHaveLength(1)
 
     const randomRows = wrapper.findAll('.question-row')
     expect(randomRows).toHaveLength(5)
@@ -250,9 +253,7 @@ describe('HomePracticeBoard', () => {
     expect(randomRows.every((row) => !row.classes().includes('is-dropping'))).toBe(true)
 
     const callsBeforeRefresh = listSpy.mock.calls.length
-    const footerRefresh = wrapper.findAll('.page-actions button').find((btn) => btn.text() === '换一批 5 题')
-    expect(footerRefresh).toBeDefined()
-    await footerRefresh!.trigger('click')
+    await wrapper.get('.btn-random-5').trigger('click')
     await flushPromises()
 
     expect(listSpy.mock.calls.length).toBeGreaterThan(callsBeforeRefresh)
