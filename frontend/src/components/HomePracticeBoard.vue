@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { getActivePinia } from 'pinia'
 import { RouterLink } from 'vue-router'
 import { questionApi } from '@/api/question'
+import { sampleBatchFromPagedPool } from '@/shared/lib/randomSample'
 import { useUserStore } from '@/stores/user'
 import type { Question } from '@/types'
 
@@ -11,7 +12,7 @@ const ROW_DROP_STAGGER_MS = 60
 const ROW_DROP_BUFFER_MS = 180
 const RANDOM_BATCH_SIZE = 5
 const PROBE_PAGE_SIZE = 5
-const FULL_FETCH_THRESHOLD = 50
+const MAX_SINGLE_FETCH = 100
 
 const mode = ref<'browse' | 'random5'>('browse')
 const keyword = ref('')
@@ -142,84 +143,27 @@ function resetResults(options: { preserveTotal?: boolean } = {}) {
   questions.value = []
 }
 
-function shuffleItems<T>(items: T[]): T[] {
-  const copy = items.slice()
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[copy[i], copy[j]] = [copy[j], copy[i]]
-  }
-  return copy
-}
-
-function sampleDistinctPages(totalPages: number, count: number): number[] {
-  if (totalPages <= count) {
-    return Array.from({ length: totalPages }, (_, index) => index + 1)
-  }
-  const picked = new Set<number>()
-  while (picked.size < count) {
-    picked.add(Math.floor(Math.random() * totalPages) + 1)
-  }
-  return Array.from(picked)
-}
-
 async function sampleQuestionsFromPool(
   needed: number,
   userStatus: 'UNSOLVED' | undefined,
   excludeIds: Set<number>,
+  softExcludeIds: ReadonlySet<number> | undefined,
   isStale: () => boolean,
 ): Promise<{ items: Question[]; poolTotal: number } | null> {
-  if (needed <= 0) return { items: [], poolTotal: 0 }
-
-  const probe = await questionApi.list({
-    page: 1,
-    size: PROBE_PAGE_SIZE,
-    userStatus,
-  })
-  if (isStale()) return null
-
-  const poolTotal = probe.total
-  if (poolTotal <= 0) return { items: [], poolTotal: 0 }
-
-  let rawCandidates: Question[]
-  if (poolTotal <= PROBE_PAGE_SIZE) {
-    rawCandidates = probe.list
-  } else if (poolTotal <= FULL_FETCH_THRESHOLD) {
-    const full = await questionApi.list({
-      page: 1,
-      size: poolTotal,
-      userStatus,
-    })
-    if (isStale()) return null
-    rawCandidates = full.list
-  } else {
-    const totalPages = Math.ceil(poolTotal / PROBE_PAGE_SIZE)
-    const targetPages = sampleDistinctPages(totalPages, Math.min(needed, totalPages))
-    const pageLists = await Promise.all(
-      targetPages.map(async (targetPage) => {
-        if (targetPage === 1) return probe.list
-        const res = await questionApi.list({
-          page: targetPage,
-          size: PROBE_PAGE_SIZE,
-          userStatus,
-        })
-        return res.list
+  return sampleBatchFromPagedPool({
+    count: needed,
+    fetchPage: (targetPage, pageSize) =>
+      questionApi.list({
+        page: targetPage,
+        size: pageSize,
+        userStatus,
       }),
-    )
-    if (isStale()) return null
-    rawCandidates = pageLists.flat()
-  }
-
-  const seenInBatch = new Set<number>()
-  const filtered = rawCandidates.filter((q) => {
-    if (excludeIds.has(q.id) || seenInBatch.has(q.id)) return false
-    seenInBatch.add(q.id)
-    return true
+    probeSize: PROBE_PAGE_SIZE,
+    maxSingleFetch: MAX_SINGLE_FETCH,
+    excludeIds,
+    softExcludeIds,
+    isStale,
   })
-
-  return {
-    items: shuffleItems(filtered).slice(0, needed),
-    poolTotal,
-  }
 }
 
 async function loadQuestions() {
@@ -253,6 +197,10 @@ async function drawRandomFive() {
   const request = ++requestNumber
   const stale = () => request !== requestNumber || isUnmounted
 
+  const previousBatchIds =
+    mode.value === 'random5' && questions.value.length > 0
+      ? new Set(questions.value.map((q) => q.id))
+      : undefined
   mode.value = 'random5'
   unsolvedPickedCount.value = 0
   resetResults({ preserveTotal: true })
@@ -267,6 +215,7 @@ async function drawRandomFive() {
         RANDOM_BATCH_SIZE,
         'UNSOLVED',
         seenIds,
+        previousBatchIds,
         stale,
       )
       if (stale() || !unsolved) return
@@ -282,6 +231,7 @@ async function drawRandomFive() {
         RANDOM_BATCH_SIZE - picked.length,
         undefined,
         seenIds,
+        previousBatchIds,
         stale,
       )
       if (stale() || !fallback) return

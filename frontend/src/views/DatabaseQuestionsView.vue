@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { databaseApi } from '@/api/database'
+import { pickRandomWithUnsolvedPriority } from '@/shared/lib/randomSample'
 import { useUserStore } from '@/stores/user'
 import type { DbQuestion, DbQuestionType } from '@/types'
 
@@ -17,9 +18,12 @@ const size = 10
 const list = ref<DbQuestion[]>([])
 const total = ref(0)
 const loading = ref(true)
+const randomLoading = ref(false)
 const error = ref('')
 
 const solved = ref<Set<number>>(new Set())
+let randomRequestId = 0
+let isUnmounted = false
 
 const typeLabels: Record<DbQuestionType, string> = {
   SELECT: 'SELECT 查询',
@@ -74,18 +78,54 @@ async function loadSolved() {
   }
 }
 
-// 随机挑选一题
-function pickRandomQuestion() {
-  if (!list.value.length) return
-  const unsolvedPool = list.value.filter((q) => !solved.value.has(q.id))
-  const pool = unsolvedPool.length > 0 ? unsolvedPool : list.value
-  const target = pool[Math.floor(Math.random() * pool.length)]
-  if (target) {
-    router.push(`/database/${target.id}`)
+// 跨全库分页均匀随机挑选一题（已登录且在「全部」视图下优先从全库未解答题中抽取）
+async function pickRandomQuestion() {
+  if (randomLoading.value || total.value <= 0) return
+  const reqId = ++randomRequestId
+  const stale = () => isUnmounted || reqId !== randomRequestId
+  randomLoading.value = true
+  error.value = ''
+
+  const baseFilter = {
+    keyword: keyword.value.trim() || undefined,
+    type: type.value || undefined,
+  }
+
+  try {
+    const picked = await pickRandomWithUnsolvedPriority({
+      fetchPage: (userStatus, targetPage, pageSize) =>
+        databaseApi.list({
+          ...baseFilter,
+          userStatus,
+          page: targetPage,
+          size: pageSize,
+        }),
+      pageSize: size,
+      isLoggedIn: userStore.isLoggedIn,
+      statusFilter: statusFilter.value,
+      knownTotal: total.value,
+      knownPage: page.value,
+      knownList: list.value,
+      isStale: stale,
+    })
+
+    if (!stale() && picked?.item) {
+      router.push(`/database/${picked.item.id}`)
+    }
+  } catch (e) {
+    if (!stale()) {
+      error.value = e instanceof Error ? e.message : '随机抽题失败，请稍后重试'
+    }
+  } finally {
+    if (!isUnmounted && reqId === randomRequestId) {
+      randomLoading.value = false
+    }
   }
 }
 
 watch([keyword, type, statusFilter], () => {
+  randomRequestId++
+  randomLoading.value = false
   page.value = 1
   load()
 })
@@ -93,6 +133,11 @@ watch([keyword, type, statusFilter], () => {
 onMounted(() => {
   load()
   loadSolved()
+})
+
+onBeforeUnmount(() => {
+  isUnmounted = true
+  randomRequestId++
 })
 </script>
 
@@ -180,10 +225,11 @@ onMounted(() => {
         <button
           type="button"
           class="btn btn-ghost btn-sm random-btn"
-          title="随机挑选一题进行挑战"
+          title="全库随机挑选一题进行挑战"
+          :disabled="loading || randomLoading || total === 0"
           @click="pickRandomQuestion"
         >
-          <span>随机刷题</span>
+          <span>{{ randomLoading ? '抽题中…' : '随机刷题' }}</span>
         </button>
       </div>
     </div>

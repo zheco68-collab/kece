@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { objectiveApi } from '@/api/objective'
+import {
+  fetchAllPagedItems,
+  pickRandomFromPagedPool,
+  randomInt,
+} from '@/shared/lib/randomSample'
 import { useUserStore } from '@/stores/user'
 import type { ObjectiveQuestion, ObjectiveType } from '@/types'
 
@@ -18,9 +23,13 @@ const list = ref<ObjectiveQuestion[]>([])
 const total = ref(0)
 const globalTotal = ref(0)
 const loading = ref(true)
+const randomLoading = ref(false)
 const error = ref('')
 
 const solved = ref<Set<number>>(new Set())
+const filteredPool = ref<ObjectiveQuestion[]>([])
+let randomRequestId = 0
+let isUnmounted = false
 
 const typeLabels: Record<ObjectiveType, string> = {
   SINGLE: '单选题',
@@ -44,33 +53,40 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
+    const activeKeyword = keyword.value.trim() || undefined
+    const activeType = type.value || undefined
     if (statusFilter.value === 'ALL') {
+      filteredPool.value = []
       const res = await objectiveApi.list({
-        keyword: keyword.value.trim() || undefined,
-        type: type.value || undefined,
+        keyword: activeKeyword,
+        type: activeType,
         page: page.value,
         size,
       })
       list.value = res.list
       total.value = res.total
-      if (!keyword.value.trim() && !type.value) {
+      if (!activeKeyword && !activeType) {
         globalTotal.value = res.total
       }
     } else {
-      // 状态过滤模式：获取当前分类/搜索条件下的题目并在本地按作答状态精准过滤并切片
-      const res = await objectiveApi.list({
-        keyword: keyword.value.trim() || undefined,
-        type: type.value || undefined,
-        page: 1,
-        size: 1000,
-      })
-      if (!keyword.value.trim() && !type.value) {
+      // 分页拉取当前分类/搜索条件下的全量题目，避免受后端单页 100 上限截断
+      const res = await fetchAllPagedItems((targetPage, pageSize) =>
+        objectiveApi.list({
+          keyword: activeKeyword,
+          type: activeType,
+          page: targetPage,
+          size: pageSize,
+        }),
+      )
+      if (!res) return
+      if (!activeKeyword && !activeType) {
         globalTotal.value = res.total
       }
       const filtered = res.list.filter((q) => {
         const isSolved = solved.value.has(q.id)
         return statusFilter.value === 'SOLVED' ? isSolved : !isSolved
       })
+      filteredPool.value = filtered
       total.value = filtered.length
       const start = (page.value - 1) * size
       list.value = filtered.slice(start, start + size)
@@ -97,18 +113,77 @@ async function loadSolved() {
   }
 }
 
-// 随机挑选一题进行挑战
-function pickRandomQuestion() {
-  if (!list.value.length) return
-  const unsolvedPool = list.value.filter((q) => !solved.value.has(q.id))
-  const pool = unsolvedPool.length > 0 ? unsolvedPool : list.value
-  const target = pool[Math.floor(Math.random() * pool.length)]
-  if (target) {
-    router.push(`/objective/${target.id}`)
+// 跨全库分页均匀随机挑选一题进行挑战（已登录优先未解答）
+async function pickRandomQuestion() {
+  if (randomLoading.value || total.value <= 0) return
+  const reqId = ++randomRequestId
+  const stale = () => isUnmounted || reqId !== randomRequestId
+  randomLoading.value = true
+  error.value = ''
+
+  const activeKeyword = keyword.value.trim() || undefined
+  const activeType = type.value || undefined
+
+  try {
+    if (statusFilter.value !== 'ALL' && filteredPool.value.length > 0) {
+      const target = filteredPool.value[randomInt(filteredPool.value.length)]
+      if (target) router.push(`/objective/${target.id}`)
+      return
+    }
+
+    if (!userStore.isLoggedIn) {
+      const picked = await pickRandomFromPagedPool({
+        fetchPage: (targetPage, pageSize) =>
+          objectiveApi.list({
+            keyword: activeKeyword,
+            type: activeType,
+            page: targetPage,
+            size: pageSize,
+          }),
+        pageSize: size,
+        knownTotal: total.value,
+        knownPage: page.value,
+        knownList: list.value,
+        isStale: stale,
+      })
+      if (!stale() && picked?.item) {
+        router.push(`/objective/${picked.item.id}`)
+      }
+      return
+    }
+
+    const all = await fetchAllPagedItems(
+      (targetPage, pageSize) =>
+        objectiveApi.list({
+          keyword: activeKeyword,
+          type: activeType,
+          page: targetPage,
+          size: pageSize,
+        }),
+      stale,
+    )
+    if (stale() || !all || all.list.length === 0) return
+
+    const unsolvedPool = all.list.filter((q) => !solved.value.has(q.id))
+    const pool = unsolvedPool.length > 0 ? unsolvedPool : all.list
+    const target = pool[randomInt(pool.length)]
+    if (!stale() && target) {
+      router.push(`/objective/${target.id}`)
+    }
+  } catch (e) {
+    if (!stale()) {
+      error.value = e instanceof Error ? e.message : '随机抽题失败，请稍后重试'
+    }
+  } finally {
+    if (!isUnmounted && reqId === randomRequestId) {
+      randomLoading.value = false
+    }
   }
 }
 
 watch([keyword, type, statusFilter], () => {
+  randomRequestId++
+  randomLoading.value = false
   page.value = 1
   load()
 })
@@ -116,6 +191,11 @@ watch([keyword, type, statusFilter], () => {
 onMounted(async () => {
   await loadSolved()
   load()
+})
+
+onBeforeUnmount(() => {
+  isUnmounted = true
+  randomRequestId++
 })
 </script>
 
@@ -203,10 +283,11 @@ onMounted(async () => {
         <button
           type="button"
           class="btn btn-ghost btn-sm random-btn"
-          title="随机挑选一题进行挑战"
+          title="全库随机挑选一题进行挑战"
+          :disabled="loading || randomLoading || total === 0"
           @click="pickRandomQuestion"
         >
-          <span>随机刷题</span>
+          <span>{{ randomLoading ? '抽题中…' : '随机刷题' }}</span>
         </button>
       </div>
     </div>
