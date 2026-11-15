@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useJudgeCluster } from '@/features/judging/composables/useJudgeCluster';
 
 const MAX_TILT_DEG = 1.5;
+const ROW_DROP_DURATION_MS = 480;
+const ROW_DROP_STAGGER_MS = 65;
+const ROW_DROP_BUFFER_MS = 180;
 
 const {
   summary,
@@ -71,11 +74,126 @@ const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
 const tiltX = ref(0);
 const tiltY = ref(0);
 
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+const hasPoolRows = computed(() => !initialLoading.value && poolRows.value.length > 0);
+const isRowDropping = ref(
+  typeof window !== 'undefined' && !prefersReducedMotion() && hasPoolRows.value,
+);
+
+let isUnmounted = false;
+let isManualRefreshing = false;
+let dropRafId: number | null = null;
+let dropRestartTimerId: ReturnType<typeof setTimeout> | null = null;
+let dropFallbackTimerId: ReturnType<typeof setTimeout> | null = null;
+
+function clearDropTimers() {
+  if (dropRafId !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+    window.cancelAnimationFrame(dropRafId);
+  }
+  dropRafId = null;
+  if (dropRestartTimerId !== null) {
+    clearTimeout(dropRestartTimerId);
+    dropRestartTimerId = null;
+  }
+  if (dropFallbackTimerId !== null) {
+    clearTimeout(dropFallbackTimerId);
+    dropFallbackTimerId = null;
+  }
+}
+
+function scheduleRowDropFallback() {
+  if (dropFallbackTimerId !== null) {
+    clearTimeout(dropFallbackTimerId);
+  }
+  const totalMs =
+    Math.max(poolRows.value.length - 1, 0) * ROW_DROP_STAGGER_MS +
+    ROW_DROP_DURATION_MS +
+    ROW_DROP_BUFFER_MS;
+  dropFallbackTimerId = setTimeout(() => {
+    dropFallbackTimerId = null;
+    if (!isUnmounted) {
+      isRowDropping.value = false;
+    }
+  }, totalMs);
+}
+
+function activateRowDrop() {
+  if (isUnmounted || prefersReducedMotion() || !hasPoolRows.value) {
+    isRowDropping.value = false;
+    return;
+  }
+  isRowDropping.value = true;
+  scheduleRowDropFallback();
+}
+
+function triggerRowDrop() {
+  clearDropTimers();
+  if (isUnmounted || prefersReducedMotion() || !hasPoolRows.value) {
+    isRowDropping.value = false;
+    return;
+  }
+
+  if (!isRowDropping.value) {
+    activateRowDrop();
+    return;
+  }
+
+  // Detach for one frame so a rapid refresh replays the staggered cascade cleanly.
+  isRowDropping.value = false;
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    dropRafId = window.requestAnimationFrame(() => {
+      dropRafId = null;
+      activateRowDrop();
+    });
+  } else {
+    dropRestartTimerId = setTimeout(() => {
+      dropRestartTimerId = null;
+      activateRowDrop();
+    }, 16);
+  }
+}
+
+function rowDropStyle(index: number) {
+  if (!isRowDropping.value) return undefined;
+  return { '--row-delay': `${index * ROW_DROP_STAGGER_MS}ms` };
+}
+
+function handleRowDropEnd(index: number, event: AnimationEvent) {
+  if (event.target !== event.currentTarget) return;
+  if (index < poolRows.value.length - 1) return;
+  clearDropTimers();
+  isRowDropping.value = false;
+}
+
+async function handleRefresh() {
+  isManualRefreshing = true;
+  try {
+    await refresh(true);
+  } finally {
+    isManualRefreshing = false;
+    if (!isUnmounted && hasPoolRows.value) {
+      triggerRowDrop();
+    }
+  }
+}
+
+watch(hasPoolRows, (ready, prevReady) => {
+  if (ready && !prevReady && !isManualRefreshing) {
+    triggerRowDrop();
+  } else if (!ready) {
+    clearDropTimers();
+    isRowDropping.value = false;
+  }
+});
+
 function canAnimateTilt(): boolean {
-  if (typeof window === 'undefined') return false;
-  if (typeof window.matchMedia === 'function') {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
-    if (window.matchMedia('(hover: none)').matches) return false;
+  if (typeof window === 'undefined' || prefersReducedMotion()) return false;
+  if (typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches) {
+    return false;
   }
   return window.innerWidth > 480;
 }
@@ -105,6 +223,21 @@ function resetTilt() {
   tiltX.value = 0;
   tiltY.value = 0;
 }
+
+onMounted(() => {
+  if (prefersReducedMotion()) {
+    isRowDropping.value = false;
+    return;
+  }
+  if (isRowDropping.value) {
+    scheduleRowDropFallback();
+  }
+});
+
+onBeforeUnmount(() => {
+  isUnmounted = true;
+  clearDropTimers();
+});
 </script>
 
 <template>
@@ -128,7 +261,7 @@ function resetTilt() {
         class="refresh-btn"
         aria-label="刷新评测状态"
         :disabled="initialLoading || loading"
-        @click="refresh(true)"
+        @click="handleRefresh"
       >
         <svg
           :class="{ 'is-spinning': loading }"
@@ -200,7 +333,15 @@ function resetTilt() {
             {{ isUnavailable ? '暂时无法获取评测状态' : '暂无专池数据' }}
           </td>
         </tr>
-        <tr v-for="pool in poolRows" v-else :key="pool.pool">
+        <tr
+          v-for="(pool, index) in poolRows"
+          v-else
+          :key="pool.pool"
+          class="pool-row"
+          :class="{ 'is-dropping': isRowDropping }"
+          :style="rowDropStyle(index)"
+          @animationend="handleRowDropEnd(index, $event)"
+        >
           <th scope="row">{{ pool.name }}</th>
           <td>
             <span class="pool-status" :class="pool.status.tone">{{ pool.status.label }}</span>
@@ -483,7 +624,8 @@ function resetTilt() {
 
 .pool-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   text-align: right;
 }
 
@@ -504,9 +646,14 @@ function resetTilt() {
   padding-inline-end: var(--panel-gutter);
 }
 
+.pool-table thead {
+  position: relative;
+  z-index: 2;
+}
+
 .pool-table thead th {
   height: 32px;
-  background: rgba(248, 250, 252, 0.65);
+  background: #f8fafc;
   color: var(--ink-secondary, #64748b);
   font-size: 11px;
   font-weight: 600;
@@ -515,8 +662,14 @@ function resetTilt() {
 }
 
 .pool-table tbody tr {
-  border-top: 1px solid var(--line, #e2e8f0);
+  position: relative;
+  z-index: 1;
   transition: background-color 0.14s ease;
+}
+
+.pool-row.is-dropping {
+  will-change: transform, opacity;
+  animation: pool-row-drop 480ms var(--row-delay, 0ms) linear both;
 }
 
 .pool-table tbody tr:not(.skeleton-row):not(.empty-row):hover {
@@ -525,6 +678,7 @@ function resetTilt() {
 
 .pool-table tbody :is(th, td) {
   height: 40px;
+  border-top: 1px solid var(--line, #e2e8f0);
   font-size: 13px;
 }
 
@@ -673,6 +827,35 @@ function resetTilt() {
   }
 }
 
+@keyframes pool-row-drop {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -24px, 0);
+    animation-timing-function: cubic-bezier(0.55, 0.05, 0.92, 0.56);
+  }
+  45% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    animation-timing-function: cubic-bezier(0.2, 0.68, 0.35, 1);
+  }
+  66% {
+    transform: translate3d(0, -5px, 0);
+    animation-timing-function: cubic-bezier(0.58, 0.05, 0.9, 0.55);
+  }
+  82% {
+    transform: translate3d(0, 0, 0);
+    animation-timing-function: cubic-bezier(0.22, 0.66, 0.38, 1);
+  }
+  91% {
+    transform: translate3d(0, -1.5px, 0);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 @media (max-width: 480px) {
   .cluster-console {
     --panel-gutter: 10px;
@@ -689,6 +872,13 @@ function resetTilt() {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .pool-row.is-dropping {
+    animation: none !important;
+    will-change: auto;
+    opacity: 1;
+    transform: none;
+  }
+
   .cluster-console {
     transition: none;
     transform: none !important;

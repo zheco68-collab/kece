@@ -1,9 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import { computed, ref } from 'vue';
 import type { JudgeClusterSummary } from '@/api/system';
 import ClusterConsole from './ClusterConsole.vue';
 import * as judgeClusterModule from '@/features/judging/composables/useJudgeCluster';
+
+async function withReducedMotion(run: () => Promise<void> | void) {
+  const originalMatchMedia = window.matchMedia;
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes('prefers-reduced-motion'),
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+
+  try {
+    await run();
+  } finally {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: originalMatchMedia,
+    });
+  }
+}
 
 describe('ClusterConsole', () => {
   const summary = ref<JudgeClusterSummary | null>(null);
@@ -123,23 +151,7 @@ describe('ClusterConsole', () => {
   });
 
   it('在减少动态效果偏好下禁用 3D 倾斜并在加载时旋转刷新图标', async () => {
-    const originalMatchMedia = window.matchMedia;
-    Object.defineProperty(window, 'matchMedia', {
-      configurable: true,
-      writable: true,
-      value: vi.fn().mockImplementation((query: string) => ({
-        matches: query.includes('prefers-reduced-motion'),
-        media: query,
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    });
-
-    try {
+    await withReducedMotion(async () => {
       const wrapper = mount(ClusterConsole);
       const panel = wrapper.get('section.cluster-console');
 
@@ -165,12 +177,74 @@ describe('ClusterConsole', () => {
       expect(refreshBtn.text()).toContain('刷新中');
       expect(refreshBtn.get('svg').classes()).toContain('is-spinning');
       wrapper.unmount();
-    } finally {
-      Object.defineProperty(window, 'matchMedia', {
-        configurable: true,
-        writable: true,
-        value: originalMatchMedia,
-      });
-    }
+    });
+  });
+
+  it('在初次加载完成与手动刷新后让专池列表逐行错峰掉落并保持整卡静止', async () => {
+    const initialSummary = summary.value;
+    summary.value = null;
+    initialLoading.value = true;
+
+    let resolveRefresh!: () => void;
+    refresh.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+
+    const wrapper = mount(ClusterConsole);
+    expect(wrapper.find('.console-drop-stage').exists()).toBe(false);
+    expect(wrapper.findAll('tr.pool-row')).toHaveLength(0);
+
+    summary.value = initialSummary;
+    initialLoading.value = false;
+    await flushPromises();
+
+    const rows = wrapper.findAll('tr.pool-row');
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.classes().includes('is-dropping'))).toBe(true);
+    expect((rows[0].element as HTMLElement).style.getPropertyValue('--row-delay')).toBe('0ms');
+    expect((rows[1].element as HTMLElement).style.getPropertyValue('--row-delay')).toBe('65ms');
+
+    // First row finishing must not cut off remaining rows mid-cascade.
+    await rows[0].trigger('animationend');
+    expect(rows.every((row) => row.classes().includes('is-dropping'))).toBe(true);
+
+    // Bubbled child animationend must be ignored.
+    await rows[1].get('.pool-status').trigger('animationend');
+    expect(rows.every((row) => row.classes().includes('is-dropping'))).toBe(true);
+
+    await rows[1].trigger('animationend');
+    expect(rows.every((row) => !row.classes().includes('is-dropping'))).toBe(true);
+
+    await wrapper.get('button[aria-label="刷新评测状态"]').trigger('click');
+    expect(refresh).toHaveBeenCalledWith(true);
+    expect(rows.every((row) => !row.classes().includes('is-dropping'))).toBe(true);
+
+    resolveRefresh();
+    await flushPromises();
+    expect(rows.every((row) => row.classes().includes('is-dropping'))).toBe(true);
+    expect((rows[0].element as HTMLElement).style.getPropertyValue('--row-delay')).toBe('0ms');
+    expect((rows[1].element as HTMLElement).style.getPropertyValue('--row-delay')).toBe('65ms');
+
+    wrapper.unmount();
+  });
+
+  it('在减少动态效果偏好下禁用专池列表掉落动画', async () => {
+    await withReducedMotion(async () => {
+      const wrapper = mount(ClusterConsole);
+      const rows = wrapper.findAll('tr.pool-row');
+      expect(rows).toHaveLength(2);
+      expect(rows.every((row) => !row.classes().includes('is-dropping'))).toBe(true);
+      expect((rows[0].element as HTMLElement).style.getPropertyValue('--row-delay')).toBe('');
+
+      await wrapper.get('button[aria-label="刷新评测状态"]').trigger('click');
+      await flushPromises();
+      expect(refresh).toHaveBeenCalledWith(true);
+      expect(rows.every((row) => !row.classes().includes('is-dropping'))).toBe(true);
+
+      wrapper.unmount();
+    });
   });
 });
