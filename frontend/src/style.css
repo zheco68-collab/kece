@@ -13,6 +13,20 @@
   --danger-bg: #fdebec;
   --success: #2f9e44;
   --success-bg: #ebfbee;
+  /* 改版统一语义变量：克制青绿强调色 + 0px 卡片直角 */
+  --kece-accent: #137969;
+  --kece-accent-hover: #0e6053;
+  --kece-accent-soft: #eef6f4;
+  --kece-accent-ink: #0f5f53;
+  --kece-card-radius: 0px;
+  --kece-border: #e4e7ec;
+  --kece-surface-muted: #f8fafc;
+  --kece-danger: #c4314b;
+  --kece-danger-soft: #fdf2f4;
+  --kece-warning: #b25c16;
+  --kece-warning-soft: #fff7ed;
+  --kece-success: #16794f;
+  --kece-success-soft: #eefbf3;
   /* 全站直角风格：圆角一律为 0，严格保持直角设计。 */
   --radius: 0;
   --pill: 0;

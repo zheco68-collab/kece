@@ -72,6 +72,7 @@ export function useAdminOverview() {
     28: useResource((signal) => adminOverviewApi.submissionTrend(28, signal)),
   };
   const trend = computed(() => trends[range.value].state.value);
+  const trend7 = computed(() => trends[7].state.value);
   const page = { page: 1, size: 1 };
   const catalog = [
     {
@@ -186,6 +187,7 @@ export function useAdminOverview() {
     catalogTotal,
     range,
     trend,
+    trend7,
     loadTrend,
     changeRange,
     refresh,

@@ -72,4 +72,32 @@ describe('admin navigation shell', () => {
     await wrapper.get('.menu-toggle').trigger('keydown', { key: 'Escape' })
     expect(wrapper.get('.menu-toggle').attributes('aria-expanded')).toBe('false')
   })
+
+  it('keeps overview flat, auto-expands active group, and allows multiple groups open without navigating', async () => {
+    route.path = '/admin/overview'
+    route.fullPath = '/admin/overview'
+    const wrapper = mount(AdminLayout)
+    const overviewLink = wrapper.get('a[href="/admin/overview"]')
+    expect(overviewLink.attributes('aria-current')).toBe('page')
+
+    const bankTrigger = wrapper.findAll('.nav-group-trigger').find((el) => el.text().includes('题库管理'))!
+    const teachTrigger = wrapper.findAll('.nav-group-trigger').find((el) => el.text().includes('教学与考试'))!
+    expect(bankTrigger.attributes('aria-expanded')).toBe('false')
+    expect(teachTrigger.attributes('aria-expanded')).toBe('false')
+
+    await bankTrigger.trigger('click')
+    expect(bankTrigger.attributes('aria-expanded')).toBe('true')
+    await teachTrigger.trigger('click')
+    expect(teachTrigger.attributes('aria-expanded')).toBe('true')
+    // Supports simultaneous open groups and never triggers navigation on group header click
+    expect(bankTrigger.attributes('aria-expanded')).toBe('true')
+    expect(push).not.toHaveBeenCalled()
+
+    route.path = '/admin/submissions'
+    route.fullPath = '/admin/submissions'
+    await wrapper.vm.$nextTick()
+    const opsTrigger = wrapper.findAll('.nav-group-trigger').find((el) => el.text().includes('评测与内容'))!
+    expect(opsTrigger.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('a[href="/admin/submissions"]').attributes('aria-current')).toBe('page')
+  })
 })

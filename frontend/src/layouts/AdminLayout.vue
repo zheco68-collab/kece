@@ -16,41 +16,94 @@ interface NavSection {
   adminOnly?: boolean
 }
 
-interface NavGroup { label: string; items: NavSection[] }
-const navGroups: NavGroup[] = [
-  { label: '工作台', items: [
-    { path: '/admin/overview', label: '概况', icon: 'overview' },
-  ] },
-  { label: '题库管理', items: [
-    { path: '/admin/questions', label: '编程题', icon: 'code' },
-    { path: '/admin/db-questions', label: '数据库题', icon: 'database' },
-    { path: '/admin/objective-questions', label: '客观题', icon: 'checklist' },
-    { path: '/admin/problem-sets', label: '题集', icon: 'problemset' },
-  ] },
-  { label: '教学与考试', items: [
-    { path: '/admin/exams', label: '考试与组卷', icon: 'exam' },
-    { path: '/admin/practices', label: '随堂课练', icon: 'practice' },
-  ] },
-  { label: '评测与内容', items: [
-    { path: '/admin/submissions', label: '提交监控', icon: 'monitor' },
-    { path: '/admin/judgers', label: '评测机管理', icon: 'server', adminOnly: true },
-    { path: '/admin/announcements', label: '公告管理', icon: 'announcement' },
-    { path: '/admin/solutions', label: '题解管理', icon: 'solution', adminOnly: true },
-  ] },
-  { label: '系统管理', items: [
-    { path: '/admin/users', label: '用户管理', icon: 'users', adminOnly: true },
-  ] },
+interface NavGroup {
+  key: string
+  label: string
+  items: NavSection[]
+}
+
+const overviewItem: NavSection = { path: '/admin/overview', label: '概况', icon: 'overview' }
+
+const collapsibleGroups: NavGroup[] = [
+  {
+    key: 'bank',
+    label: '题库管理',
+    items: [
+      { path: '/admin/questions', label: '编程题', icon: 'code' },
+      { path: '/admin/db-questions', label: '数据库题', icon: 'database' },
+      { path: '/admin/objective-questions', label: '客观题', icon: 'checklist' },
+      { path: '/admin/problem-sets', label: '题集', icon: 'problemset' },
+    ],
+  },
+  {
+    key: 'teaching',
+    label: '教学与考试',
+    items: [
+      { path: '/admin/exams', label: '考试与组卷', icon: 'exam' },
+      { path: '/admin/practices', label: '随堂课练', icon: 'practice' },
+    ],
+  },
+  {
+    key: 'ops',
+    label: '评测与内容',
+    items: [
+      { path: '/admin/submissions', label: '提交监控', icon: 'monitor' },
+      { path: '/admin/judgers', label: '评测机管理', icon: 'server', adminOnly: true },
+      { path: '/admin/announcements', label: '公告管理', icon: 'announcement' },
+      { path: '/admin/solutions', label: '题解管理', icon: 'solution', adminOnly: true },
+    ],
+  },
+  {
+    key: 'system',
+    label: '系统管理',
+    items: [
+      { path: '/admin/users', label: '用户管理', icon: 'users', adminOnly: true },
+    ],
+  },
 ]
-const visibleGroups = computed(() => navGroups.map(group => ({
-  ...group,
-  items: group.items.filter(item => !item.adminOnly || userStore.hasRole('ADMIN')),
-})).filter(group => group.items.length))
+
+const visibleGroups = computed(() =>
+  collapsibleGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.adminOnly || userStore.hasRole('ADMIN')),
+    }))
+    .filter((group) => group.items.length > 0),
+)
+
+const expandedGroups = ref<Record<string, boolean>>({})
 const sidebarOpen = ref(false)
-watch(() => route.fullPath, () => { sidebarOpen.value = false })
+watch(() => route.fullPath, () => {
+  sidebarOpen.value = false
+})
 
 function isActive(path: string): boolean {
   return route.path === path || route.path.startsWith(path + '/')
 }
+
+function groupHasActive(group: NavGroup): boolean {
+  return group.items.some((item) => isActive(item.path))
+}
+
+function isGroupOpen(key: string): boolean {
+  return Boolean(expandedGroups.value[key])
+}
+
+function toggleGroup(key: string): void {
+  expandedGroups.value[key] = !isGroupOpen(key)
+}
+
+watch(
+  [() => route.path, visibleGroups],
+  () => {
+    for (const group of visibleGroups.value) {
+      if (groupHasActive(group)) {
+        expandedGroups.value[group.key] = true
+      }
+    }
+  },
+  { immediate: true },
+)
 
 const currentTitle = computed(() => {
   return (route.meta?.title as string) || '控制台'
@@ -75,78 +128,117 @@ function logout() {
       </div>
 
       <nav class="sidebar-nav" aria-label="后台管理导航">
-        <div v-for="group in visibleGroups" :key="group.label" class="nav-group">
-          <div class="nav-group-title">{{ group.label }}</div>
         <RouterLink
-          v-for="s in group.items"
-          :key="s.path"
-          :to="s.path"
-          class="nav-item"
-          :class="{ active: isActive(s.path) }"
+          :to="overviewItem.path"
+          class="nav-item nav-item-flat"
+          :class="{ active: isActive(overviewItem.path) }"
+          :aria-current="isActive(overviewItem.path) ? 'page' : undefined"
         >
-          <svg v-if="s.icon === 'overview'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />
           </svg>
-          <!-- 编程题图标 -->
-          <svg v-else-if="s.icon === 'code'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="16 18 22 12 16 6" />
-            <polyline points="8 6 2 12 8 18" />
-          </svg>
-          <!-- 数据库题图标 -->
-          <svg v-else-if="s.icon === 'database'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <ellipse cx="12" cy="5" rx="9" ry="3" />
-            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-          </svg>
-          <!-- 客观题图标 -->
-          <svg v-else-if="s.icon === 'checklist'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="m3 6 2 2 4-4M12 6h9M12 12h9M12 18h9M4 10h4v4H4zM4 16h4v4H4z" />
-          </svg>
-          <!-- 题集管理图标 -->
-          <svg v-else-if="s.icon === 'problemset'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-          </svg>
-          <!-- 考试管理图标 -->
-          <svg v-else-if="s.icon === 'exam'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="9" />
-            <polyline points="12 6 12 12 15 15" />
-            <line x1="12" y1="1" x2="12" y2="3" />
-          </svg>
-          <!-- 随堂课练图标 -->
-          <svg v-else-if="s.icon === 'practice'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M2 3h20" />
-            <path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3" />
-            <path d="m7 21 5-5 5 5" />
-          </svg>
-          <!-- 提交监控图标 -->
-          <svg v-else-if="s.icon === 'monitor'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-          </svg>
-          <!-- 评测机管理服务器图标 -->
-          <svg v-else-if="s.icon === 'server'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="2" width="20" height="8" rx="0" ry="0" />
-            <rect x="2" y="14" width="20" height="8" rx="0" ry="0" />
-            <line x1="6" y1="6" x2="6.01" y2="6" />
-            <line x1="6" y1="18" x2="6.01" y2="18" />
-          </svg>
-          <!-- 公告管理图标 -->
-          <svg v-else-if="s.icon === 'announcement'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-          </svg>
-          <svg v-else-if="s.icon === 'solution'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M9 18v-1c0-1.2-.7-2.2-1.5-3a6.5 6.5 0 1 1 9 0c-.8.8-1.5 1.8-1.5 3v1zM10 22h4" />
-          </svg>
-          <!-- 用户管理图标 -->
-          <svg v-else-if="s.icon === 'users'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-          </svg>
-          <span class="nav-label">{{ s.label }}</span>
+          <span class="nav-label">{{ overviewItem.label }}</span>
         </RouterLink>
+
+        <div class="nav-divider" aria-hidden="true"></div>
+
+        <div v-for="group in visibleGroups" :key="group.key" class="nav-group">
+          <button
+            type="button"
+            class="nav-group-trigger"
+            :class="{ 'has-active': groupHasActive(group), 'is-open': isGroupOpen(group.key) }"
+            :aria-expanded="isGroupOpen(group.key)"
+            :aria-controls="`nav-group-${group.key}`"
+            @click="toggleGroup(group.key)"
+          >
+            <span class="nav-group-label">{{ group.label }}</span>
+            <svg
+              class="nav-chevron"
+              :class="{ 'is-open': isGroupOpen(group.key) }"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              aria-hidden="true"
+            >
+              <path d="m4 6 4 4 4-4" />
+            </svg>
+          </button>
+
+          <div
+            v-show="isGroupOpen(group.key)"
+            :id="`nav-group-${group.key}`"
+            class="nav-group-items"
+          >
+            <RouterLink
+              v-for="s in group.items"
+              :key="s.path"
+              :to="s.path"
+              class="nav-item"
+              :class="{ active: isActive(s.path) }"
+              :aria-current="isActive(s.path) ? 'page' : undefined"
+            >
+              <!-- 编程题图标 -->
+              <svg v-if="s.icon === 'code'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
+              <!-- 数据库题图标 -->
+              <svg v-else-if="s.icon === 'database'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+              </svg>
+              <!-- 客观题图标 -->
+              <svg v-else-if="s.icon === 'checklist'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="m3 6 2 2 4-4M12 6h9M12 12h9M12 18h9M4 10h4v4H4zM4 16h4v4H4z" />
+              </svg>
+              <!-- 题集管理图标 -->
+              <svg v-else-if="s.icon === 'problemset'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+              <!-- 考试管理图标 -->
+              <svg v-else-if="s.icon === 'exam'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="9" />
+                <polyline points="12 6 12 12 15 15" />
+                <line x1="12" y1="1" x2="12" y2="3" />
+              </svg>
+              <!-- 随堂课练图标 -->
+              <svg v-else-if="s.icon === 'practice'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M2 3h20" />
+                <path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3" />
+                <path d="m7 21 5-5 5 5" />
+              </svg>
+              <!-- 提交监控图标 -->
+              <svg v-else-if="s.icon === 'monitor'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+              <!-- 评测机管理服务器图标 -->
+              <svg v-else-if="s.icon === 'server'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="2" width="20" height="8" rx="0" ry="0" />
+                <rect x="2" y="14" width="20" height="8" rx="0" ry="0" />
+                <line x1="6" y1="6" x2="6.01" y2="6" />
+                <line x1="6" y1="18" x2="6.01" y2="18" />
+              </svg>
+              <!-- 公告管理图标 -->
+              <svg v-else-if="s.icon === 'announcement'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+              <svg v-else-if="s.icon === 'solution'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M9 18v-1c0-1.2-.7-2.2-1.5-3a6.5 6.5 0 1 1 9 0c-.8.8-1.5 1.8-1.5 3v1zM10 22h4" />
+              </svg>
+              <!-- 用户管理图标 -->
+              <svg v-else-if="s.icon === 'users'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              <span class="nav-label">{{ s.label }}</span>
+            </RouterLink>
+          </div>
         </div>
       </nav>
 
@@ -282,25 +374,79 @@ function logout() {
   padding: 12px 10px 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 6px;
   overflow-y: auto;
 }
 
-.nav-group { display: grid; gap: 3px; }
-.nav-group-title {
-  padding: 8px 14px 4px;
-  color: #666;
-  font-size: 12px;
+.nav-divider {
+  height: 1px;
+  background: var(--kece-border, #e4e7ec);
+  margin: 4px 6px 6px;
+}
+
+.nav-group {
+  display: grid;
+  gap: 2px;
+}
+
+.nav-group-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  color: var(--ink-secondary);
+  font-size: 13px;
   font-weight: 600;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.nav-group-trigger:hover {
+  background: #f4f5f7;
+  color: var(--ink);
+}
+
+.nav-group-trigger.has-active {
+  color: var(--kece-accent-ink, #0f5f53);
+}
+
+.nav-group-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--ink-tertiary);
+  flex-shrink: 0;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.nav-chevron.is-open {
+  transform: rotate(180deg);
+  color: var(--ink-secondary);
+}
+
+.nav-group-items {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 4px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  gap: 10px;
+  padding: 9px 14px;
   color: var(--ink-secondary);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
   border-radius: 0;
   transition: background-color 0.15s ease, color 0.15s ease;
@@ -314,9 +460,13 @@ function logout() {
 }
 
 .nav-item.active {
-  background: #18181b;
-  color: #ffffff;
-  border-left-color: #000000;
+  background: var(--kece-accent-soft, #eef6f4);
+  color: var(--kece-accent-ink, #0f5f53);
+  border-left-color: var(--kece-accent, #137969);
+  font-weight: 600;
+}
+
+.nav-item-flat {
   font-weight: 600;
 }
 
@@ -501,7 +651,7 @@ function logout() {
 }
 
 .admin-layout :is(a, button):focus-visible {
-  outline: 2px solid #111;
+  outline: 2px solid var(--kece-accent, #137969);
   outline-offset: 2px;
 }
 
@@ -567,7 +717,8 @@ function logout() {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .admin-sidebar { transition: none; }
+  .admin-sidebar,
+  .nav-chevron { transition: none; }
 }
 </style>
 

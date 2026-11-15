@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { RouterLink } from 'vue-router';
+import { adminApi, type CodeSubmissionRow } from '@/api/admin';
+import type { ActivityTab, OverviewActivity } from '@/api/adminOverview';
 import AdminSubmissionTrend from '@/components/admin/AdminSubmissionTrend.vue';
 import { useAdminOverview } from '@/composables/useAdminOverview';
-import type { ActivityTab, OverviewActivity } from '@/api/adminOverview';
+import { useJudgeCluster } from '@/features/judging/composables/useJudgeCluster';
+import type { SubmissionStatus } from '@/types';
+import { LANGUAGE_LABELS, STATUS_ABBR, statusTone } from '@/utils/submission';
 
 const {
   isAdmin,
@@ -13,24 +17,73 @@ const {
   catalogTotal,
   range,
   trend,
+  trend7,
   loadTrend,
   changeRange,
-  refresh,
-  refreshing,
-  serverNow,
+  refresh: refreshOverview,
+  refreshing: overviewRefreshing,
 } = useAdminOverview();
+
+const {
+  summary: clusterSummary,
+  loading: clusterLoading,
+  initialLoading: clusterInitialLoading,
+  error: clusterError,
+  isStale: clusterStale,
+  isUnavailable: clusterUnavailable,
+  readyPools,
+  totalPools,
+  pools,
+  refresh: refreshCluster,
+} = useJudgeCluster();
+
+// ---- 最近代码提交（真实数据）----
+const recentRows = ref<CodeSubmissionRow[]>([]);
+const recentLoading = ref(false);
+const recentError = ref('');
+
+async function loadRecentSubmissions() {
+  recentLoading.value = true;
+  recentError.value = '';
+  try {
+    const res = await adminApi.listCodeSubmissions({ page: 1, size: 6 });
+    recentRows.value = res.list;
+  } catch (e) {
+    recentError.value = e instanceof Error ? e.message : '读取最近提交失败';
+  } finally {
+    recentLoading.value = false;
+  }
+}
+
+const isRefreshing = computed(
+  () => overviewRefreshing.value || clusterLoading.value || recentLoading.value,
+);
+
+function refreshAll() {
+  refreshOverview();
+  void refreshCluster(true);
+  void loadRecentSubmissions();
+}
+
 const tabs: { key: ActivityTab; label: string; empty: string }[] = [
-  { key: 'active', label: '进行中', empty: '当前没有进行中的考务。' },
-  { key: 'upcoming', label: '待开考', empty: '未来 7 天没有待开考的公开考试。' },
-  { key: 'ended', label: '已结束', empty: '最近 7 天没有已结束的考务。' },
+  { key: 'active', label: '进行中', empty: '当前没有正在进行的考务场次。' },
+  { key: 'upcoming', label: '待开考', empty: '未来 7 天暂无待开考的公开考试。' },
+  { key: 'ended', label: '已结束', empty: '最近 7 天暂无已结束的考务记录。' },
 ];
 const tab = ref<ActivityTab>('active');
-const shortcuts = [
-  { route: 'admin-exam-new', label: '新建试卷', icon: 'plus' },
-  { route: 'admin-practice-new', label: '发起课练', icon: 'screen' },
-  { route: 'admin-question-new', label: '新建编程题', icon: 'code' },
-  { route: 'admin-submissions', label: '提交监控', icon: 'monitor' },
-];
+
+const shortcuts = computed(() => {
+  const base = [
+    { name: 'admin-submissions', label: '提交监控' },
+    { name: 'admin-question-new', label: '新建编程题' },
+    { name: 'admin-practice-new', label: '发起课练' },
+  ];
+  if (isAdmin.value) {
+    base.splice(1, 0, { name: 'admin-judgers', label: '评测机管理' });
+  }
+  return base;
+});
+
 const timeZone = 'Asia/Shanghai';
 const timeFormat = new Intl.DateTimeFormat('zh-CN', {
   timeZone,
@@ -40,32 +93,38 @@ const timeFormat = new Intl.DateTimeFormat('zh-CN', {
 });
 const dayFormat = new Intl.DateTimeFormat('zh-CN', { timeZone, month: 'long', day: 'numeric' });
 const number = new Intl.NumberFormat('zh-CN');
-const snapshot = computed(() => activities.value.data);
-const activeFocus = computed(() => snapshot.value?.active.items[0]);
-const nextExam = computed(() => snapshot.value?.upcoming.items[0]);
-const focus = computed(() => activeFocus.value ?? nextExam.value);
-const focusTab = computed<ActivityTab>(() => (activeFocus.value ? 'active' : 'upcoming'));
-const activeTab = computed(() => tabs.find((item) => item.key === tab.value));
-const list = computed(() => {
-  const items = snapshot.value?.[tab.value].items ?? [];
-  const current = focus.value;
-  if (tab.value !== focusTab.value || !current) return items;
-  return items.filter((row) => row.id !== current.id || row.kind !== current.kind);
-});
-const catalogRows = computed(() => catalog.map((item) => ({ ...item, result: item.state.value })));
 
-const countdown = computed(() => {
-  const item = activeFocus.value;
-  const now = serverNow.value;
-  if (item?.kind !== 'PRACTICE' || !item.startAt || !item.endAt || now === null) return null;
-  const start = Date.parse(item.startAt);
-  const end = Date.parse(item.endAt);
-  if (end <= start) return null;
-  return {
-    percent: Math.max(0, Math.min(100, ((now - start) / (end - start)) * 100)),
-    elapsed: Math.max(0, Math.floor((Math.min(now, end) - start) / 60_000)),
-    remaining: Math.max(0, Math.ceil((end - now) / 60_000)),
-  };
+const snapshot = computed(() => activities.value.data);
+const activeTabMeta = computed(() => tabs.find((item) => item.key === tab.value));
+const activeList = computed(() => snapshot.value?.[tab.value].items ?? []);
+const catalogRows = computed(() => catalog.map((item) => ({ ...item, result: item.state.value })));
+const catalogFailed = computed(() => catalog.some((item) => item.state.value.failed));
+
+const weeklySubmissions = computed<number | null>(() => {
+  if (trend7.value.failed || !trend7.value.data) return null;
+  return trend7.value.data.buckets.reduce((sum, b) => sum + b.algoCount + b.dbCount, 0);
+});
+
+const totalActiveJobs = computed(() => pools.value.reduce((sum, p) => sum + p.activeJobs, 0));
+const totalPendingJobs = computed(() => pools.value.reduce((sum, p) => sum + p.pendingJobs, 0));
+
+const clusterHealth = computed(() => {
+  if (clusterInitialLoading.value) {
+    return { label: '读取中', tone: 'neutral' as const };
+  }
+  if (clusterUnavailable.value) {
+    return { label: '不可达', tone: 'danger' as const };
+  }
+  if (clusterStale.value || clusterError.value) {
+    return { label: '数据过期', tone: 'warning' as const };
+  }
+  if (readyPools.value === totalPools.value && totalPools.value > 0) {
+    return { label: '全部就绪', tone: 'ok' as const };
+  }
+  if (readyPools.value > 0) {
+    return { label: '部分降级', tone: 'warning' as const };
+  }
+  return { label: '无就绪池', tone: 'danger' as const };
 });
 
 function dateTime(value: string | null) {
@@ -82,6 +141,17 @@ function fullDateTime(value: string) {
   return `${dayFormat.format(timestamp)} ${timeFormat.format(timestamp)}`;
 }
 
+function formatSubmitTime(iso: string) {
+  return iso ? iso.slice(5, 19).replace('T', ' ') : '—';
+}
+
+function formatMemory(kb: number | null | undefined): string {
+  if (kb == null) return '-';
+  if (kb < 1024) return `${kb}KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1).replace(/\.0$/, '')}MB`;
+}
+
 function rowTiming(row: OverviewActivity, section: ActivityTab) {
   if (section === 'upcoming') return `${dateTime(row.startAt)} 开考`;
   if (row.endAt) return `${dateTime(row.endAt)} ${section === 'ended' ? '已结束' : '结束'}`;
@@ -92,6 +162,23 @@ function action(row: OverviewActivity, section: ActivityTab) {
   if (row.kind === 'PRACTICE') return { name: 'admin-practice-overview', label: '考务总览' };
   if (section === 'upcoming') return { name: 'admin-exam-edit', label: '编辑试卷' };
   return { name: 'admin-exam-papers', label: '成绩与查卷' };
+}
+
+function poolStateLabel(state: string): string {
+  switch (state) {
+    case 'READY':
+      return '就绪';
+    case 'BUSY':
+      return '繁忙';
+    case 'OFFLINE':
+      return '离线';
+    case 'DRAINING':
+      return '排空';
+    case 'PENDING_SWITCH':
+      return '切换中';
+    default:
+      return state;
+  }
 }
 
 function tabId(key: ActivityTab) {
@@ -125,789 +212,1016 @@ function navigateTabs(event: KeyboardEvent, index: number) {
   const item = tabs[target];
   if (item) selectTab(item.key, true);
 }
+
+onMounted(() => {
+  void loadRecentSubmissions();
+});
 </script>
 
 <template>
   <div class="overview">
     <header class="overview-header">
-      <div>
-        <p class="overview-kicker">教学管理工作台</p>
+      <div class="header-copy">
+        <p class="overview-kicker">
+          教学工作台 · {{ isAdmin ? '全站管理范围' : '我的管理范围' }}
+          <template v-if="snapshot">
+            · {{ activities.failed ? '上次更新' : '更新于' }}
+            <time :datetime="snapshot.asOf">{{ fullDateTime(snapshot.asOf) }}</time>
+          </template>
+        </p>
         <h1>概况</h1>
-        <p class="overview-description">查看正在进行的考务和接下来的安排。</p>
+        <p class="overview-description">统筹进行中考务、评测节点运行与近期提交流水。</p>
       </div>
-      <div class="overview-tools">
-        <span class="scope-label">{{ isAdmin ? '全站管理范围' : '我的管理范围' }}</span>
-        <span v-if="snapshot" class="updated">
-          {{ activities.failed ? '考务上次更新于' : '考务更新于' }}
-          <time :datetime="snapshot.asOf">{{ fullDateTime(snapshot.asOf) }}</time>
-        </span>
-        <button class="btn btn-ghost refresh" type="button" :disabled="refreshing" @click="refresh">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true">
-            <path d="M13.7 6a6 6 0 1 0 .1 3.7M13.7 2.5V6h-3.5" />
-          </svg>
-          {{ refreshing ? '刷新中…' : '刷新' }}
+      <div class="header-tools">
+        <RouterLink class="btn btn-primary btn-sm primary-cta" :to="{ name: 'admin-exam-new' }">
+          新建试卷
+        </RouterLink>
+        <button
+          class="btn btn-outline btn-sm refresh-btn"
+          type="button"
+          :disabled="isRefreshing"
+          @click="refreshAll"
+        >
+          {{ isRefreshing ? '刷新中…' : '刷新' }}
         </button>
       </div>
     </header>
 
-    <section v-if="focus" class="focus" aria-labelledby="overview-focus-heading">
-      <div class="focus-copy">
-        <p class="focus-label">考务焦点</p>
-        <h2 id="overview-focus-heading">{{ focus.title }}</h2>
-        <p class="focus-meta">
-          {{ focus.kind === 'PRACTICE' ? '随堂课练' : '考试' }}
-          <template v-if="focus.startAt">
-            · {{ dateTime(focus.startAt) }} {{ activeFocus ? '开始' : '开考' }}</template
-          >
-          <template v-if="focus.kind === 'PRACTICE' && !focus.endAt"> · 不限时</template>
-        </p>
-        <RouterLink
-          class="focus-action"
-          :to="{ name: action(focus, focusTab).name, params: { id: focus.id } }"
-        >
-          {{ focus.kind === 'PRACTICE' ? '查看考务总览' : action(focus, focusTab).label }}
-        </RouterLink>
-      </div>
-      <div class="focus-facts">
-        <div class="focus-facts-header">
-          <span class="focus-label">{{ activeFocus ? '本场详情' : '下一场考试' }}</span>
-          <span
-            class="focus-status"
-            :class="{ 'status-active': activeFocus && !activities.failed }"
-          >
-            {{ activities.failed ? '上次状态 · ' : '' }}{{ activeFocus ? '进行中' : '待开考' }}
-          </span>
-        </div>
-        <div class="focus-values">
-          <div>
-            <span>{{ focus.kind === 'PRACTICE' ? '已加入人数' : '开考时间' }}</span>
-            <strong v-if="focus.kind === 'PRACTICE' && focus.memberCount !== null">
-              {{ number.format(focus.memberCount) }} <small>人</small>
-            </strong>
-            <strong v-else>{{ dateTime(focus.startAt) }}</strong>
-          </div>
-          <div>
-            <span>{{ focus.kind === 'PRACTICE' ? '预计结束' : '考务窗口结束' }}</span>
-            <strong>{{
-              focus.endAt
-                ? dateTime(focus.endAt)
-                : focus.kind === 'PRACTICE'
-                  ? '不限时'
-                  : '未设时间'
-            }}</strong>
-          </div>
-        </div>
-        <div v-if="countdown" class="focus-progress">
-          <div
-            class="progress-track"
-            role="progressbar"
-            aria-label="课练时间进度"
-            :aria-valuenow="Math.round(countdown.percent)"
-          >
-            <span :style="{ width: `${countdown.percent}%` }" />
-          </div>
-          <div class="progress-caption">
-            <span>已进行 {{ countdown.elapsed }} 分钟</span>
-            <strong>{{
-              countdown.remaining ? `剩余 ${countdown.remaining} 分钟` : '已到计划结束时间'
-            }}</strong>
-          </div>
-        </div>
-      </div>
-    </section>
-    <section v-else class="focus-empty" aria-labelledby="overview-focus-heading">
-      <p class="overview-kicker">考务焦点</p>
-      <template v-if="snapshot">
-        <h2 id="overview-focus-heading">
-          {{ activities.failed ? '上次更新时没有进行中的考务' : '当前没有进行中的考务' }}
-        </h2>
-        <p v-if="!activities.failed">未来 7 天内暂无待开考的公开考试。</p>
-        <div class="empty-actions">
-          <RouterLink class="btn btn-primary" :to="{ name: 'admin-practice-new' }"
-            >发起课练</RouterLink
-          >
-          <RouterLink class="btn btn-ghost" :to="{ name: 'admin-exam-new' }">新建试卷</RouterLink>
-        </div>
-      </template>
-      <h2 v-else id="overview-focus-heading" role="status">
-        {{ activities.failed ? '暂时无法读取考务' : '正在加载考务…' }}
-      </h2>
+    <!-- 顶部 4 张核心概览指标卡 -->
+    <section class="metrics-grid" aria-label="核心工作台指标">
+      <article class="metric-card">
+        <span class="metric-label">进行中考务</span>
+        <strong class="metric-value mono">
+          {{ snapshot ? number.format(snapshot.active.total) : activities.failed ? '暂缺' : '—' }}
+        </strong>
+        <span class="metric-sub">当前正在进行的考试与课练</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">未来 7 天待开考</span>
+        <strong class="metric-value mono">
+          {{ snapshot ? number.format(snapshot.upcoming.total) : activities.failed ? '暂缺' : '—' }}
+        </strong>
+        <span class="metric-sub">已定时的待开考公开场次</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">近 7 天提交</span>
+        <strong class="metric-value mono">
+          {{
+            weeklySubmissions !== null
+              ? number.format(weeklySubmissions)
+              : trend7.failed
+                ? '暂缺'
+                : '—'
+          }}
+        </strong>
+        <span class="metric-sub">近 7 个自然日代码与 SQL 提交</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">题库总量</span>
+        <strong class="metric-value mono">
+          {{
+            catalogTotal !== null
+              ? number.format(catalogTotal)
+              : catalogFailed
+                ? '暂缺'
+                : '—'
+          }}
+        </strong>
+        <span class="metric-sub">编程、数据库与客观题合计</span>
+      </article>
     </section>
 
-    <div v-if="activities.failed" class="overview-notice" role="status">
-      <span>{{ snapshot ? '考务暂未刷新，显示上次结果。' : '考务加载失败，请重试。' }}</span>
-      <button
-        class="btn btn-ghost"
-        type="button"
-        :disabled="activities.pending"
-        @click="reloadActivities"
-      >
-        重试考务
-      </button>
-    </div>
-
+    <!-- 主体双栏区：考务安排 + 评测运行 -->
     <div class="overview-grid">
-      <div class="overview-main">
-        <section
-          class="overview-panel"
-          aria-labelledby="overview-activities-heading"
-          :aria-busy="activities.pending"
-        >
-          <header class="panel-heading">
+      <section
+        class="panel exam-panel"
+        aria-labelledby="overview-activities-heading"
+        :aria-busy="activities.pending"
+      >
+        <header class="panel-heading">
+          <div>
             <h2 id="overview-activities-heading">考务安排</h2>
-            <div class="panel-links">
-              <RouterLink :to="{ name: 'admin-exams' }"
-                >考试管理 <span aria-hidden="true">↗</span></RouterLink
-              >
-              <RouterLink :to="{ name: 'admin-practices' }"
-                >课练管理 <span aria-hidden="true">↗</span></RouterLink
-              >
-            </div>
-          </header>
-          <div class="activity-tabs" role="tablist" aria-label="考务状态">
-            <button
-              v-for="(item, index) in tabs"
-              :id="tabId(item.key)"
-              :key="item.key"
-              type="button"
-              role="tab"
-              aria-controls="overview-activity-panel"
-              :aria-selected="tab === item.key"
-              :tabindex="tab === item.key ? 0 : -1"
-              @click="selectTab(item.key)"
-              @keydown="navigateTabs($event, index)"
+          </div>
+          <div class="panel-links">
+            <RouterLink :to="{ name: 'admin-exams' }">考试管理 →</RouterLink>
+            <RouterLink :to="{ name: 'admin-practices' }">课练管理 →</RouterLink>
+          </div>
+        </header>
+
+        <div class="activity-tabs" role="tablist" aria-label="考务状态">
+          <button
+            v-for="(item, index) in tabs"
+            :id="tabId(item.key)"
+            :key="item.key"
+            type="button"
+            role="tab"
+            aria-controls="overview-activity-panel"
+            :aria-selected="tab === item.key"
+            :tabindex="tab === item.key ? 0 : -1"
+            @click="selectTab(item.key)"
+            @keydown="navigateTabs($event, index)"
+          >
+            <span>{{ item.label }}</span>
+            <span v-if="snapshot" class="tab-badge mono">{{ number.format(snapshot[item.key].total) }}</span>
+          </button>
+        </div>
+
+        <div v-if="activities.failed" class="panel-notice" role="status">
+          <span>{{ snapshot ? '考务暂未刷新，显示上次结果。' : '考务列表读取失败。' }}</span>
+          <button class="btn btn-ghost btn-sm" type="button" :disabled="activities.pending" @click="reloadActivities">
+            重试
+          </button>
+        </div>
+
+        <div
+          id="overview-activity-panel"
+          class="panel-body"
+          role="tabpanel"
+          :aria-labelledby="tabId(tab)"
+          tabindex="0"
+        >
+          <ul v-if="activeList.length" class="activity-list">
+            <li
+              v-for="row in activeList"
+              :key="`${row.kind}-${row.id}`"
+              class="activity-row"
+              :class="{ 'is-live': tab === 'active' }"
             >
-              {{ item.label }}
-              <span v-if="snapshot">{{ number.format(snapshot[item.key].total) }}</span>
+              <div class="activity-main">
+                <span class="activity-kind">{{ row.kind === 'EXAM' ? '考试' : '课练' }}</span>
+                <strong class="activity-title">{{ row.title }}</strong>
+                <span v-if="row.kind === 'PRACTICE' && row.memberCount !== null" class="member-tag mono">
+                  {{ number.format(row.memberCount) }} 人
+                </span>
+              </div>
+              <div class="activity-side">
+                <span class="activity-time mono">{{ rowTiming(row, tab) }}</span>
+                <RouterLink
+                  class="activity-link"
+                  :to="{ name: action(row, tab).name, params: { id: row.id } }"
+                >
+                  {{ action(row, tab).label }} →
+                </RouterLink>
+              </div>
+            </li>
+          </ul>
+
+          <div v-else class="compact-empty">
+            <p class="empty-msg">
+              <template v-if="!snapshot">
+                {{ activities.failed ? '暂无可展示的考务场次。' : '正在加载考务数据…' }}
+              </template>
+              <template v-else>{{ activeTabMeta?.empty }}</template>
+            </p>
+            <div v-if="snapshot" class="empty-actions">
+              <RouterLink class="btn btn-primary btn-sm primary-cta" :to="{ name: 'admin-exam-new' }">
+                新建试卷
+              </RouterLink>
+              <RouterLink class="btn btn-outline btn-sm" :to="{ name: 'admin-practice-new' }">
+                发起课练
+              </RouterLink>
+            </div>
+          </div>
+        </div>
+
+        <footer class="panel-footer">
+          <span class="foot-hint">显示各状态最近场次</span>
+          <RouterLink class="foot-link" to="/exams">前往前台考试大厅 ↗</RouterLink>
+        </footer>
+      </section>
+
+      <aside class="panel judge-panel" aria-labelledby="overview-judge-heading">
+        <header class="panel-heading">
+          <h2 id="overview-judge-heading">评测运行</h2>
+          <span class="health-badge" :class="`tone-${clusterHealth.tone}`">
+            {{ clusterHealth.label }}
+          </span>
+        </header>
+
+        <div class="judge-body">
+          <div v-if="clusterInitialLoading" class="judge-state">正在读取评测集群摘要…</div>
+
+          <div v-else-if="clusterUnavailable" class="judge-error" role="alert">
+            <p>暂时无法连接评测集群摘要：{{ clusterError }}</p>
+            <button class="btn btn-outline btn-sm" type="button" @click="refreshCluster(true)">
+              重试读取
             </button>
           </div>
-          <div
-            id="overview-activity-panel"
-            role="tabpanel"
-            :aria-labelledby="tabId(tab)"
-            tabindex="0"
-          >
-            <template v-if="list.length">
-              <div class="activity-row activity-labels" aria-hidden="true">
-                <span>场次</span><span>时间</span><span>操作</span>
+
+          <template v-else-if="clusterSummary">
+            <div class="judge-stats">
+              <div class="jstat">
+                <span>就绪专池</span>
+                <strong class="mono">{{ readyPools }} / {{ totalPools }}</strong>
               </div>
-              <ul class="activity-list">
-                <li v-for="row in list" :key="`${row.kind}-${row.id}`" class="activity-row">
-                  <div class="activity-title">
-                    <span class="activity-kind">{{ row.kind === 'EXAM' ? '考试' : '课练' }}</span>
-                    <strong>{{ row.title }}</strong>
-                  </div>
-                  <span class="activity-time">{{ rowTiming(row, tab) }}</span>
-                  <RouterLink
-                    class="activity-link"
-                    :to="{ name: action(row, tab).name, params: { id: row.id } }"
-                    :aria-label="`${action(row, tab).label} · ${row.title}`"
-                  >
-                    {{ action(row, tab).label }} <span aria-hidden="true">→</span>
-                  </RouterLink>
-                </li>
-              </ul>
-            </template>
-            <p v-else class="panel-empty">
-              <template v-if="!snapshot">{{
-                activities.failed ? '暂无可显示的考务数据。' : '正在加载场次…'
-              }}</template>
-              <template v-else-if="snapshot[tab].total && focus && tab === focusTab"
-                >这一档的场次已在上方置顶。</template
-              >
-              <template v-else>{{ activeTab?.empty }}</template>
-            </p>
-            <footer v-if="snapshot && list.length" class="activity-foot">
-              <span v-if="focus && tab === focusTab">焦点场次已在上方置顶。</span>
-              <span v-else-if="tab === 'upcoming'">按开考时间排序 · 未来 7 天</span>
-              <span v-else-if="tab === 'ended'">按结束时间倒序 · 最近 7 天</span>
-              <span v-else>按预计结束时间排序</span>
-              <span v-if="snapshot[tab].total > 5">显示部分场次</span>
-            </footer>
+              <div class="jstat">
+                <span>执行中任务</span>
+                <strong class="mono">{{ totalActiveJobs }}</strong>
+              </div>
+              <div class="jstat">
+                <span>排队任务</span>
+                <strong class="mono">{{ totalPendingJobs }}</strong>
+              </div>
+            </div>
+
+            <ul class="pool-list">
+              <li v-for="pool in pools" :key="pool.pool" class="pool-row">
+                <div class="pool-name">
+                  <strong>{{ pool.name }}</strong>
+                  <span class="mono pool-nodes">{{ pool.readyNodes }}/{{ pool.totalNodes }} 节点</span>
+                </div>
+                <div class="pool-meta">
+                  <span v-if="pool.activeJobs + pool.pendingJobs > 0" class="mono pool-jobs">
+                    {{ pool.activeJobs }} 跑 / {{ pool.pendingJobs }} 等
+                  </span>
+                  <span class="pool-pill" :class="`state-${pool.state.toLowerCase()}`">
+                    {{ poolStateLabel(pool.state) }}
+                  </span>
+                </div>
+              </li>
+            </ul>
+          </template>
+        </div>
+
+        <div class="quick-links-bar">
+          <span class="quick-label">快捷操作</span>
+          <div class="quick-grid">
+            <RouterLink
+              v-for="item in shortcuts"
+              :key="item.name"
+              class="quick-chip"
+              :to="{ name: item.name }"
+            >
+              {{ item.label }}
+            </RouterLink>
           </div>
-        </section>
-
-        <button
-          v-if="activeFocus && nextExam && tab !== 'upcoming'"
-          class="next-exam"
-          type="button"
-          @click="selectTab('upcoming', true)"
-        >
-          <span>
-            <small>下一场考试</small>
-            <strong>{{ dateTime(nextExam.startAt) }}</strong>
-          </span>
-          <strong class="next-exam-title">{{ nextExam.title }}</strong>
-          <span class="next-exam-action">查看安排 <span aria-hidden="true">→</span></span>
-        </button>
-
-        <AdminSubmissionTrend
-          :range="range"
-          :data="trend.data"
-          :pending="trend.pending"
-          :failed="trend.failed"
-          @change-range="changeRange"
-          @retry="loadTrend"
-        />
-      </div>
-
-      <aside class="overview-aside" aria-label="快捷操作和题库">
-        <section class="overview-panel side-panel" aria-labelledby="overview-shortcuts-heading">
-          <header class="panel-heading"><h2 id="overview-shortcuts-heading">快捷操作</h2></header>
-          <ul class="side-list">
-            <li v-for="shortcut in shortcuts" :key="shortcut.route">
-              <RouterLink class="side-link" :to="{ name: shortcut.route }">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true">
-                  <path v-if="shortcut.icon === 'plus'" d="M8 2v12M2 8h12" />
-                  <path v-else-if="shortcut.icon === 'screen'" d="M2 2h12v9H2zM8 11v3m-3 0h6" />
-                  <path v-else-if="shortcut.icon === 'code'" d="m5 4-4 4 4 4m6-8 4 4-4 4" />
-                  <path v-else d="M1 9h3l2-5 3 9 2-5h4" />
-                </svg>
-                <span>{{ shortcut.label }}</span>
-                <span class="side-arrow" aria-hidden="true">→</span>
-              </RouterLink>
-            </li>
-          </ul>
-        </section>
-
-        <section class="overview-panel side-panel" aria-labelledby="overview-catalog-heading">
-          <header class="panel-heading">
-            <h2 id="overview-catalog-heading">题库资产</h2>
-            <span class="subtle">{{ isAdmin ? '全站题库' : '我的题库' }}</span>
-          </header>
-          <ul class="side-list">
-            <li v-for="item in catalogRows" :key="item.route" class="catalog-row">
-              <RouterLink class="side-link" :to="{ name: item.route }">
-                <span>{{ item.title }}</span>
-                <strong v-if="item.result.data !== null" class="catalog-number">{{
-                  number.format(item.result.data)
-                }}</strong>
-                <span v-else class="catalog-number subtle">{{
-                  item.result.failed ? '暂缺' : '加载中…'
-                }}</span>
-                <span aria-hidden="true">→</span>
-              </RouterLink>
-              <div v-if="item.result.failed" class="catalog-notice" role="status">
-                <span v-if="item.result.loadedAt !== null"
-                  >上次更新 {{ fullDateTime(new Date(item.result.loadedAt).toISOString()) }}</span
-                >
-                <span v-else>{{ item.title }}数量暂未加载</span>
-                <button type="button" :disabled="item.result.pending" @click="item.load">
-                  重试
-                </button>
-              </div>
-            </li>
-          </ul>
-          <footer v-if="catalogTotal !== null" class="catalog-total">
-            <span>三类题目合计</span><strong>{{ number.format(catalogTotal) }} 道</strong>
-          </footer>
-        </section>
+        </div>
       </aside>
     </div>
+
+    <!-- 通栏：最近提交流水（严格不展示得分） -->
+    <section class="panel recent-panel" aria-labelledby="overview-recent-heading">
+      <header class="panel-heading">
+        <div>
+          <h2 id="overview-recent-heading">最近提交</h2>
+        </div>
+        <RouterLink class="panel-link-primary" :to="{ name: 'admin-submissions' }">
+          前往提交监控 →
+        </RouterLink>
+      </header>
+
+      <div v-if="recentError" class="panel-notice" role="status">
+        <span>{{ recentError }}</span>
+        <button class="btn btn-ghost btn-sm" type="button" :disabled="recentLoading" @click="loadRecentSubmissions">
+          重试
+        </button>
+      </div>
+
+      <div v-else-if="recentLoading && recentRows.length === 0" class="judge-state">
+        正在加载近期代码提交…
+      </div>
+
+      <div v-else-if="recentRows.length === 0" class="compact-empty">
+        <p class="empty-msg">暂无最近提交记录。</p>
+      </div>
+
+      <div v-else class="recent-table-wrap">
+        <table class="recent-table">
+          <thead>
+            <tr>
+              <th>提交 / 用户</th>
+              <th>题目</th>
+              <th>语言</th>
+              <th>状态</th>
+              <th>耗时 / 内存</th>
+              <th>提交时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in recentRows" :key="row.submissionId">
+              <td>
+                <span class="mono row-id">#{{ row.submissionId }}</span>
+                <span class="row-user">{{ row.username }}</span>
+              </td>
+              <td class="row-question" :title="row.questionTitle || undefined">
+                {{ row.questionTitle || `题目 #${row.questionId}` }}
+              </td>
+              <td>{{ LANGUAGE_LABELS[row.language] ?? row.language }}</td>
+              <td>
+                <span class="status-pill" :class="statusTone(row.status as SubmissionStatus)">
+                  {{ STATUS_ABBR[row.status as SubmissionStatus] ?? row.status }}
+                </span>
+              </td>
+              <td class="mono muted-cell">
+                {{ row.timeUsedMs != null ? `${row.timeUsedMs}ms` : '-' }} / {{ formatMemory(row.memoryUsedKb) }}
+              </td>
+              <td class="mono muted-cell">{{ formatSubmitTime(row.createdAt) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 紧凑题库资产条 + 提交趋势 -->
+    <div class="bottom-grid">
+      <section class="panel catalog-panel" aria-labelledby="overview-catalog-heading">
+        <header class="panel-heading">
+          <h2 id="overview-catalog-heading">题库资产</h2>
+          <span class="subtle">{{ isAdmin ? '全站题库' : '我的题库' }}</span>
+        </header>
+        <div class="catalog-strip">
+          <div v-for="item in catalogRows" :key="item.route" class="catalog-cell">
+            <RouterLink class="catalog-link" :to="{ name: item.route }">
+              <span class="catalog-name">{{ item.title }}</span>
+              <strong v-if="item.result.data !== null" class="catalog-num mono">
+                {{ number.format(item.result.data) }}
+              </strong>
+              <span v-else class="catalog-num subtle">
+                {{ item.result.failed ? '暂缺' : '…' }}
+              </span>
+            </RouterLink>
+            <button
+              v-if="item.result.failed"
+              class="retry-tiny"
+              type="button"
+              :disabled="item.result.pending"
+              @click="item.load"
+            >
+              重试
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <AdminSubmissionTrend
+        :range="range"
+        :data="trend.data"
+        :pending="trend.pending"
+        :failed="trend.failed"
+        @change-range="changeRange"
+        @retry="loadTrend"
+      />
+    </div>
+
+    <footer class="overview-scope-footer">
+      <span>范围：{{ isAdmin ? '全站管理员视角' : '出题人本人创建范围' }}</span>
+      <span>时间口径：北京时间（Asia/Shanghai / UTC+8）</span>
+    </footer>
   </div>
 </template>
 
 <style scoped>
 .overview {
-  --overview-ink: #202329;
-  --overview-text-on-dark: #f3f5f7;
-  --overview-muted-on-dark: #c3cbd5;
   width: 100%;
-  max-width: 1500px;
+  max-width: 1460px;
   margin-inline: auto;
-  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
-.overview :is(h1, h2, p) {
-  margin: 0;
-}
-.overview :is(a, button):focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
+
 .overview-header {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  gap: 16px;
   flex-wrap: wrap;
-  gap: 12px 20px;
-  margin-bottom: 22px;
 }
-.overview-header h1 {
-  margin-block: 3px;
-  font-size: 40px;
-  line-height: 1.2;
-}
+
 .overview-kicker {
-  font-weight: 700;
-  color: var(--ink-secondary);
-  font-size: 13px;
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  color: var(--ink-tertiary);
 }
+
+.overview-header h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
 .overview-description {
+  margin: 0;
+  font-size: 13.5px;
   color: var(--ink-secondary);
 }
-.overview-tools,
-.panel-links,
-.empty-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
-.scope-label,
-.activity-kind {
-  padding: 2px 8px;
-  background: var(--surface-hover);
-  color: var(--ink-secondary);
-  font-size: 12px;
-  font-weight: 650;
-  white-space: nowrap;
-}
-.updated,
-.subtle {
-  color: var(--ink-secondary);
-  font-size: 13px;
-}
-.updated,
-.activity-time,
-.focus-values,
-.catalog-number,
-.next-exam {
-  font-variant-numeric: tabular-nums;
-}
-.refresh svg {
-  width: 16px;
-  height: 16px;
-  stroke-width: 1.5;
-}
-.focus {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  gap: 24px;
-  padding: 22px 26px;
-  background: var(--overview-ink);
-  color: var(--overview-text-on-dark);
-}
-.focus-copy {
-  min-width: 0;
-}
-.focus h2 {
-  margin: 14px 0 4px;
-  font-size: 30px;
-  line-height: 1.25;
-  overflow-wrap: anywhere;
-}
-.focus-label,
-.focus-meta,
-.focus-values span,
-.progress-caption {
-  color: var(--overview-muted-on-dark);
-  font-size: 13px;
-}
-.focus-label {
-  font-weight: 650;
-}
-.focus-action {
-  display: inline-flex;
-  align-items: center;
-  min-height: 38px;
-  margin-top: 18px;
-  padding: 0 14px;
-  background: var(--overview-text-on-dark);
-  color: var(--overview-ink);
-  font-weight: 700;
-  text-decoration: none;
-}
-.focus .focus-action:hover {
-  background: #dce2e9;
-}
-.focus .focus-action:focus-visible {
-  outline-color: var(--overview-text-on-dark);
-}
-.focus-facts {
-  display: grid;
-  align-content: start;
-  min-width: 0;
-  gap: 12px;
-  padding-left: 24px;
-  border-left: 1px solid #4a505b;
-}
-.focus-facts-header,
-.progress-caption {
+
+.header-tools {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 4px 12px;
-}
-.focus-status {
-  padding: 2px 8px;
-  background: #41464f;
-  font-size: 12px;
-}
-.focus-status.status-active {
-  background: #303e38;
-  color: #d3f0df;
-}
-.focus-values {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 14px;
-}
-.focus-values strong {
-  display: block;
-  font-size: clamp(22px, 2.15vw, 35px);
-  line-height: 1.25;
-  overflow-wrap: anywhere;
-}
-.focus-values small {
-  font-size: 14px;
-  font-weight: 500;
-}
-.progress-track {
-  height: 5px;
-  margin-bottom: 5px;
-  background: #4a505b;
-}
-.progress-track span {
-  display: block;
-  height: 100%;
-  background: #c6d1dc;
-}
-.progress-caption strong {
-  color: var(--overview-text-on-dark);
-}
-.focus-empty {
-  display: grid;
-  gap: 7px;
-  padding: 22px 26px;
-  background: var(--surface-white);
-  border: 1px solid var(--line);
-}
-.focus-empty h2 {
-  font-size: 22px;
-}
-.focus-empty > p {
-  color: var(--ink-secondary);
-}
-.empty-actions {
-  margin-top: 5px;
-}
-.overview-notice {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
   gap: 8px;
-  margin-top: 10px;
-  padding: 8px 12px;
-  background: #f8ece7;
-  color: #8b3c27;
-  font-size: 13px;
 }
+
+.primary-cta {
+  background: var(--kece-accent, #137969);
+  border-color: var(--kece-accent, #137969);
+  color: #ffffff;
+}
+
+.primary-cta:hover {
+  background: var(--kece-accent-hover, #0e6053);
+  border-color: var(--kece-accent-hover, #0e6053);
+}
+
+/* 顶部 4 指标卡 */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.metric-card {
+  background: #ffffff;
+  border: 1px solid var(--kece-border, var(--line));
+  border-radius: var(--kece-card-radius, 0px);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metric-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.metric-value {
+  font-size: 28px;
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.metric-sub {
+  font-size: 12px;
+  color: var(--ink-tertiary);
+}
+
+/* 主体双栏 */
 .overview-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(285px, 30%);
-  align-items: start;
-  gap: 18px;
-  margin-top: 18px;
-}
-.overview-main,
-.overview-aside {
-  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr);
   gap: 16px;
-  min-width: 0;
+  align-items: stretch;
 }
-.overview-panel {
-  min-width: 0;
-  border: 1px solid var(--line);
-  background: var(--surface-white);
+
+.panel {
+  background: #ffffff;
+  border: 1px solid var(--kece-border, var(--line));
+  border-radius: var(--kece-card-radius, 0px);
+  display: flex;
+  flex-direction: column;
 }
+
 .panel-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  padding: 16px 20px 8px;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--kece-border, var(--line));
 }
+
 .panel-heading h2 {
-  font-size: 20px;
-}
-.panel-links a,
-.activity-link,
-.side-link {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 700;
   color: var(--ink);
-  text-decoration: none;
 }
-.panel-links a {
+
+.panel-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12.5px;
   color: var(--ink-secondary);
-  font-size: 13px;
 }
+
 .panel-links a:hover,
-.activity-link:hover {
-  text-decoration: underline;
+.panel-link-primary:hover,
+.foot-link:hover {
+  color: var(--kece-accent, #137969);
 }
+
+.panel-link-primary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--kece-accent-ink, #0f5f53);
+}
+
 .activity-tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  padding-inline: 20px;
-  border-bottom: 1px solid var(--line);
+  gap: 6px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #f1f5f9;
+  background: var(--kece-surface-muted, #f8fafc);
 }
+
 .activity-tabs button {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: 40px;
-  padding: 0 4px;
-  border: 0;
-  border-bottom: 3px solid transparent;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  border: 1px solid transparent;
+  background: transparent;
   border-radius: 0;
-  background: none;
-  color: var(--ink-secondary);
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-}
-.activity-tabs button[aria-selected='true'] {
-  border-bottom-color: var(--ink);
-  color: var(--ink);
-  font-weight: 700;
-}
-.activity-list,
-.side-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.activity-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(112px, 25%) minmax(82px, auto);
-  align-items: center;
-  gap: 10px;
-  padding: 11px 20px;
-  border-bottom: 1px solid var(--line);
-}
-.activity-labels {
-  background: var(--surface);
-  color: var(--ink-secondary);
-  font-size: 12px;
-}
-.activity-labels > :last-child,
-.activity-link {
-  justify-self: end;
-}
-.activity-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-.activity-title strong {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.activity-time {
-  color: var(--ink-secondary);
-  font-size: 13px;
-}
-.activity-link {
-  font-size: 13px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.panel-empty,
-.activity-foot {
-  padding: 12px 20px;
-  color: var(--ink-secondary);
-  font-size: 13px;
-}
-.activity-foot {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 6px 10px;
-}
-.next-exam {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  min-height: 66px;
-  padding: 10px 16px;
-  border: 1px solid var(--line);
-  border-radius: 0;
-  background: var(--surface-hover);
-  color: var(--ink);
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-}
-.next-exam:hover {
-  background: #e1e6ec;
-}
-.next-exam small {
-  display: block;
-  color: var(--ink-secondary);
-}
-.next-exam-title {
-  padding-left: 12px;
-  border-left: 1px solid var(--line);
-  overflow-wrap: anywhere;
-}
-.next-exam-action {
-  font-size: 13px;
-  white-space: nowrap;
-}
-.side-panel {
-  padding-bottom: 8px;
-}
-.side-list {
-  padding-inline: 15px;
-}
-.side-list > li {
-  border-top: 1px solid var(--line);
-}
-.side-link {
-  display: flex;
-  min-height: 41px;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 4px;
-  font-size: 14px;
-}
-.side-link:hover {
-  background: var(--surface);
-}
-.side-link svg {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-  stroke-width: 1.25;
-}
-.side-arrow,
-.catalog-number {
-  margin-left: auto;
-}
-.catalog-number:not(.subtle) {
-  font-size: 21px;
-}
-.catalog-total,
-.catalog-notice {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  font-size: 13px;
-}
-.catalog-total {
-  margin-inline: 15px;
-  padding: 6px 4px 0;
-  border-top: 1px solid var(--line);
-  color: var(--ink-secondary);
-}
-.catalog-total strong {
-  color: var(--ink);
-}
-.catalog-notice {
-  padding: 0 4px 4px;
-  color: #8b3c27;
-}
-.catalog-notice button {
-  padding: 4px 8px;
-  border: 1px solid var(--line);
-  border-radius: 0;
-  background: var(--surface-white);
-  color: inherit;
-  font: inherit;
   cursor: pointer;
 }
 
-@container (max-width: 920px) {
-  .overview-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .overview-aside {
+.activity-tabs button[aria-selected='true'] {
+  background: #ffffff;
+  border-color: var(--kece-border, var(--line));
+  color: var(--kece-accent-ink, #0f5f53);
+  font-weight: 600;
+}
+
+.tab-badge {
+  font-size: 11.5px;
+  color: var(--ink-tertiary);
+}
+
+.panel-notice {
+  margin: 12px 18px 0;
+  padding: 10px 12px;
+  background: var(--kece-danger-soft, #fdf2f4);
+  border: 1px solid var(--kece-danger, #c4314b);
+  color: var(--kece-danger, #c4314b);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.panel-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.activity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #f1f5f9;
+  border-left: 3px solid transparent;
+}
+
+.activity-row.is-live {
+  border-left-color: var(--kece-accent, #137969);
+}
+
+.activity-row:last-child {
+  border-bottom: 0;
+}
+
+.activity-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.activity-kind {
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--kece-surface-muted, #f8fafc);
+  border: 1px solid var(--kece-border, var(--line));
+  color: var(--ink-secondary);
+  flex-shrink: 0;
+}
+
+.activity-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-tag {
+  font-size: 11.5px;
+  color: var(--ink-tertiary);
+  flex-shrink: 0;
+}
+
+.activity-side {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.activity-time {
+  font-size: 12px;
+  color: var(--ink-tertiary);
+}
+
+.activity-link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--kece-accent-ink, #0f5f53);
+}
+
+.compact-empty {
+  padding: 28px 18px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.empty-msg {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--ink-secondary);
+}
+
+.empty-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.panel-footer {
+  margin-top: auto;
+  padding: 10px 18px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--ink-tertiary);
+}
+
+.foot-link {
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+/* 评测运行面板 */
+.health-badge {
+  padding: 2px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid var(--kece-border, var(--line));
+}
+
+.tone-ok {
+  background: var(--kece-accent-soft, #eef6f4);
+  border-color: var(--kece-accent, #137969);
+  color: var(--kece-accent-ink, #0f5f53);
+}
+
+.tone-warning {
+  background: var(--kece-warning-soft, #fff7ed);
+  border-color: #fed7aa;
+  color: var(--kece-warning, #b25c16);
+}
+
+.tone-danger {
+  background: var(--kece-danger-soft, #fdf2f4);
+  border-color: #fecdd3;
+  color: var(--kece-danger, #c4314b);
+}
+
+.tone-neutral {
+  background: var(--kece-surface-muted, #f8fafc);
+  color: var(--ink-secondary);
+}
+
+.judge-body {
+  padding: 14px 18px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.judge-state {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-tertiary);
+}
+
+.judge-error {
+  padding: 14px;
+  border: 1px solid var(--kece-danger, #c4314b);
+  background: var(--kece-danger-soft, #fdf2f4);
+  color: var(--kece-danger, #c4314b);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.judge-error p {
+  margin: 0;
+}
+
+.judge-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.jstat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.jstat span {
+  font-size: 11.5px;
+  color: var(--ink-tertiary);
+}
+
+.jstat strong {
+  font-size: 17px;
+  color: var(--ink);
+}
+
+.pool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pool-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.pool-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pool-name strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.pool-nodes,
+.pool-jobs {
+  font-size: 11.5px;
+  color: var(--ink-tertiary);
+}
+
+.pool-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pool-pill {
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--kece-border, var(--line));
+}
+
+.pool-pill.state-ready {
+  background: var(--kece-success-soft, #eefbf3);
+  border-color: #a7f3d0;
+  color: var(--kece-success, #16794f);
+}
+
+.pool-pill.state-busy {
+  background: var(--kece-warning-soft, #fff7ed);
+  border-color: #fed7aa;
+  color: var(--kece-warning, #b25c16);
+}
+
+.pool-pill.state-offline {
+  background: var(--kece-danger-soft, #fdf2f4);
+  border-color: #fecdd3;
+  color: var(--kece-danger, #c4314b);
+}
+
+.quick-links-bar {
+  padding: 12px 18px 14px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-tertiary);
+}
+
+.quick-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quick-chip {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--kece-border, var(--line));
+  background: var(--kece-surface-muted, #f8fafc);
+  color: var(--ink-secondary);
+}
+
+.quick-chip:hover {
+  border-color: var(--kece-accent, #137969);
+  color: var(--kece-accent-ink, #0f5f53);
+  background: var(--kece-accent-soft, #eef6f4);
+}
+
+/* 最近提交表 */
+.recent-table-wrap {
+  overflow-x: auto;
+}
+
+.recent-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.recent-table th {
+  text-align: left;
+  padding: 10px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-tertiary);
+  background: var(--kece-surface-muted, #f8fafc);
+  border-bottom: 1px solid var(--kece-border, var(--line));
+}
+
+.recent-table td {
+  padding: 10px 18px;
+  border-bottom: 1px solid #f1f5f9;
+  color: var(--ink);
+}
+
+.recent-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.row-id {
+  font-size: 12px;
+  color: var(--ink-tertiary);
+  margin-right: 6px;
+}
+
+.row-user {
+  font-weight: 600;
+}
+
+.row-question {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muted-cell {
+  font-size: 12.5px;
+  color: var(--ink-tertiary);
+}
+
+.status-pill {
+  display: inline-block;
+  min-width: 44px;
+  padding: 2px 8px;
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.status-pill.ac { background: var(--success); }
+.status-pill.wa { background: var(--danger); }
+.status-pill.tle { background: #111827; }
+.status-pill.mle { background: #d97706; }
+.status-pill.re { background: #7c3aed; }
+.status-pill.ce,
+.status-pill.se { background: #475569; }
+.status-pill.run { background: #6b7280; }
+
+/* 底部题库资产与趋势 */
+.bottom-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.5fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.subtle {
+  font-size: 12px;
+  color: var(--ink-tertiary);
+}
+
+.catalog-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.catalog-cell {
+  border-right: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.catalog-cell:last-child {
+  border-right: 0;
+}
+
+.catalog-link {
+  padding: 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.catalog-link:hover {
+  background: var(--kece-surface-muted, #f8fafc);
+}
+
+.catalog-name {
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+}
+
+.catalog-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.retry-tiny {
+  margin: 0 14px 10px;
+  padding: 3px 8px;
+  font-size: 12px;
+  border: 1px solid var(--kece-border, var(--line));
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.overview-scope-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+  font-size: 12px;
+  color: var(--ink-tertiary);
+}
+
+@media (max-width: 1080px) {
+  .metrics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .overview-grid,
+  .bottom-grid {
+    grid-template-columns: 1fr;
+  }
 }
-@container (max-width: 570px) {
-  .overview-header {
-    margin-bottom: 15px;
+
+@media (max-width: 560px) {
+  .metrics-grid,
+  .catalog-strip {
+    grid-template-columns: 1fr;
   }
-  .overview-header h1 {
-    font-size: 32px;
-  }
-  .focus {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
-    padding: 16px;
-  }
-  .focus h2 {
-    font-size: 23px;
-  }
-  .focus-facts {
-    padding: 14px 0 0;
-    border-left: 0;
-    border-top: 1px solid #4a505b;
-  }
-  .focus-action,
-  .side-link,
-  .catalog-notice button,
-  .panel-links a,
-  .activity-tabs button {
-    min-height: 44px;
-  }
-  .panel-links a {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .overview-aside {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .panel-heading,
-  .activity-row,
-  .panel-empty,
-  .activity-foot {
-    padding-inline: 12px;
-  }
-  .activity-tabs {
-    padding-inline: 12px;
-    gap: 4px 10px;
-  }
-  .activity-labels {
-    display: none;
-  }
-  .activity-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 4px 8px;
-  }
-  .activity-time {
-    grid-column: 1;
-  }
-  .activity-link {
-    grid-column: 2;
-    grid-row: 1 / 3;
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    min-height: 44px;
-  }
-  .next-exam {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 4px 8px;
-  }
-  .next-exam-title {
-    grid-column: 1;
-    padding-left: 0;
-    border-left: 0;
-  }
-  .next-exam-action {
-    grid-column: 2;
-    grid-row: 1 / 3;
+  .catalog-cell {
+    border-right: 0;
+    border-bottom: 1px solid #f1f5f9;
   }
 }
 </style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
   adminApi,
   type CodeSubmissionRow,
@@ -18,8 +18,7 @@ type TabKey = 'code' | 'database' | 'objective';
 type CorrectFilter = '' | '1' | '0';
 
 /**
- * 三类提交列表共享的展示契约。专有字段保持可选，避免因切换标签把不同
- * API 行数组退化为 any；打开详情时再通过类型守卫收窄为对应的完整记录。
+ * 三类提交列表共享的展示契约（不包含得分字段，后台提交监控严格隐藏得分）。
  */
 type SubmissionTableRow = {
   submissionId: number;
@@ -27,7 +26,6 @@ type SubmissionTableRow = {
   username: string;
   questionId: number;
   questionTitle: string | null;
-  score: number | null;
   createdAt: string;
   status?: string;
   language?: string;
@@ -39,8 +37,12 @@ type SubmissionTableRow = {
   answer?: string;
   correct?: number;
   correctAnswer?: string;
-  fullScore?: number | null;
 };
+
+type DrawerDetail =
+  | { kind: 'code'; row: CodeSubmissionRow }
+  | { kind: 'database'; row: DbSubmissionRow }
+  | { kind: 'objective'; row: ObjectiveSubmissionRow };
 
 const activeTab = ref<TabKey>('code');
 const size = 20;
@@ -93,78 +95,76 @@ const correctOptions: Array<{ value: CorrectFilter; label: string }> = [
 ];
 
 const codeColumns = [
-  { key: 'submissionId', label: 'ID', width: '70px' },
-  { key: 'username', label: '用户', width: '110px' },
-  { key: 'questionId', label: '题号', width: '70px' },
+  { key: 'submissionId', label: '提交 / 用户', width: '175px' },
   { key: 'questionTitle', label: '题目' },
-  { key: 'language', label: '语言', width: '80px' },
-  { key: 'status', label: '状态', width: '80px' },
-  { key: 'score', label: '得分', width: '70px' },
-  { key: 'timeUsedMs', label: '耗时', width: '90px' },
-  { key: 'memoryUsedKb', label: '内存', width: '100px' },
-  { key: 'createdAt', label: '提交时间', width: '170px' },
+  { key: 'language', label: '语言', width: '90px' },
+  { key: 'status', label: '评测状态', width: '96px' },
+  { key: 'resource', label: '耗时 / 内存', width: '132px' },
+  { key: 'createdAt', label: '时间', width: '164px' },
 ];
 
 const dbColumns = [
-  { key: 'submissionId', label: 'ID', width: '70px' },
-  { key: 'username', label: '用户', width: '110px' },
-  { key: 'questionId', label: '题号', width: '70px' },
+  { key: 'submissionId', label: '提交 / 用户', width: '175px' },
   { key: 'questionTitle', label: '题目' },
-  { key: 'status', label: '状态', width: '80px' },
-  { key: 'score', label: '得分', width: '70px' },
-  { key: 'timeUsedMs', label: '耗时', width: '90px' },
-  { key: 'createdAt', label: '提交时间', width: '170px' },
+  { key: 'status', label: '评测状态', width: '96px' },
+  { key: 'resource', label: '耗时', width: '96px' },
+  { key: 'createdAt', label: '时间', width: '164px' },
 ];
 
 const objColumns = [
-  { key: 'submissionId', label: 'ID', width: '70px' },
-  { key: 'username', label: '用户', width: '110px' },
-  { key: 'questionId', label: '题号', width: '70px' },
-  { key: 'questionTitle', label: '题干' },
+  { key: 'submissionId', label: '提交 / 用户', width: '175px' },
+  { key: 'questionTitle', label: '题目' },
   { key: 'type', label: '题型', width: '80px' },
-  { key: 'correct', label: '对错', width: '80px' },
-  { key: 'score', label: '得分', width: '90px' },
-  { key: 'createdAt', label: '提交时间', width: '170px' },
+  { key: 'correct', label: '对错', width: '90px' },
+  { key: 'createdAt', label: '时间', width: '164px' },
 ];
 
-const currentColumns = () =>
+const currentColumns = computed(() =>
   activeTab.value === 'code'
     ? codeColumns
     : activeTab.value === 'database'
       ? dbColumns
-      : objColumns;
-const currentRows = (): SubmissionTableRow[] =>
+      : objColumns,
+);
+
+const currentRows = computed<SubmissionTableRow[]>(() =>
   activeTab.value === 'code'
     ? codeRows.value
     : activeTab.value === 'database'
       ? dbRows.value
-      : objRows.value;
-const currentTotal = () =>
+      : objRows.value,
+);
+
+const currentTotal = computed(() =>
   activeTab.value === 'code'
     ? codeTotal.value
     : activeTab.value === 'database'
       ? dbTotal.value
-      : objTotal.value;
-const currentLoading = () =>
+      : objTotal.value,
+);
+
+const currentLoading = computed(() =>
   activeTab.value === 'code'
     ? codeLoading.value
     : activeTab.value === 'database'
       ? dbLoading.value
-      : objLoading.value;
-const currentError = () =>
+      : objLoading.value,
+);
+
+const currentError = computed(() =>
   activeTab.value === 'code'
     ? codeError.value
     : activeTab.value === 'database'
       ? dbError.value
-      : objError.value;
+      : objError.value,
+);
 
-/** 当前标签页的用户 ID 输入（v-model 需要可赋值目标，用 get/set 分发到各 tab 状态）。 */
+/** 当前标签页的活跃筛选代理状态。 */
 const activeUserId = ref('');
 const activeQuestionId = ref('');
 const activeStatus = ref<SubmissionStatus | ''>('');
 const activePage = ref(1);
 
-// 切换标签时，把当前 tab 的筛选值同步到「活动」ref，让模板用统一 v-model。
 watch(activeTab, () => {
   if (activeTab.value === 'code') {
     activeUserId.value = codeUserId.value;
@@ -203,13 +203,27 @@ watch(activePage, (v) => {
   else objPage.value = v;
 });
 
-/** 数字筛选输入转可选 number：空串/非数字一律 undefined。 */
 function toOptionalNumber(raw: string): number | undefined {
   const trimmed = raw.trim();
   if (trimmed === '') return undefined;
   const n = Number(trimmed);
   return Number.isFinite(n) ? n : undefined;
 }
+
+const hasActiveFilters = computed(() => {
+  if (activeTab.value === 'objective') {
+    return (
+      activeUserId.value.trim() !== '' ||
+      activeQuestionId.value.trim() !== '' ||
+      objCorrect.value !== ''
+    );
+  }
+  return (
+    activeUserId.value.trim() !== '' ||
+    activeQuestionId.value.trim() !== '' ||
+    activeStatus.value !== ''
+  );
+});
 
 async function load() {
   const key = activeTab.value;
@@ -258,6 +272,7 @@ async function load() {
       objRows.value = res.list;
       objTotal.value = res.total;
     }
+    syncDetailRow();
   } catch (e) {
     setError(e instanceof ApiError ? e.message : '请求失败，请稍后重试');
   } finally {
@@ -265,7 +280,6 @@ async function load() {
   }
 }
 
-/** 筛选变化时回到第一页再加载；已在第一页则手动触发。 */
 function resetAndLoad() {
   if (activePage.value === 1) {
     load();
@@ -274,14 +288,30 @@ function resetAndLoad() {
   }
 }
 
+function resetFilters() {
+  if (filterTimer !== null) {
+    clearTimeout(filterTimer);
+    filterTimer = null;
+  }
+  activeUserId.value = '';
+  activeQuestionId.value = '';
+  if (activeTab.value === 'objective') {
+    objCorrect.value = '';
+  } else {
+    activeStatus.value = '';
+  }
+  resetAndLoad();
+}
+
 function switchTab(key: TabKey) {
   if (activeTab.value === key) return;
+  closeDetailDrawer();
   activeTab.value = key;
   load();
 }
 
-// 用户/题号输入防抖 300ms；下拉筛选变化直接触发。
 let filterTimer: ReturnType<typeof setTimeout> | null = null;
+let copyTimer: ReturnType<typeof setTimeout> | null = null;
 
 watch([activeUserId, activeQuestionId], () => {
   if (filterTimer !== null) clearTimeout(filterTimer);
@@ -294,7 +324,6 @@ watch(activePage, () => {
   load();
 });
 
-/** 创建时间：ISO 串截取前 19 位并把 T 换成空格，得到 "YYYY-MM-DD HH:mm:ss"。 */
 function formatTime(iso: string): string {
   return iso ? iso.slice(0, 19).replace('T', ' ') : '—';
 }
@@ -320,53 +349,49 @@ const { success, error } = useToast();
 const REJUDGE_HINT =
   '重判将使用题目当前的数据（用例/时限/答案），结果可能与原结果不同；已通过的标记会暂时消失。确认重判？';
 
-/** 单条重判：按当前 tab 调用对应接口，成功刷新列表。 */
-async function rejudgeRow(row: SubmissionTableRow) {
-  const ok = await confirm({ title: '重判该提交', message: REJUDGE_HINT, confirmText: '重判' });
-  if (!ok) return;
-  try {
-    if (activeTab.value === 'code') {
-      await adminApi.rejudgeSubmission(row.submissionId);
-    } else if (activeTab.value === 'database') {
-      await adminApi.rejudgeDbSubmission(row.submissionId);
-    } else {
-      await adminApi.rejudgeObjectiveSubmission(row.submissionId);
-    }
-    success('重判完成，列表已刷新');
-    load();
-  } catch (e) {
-    error(e instanceof ApiError ? e.message : '重判失败，请稍后重试');
-  }
-}
+const canBatchRejudge = computed(
+  () => activeTab.value === 'objective' && toOptionalNumber(objQuestionId.value) != null,
+);
 
-/** 客观题按题批量重判：使用当前题目 ID 筛选框的值。 */
 async function rejudgeQuestionBatch() {
   const qid = toOptionalNumber(objQuestionId.value);
   if (qid == null) return;
   const ok = await confirm({
     title: '按题批量重判',
-    message: `将用该题当前答案与分值重判全部作答记录（题目 ${qid}），确认？`,
+    message: `将用该题当前答案重判全部作答记录（题目 #${qid}），确认？`,
     confirmText: '重判',
   });
   if (!ok) return;
   try {
     const res = await adminApi.rejudgeObjectiveQuestion(qid);
     success(`已重判 ${res.rejudged ?? 0} 条作答记录`);
-    load();
+    await load();
   } catch (e) {
     error(e instanceof ApiError ? e.message : '批量重判失败，请稍后重试');
   }
 }
 
-/** 客观题 tab：题目 ID 已填时允许按题批量重判。 */
-const canBatchRejudge = () =>
-  activeTab.value === 'objective' && toOptionalNumber(objQuestionId.value) != null;
-
-// ---- 提交详情/代码查看弹窗 ----
-const selectedCodeRow = ref<CodeSubmissionRow | null>(null);
-const selectedDbRow = ref<DbSubmissionRow | null>(null);
-const selectedObjRow = ref<ObjectiveSubmissionRow | null>(null);
+// ---- 提交详情右侧抽屉 ----
+const detail = ref<DrawerDetail | null>(null);
+const rejudging = ref(false);
 const copyTip = ref(false);
+const drawerCloseBtn = ref<HTMLButtonElement | null>(null);
+let previousFocus: HTMLElement | null = null;
+
+function syncDetailRow() {
+  if (!detail.value) return;
+  const { kind, row } = detail.value;
+  if (kind === 'code') {
+    const updated = codeRows.value.find((item) => item.submissionId === row.submissionId);
+    if (updated) detail.value = { kind: 'code', row: updated };
+  } else if (kind === 'database') {
+    const updated = dbRows.value.find((item) => item.submissionId === row.submissionId);
+    if (updated) detail.value = { kind: 'database', row: updated };
+  } else {
+    const updated = objRows.value.find((item) => item.submissionId === row.submissionId);
+    if (updated) detail.value = { kind: 'objective', row: updated };
+  }
+}
 
 function parseCode(codeContent: string): string {
   if (!codeContent) return '';
@@ -387,7 +412,8 @@ async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text);
     copyTip.value = true;
-    setTimeout(() => {
+    if (copyTimer !== null) clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => {
       copyTip.value = false;
     }, 1500);
     success('已复制到剪贴板');
@@ -396,182 +422,267 @@ async function copyText(text: string) {
   }
 }
 
-function isCodeSubmissionRow(row: SubmissionTableRow): row is CodeSubmissionRow {
-  return (
-    typeof row.language === 'string' &&
-    typeof row.codeContent === 'string' &&
-    typeof row.status === 'string' &&
-    typeof row.memoryUsedKb === 'number'
-  );
-}
-
-function isDbSubmissionRow(row: SubmissionTableRow): row is DbSubmissionRow {
-  return typeof row.sqlContent === 'string' && typeof row.status === 'string';
-}
-
-function isObjectiveSubmissionRow(row: SubmissionTableRow): row is ObjectiveSubmissionRow {
-  return (
+function toDrawerDetail(row: SubmissionTableRow): DrawerDetail | null {
+  if (activeTab.value === 'code' && typeof row.codeContent === 'string') {
+    return { kind: 'code', row: row as CodeSubmissionRow };
+  }
+  if (activeTab.value === 'database' && typeof row.sqlContent === 'string') {
+    return { kind: 'database', row: row as DbSubmissionRow };
+  }
+  if (
+    activeTab.value === 'objective' &&
     typeof row.type === 'string' &&
-    typeof row.correct === 'number' &&
-    typeof row.answer === 'string' &&
-    typeof row.correctAnswer === 'string'
-  );
+    typeof row.answer === 'string'
+  ) {
+    return { kind: 'objective', row: row as ObjectiveSubmissionRow };
+  }
+  return null;
 }
 
-function openViewModal(row: SubmissionTableRow) {
-  if (activeTab.value === 'code' && isCodeSubmissionRow(row)) {
-    selectedCodeRow.value = row;
+function openDetailDrawer(row: SubmissionTableRow) {
+  const resolved = toDrawerDetail(row);
+  if (!resolved) {
+    error('提交记录类型不匹配，请刷新页面后重试');
     return;
   }
-  if (activeTab.value === 'database' && isDbSubmissionRow(row)) {
-    selectedDbRow.value = row;
-    return;
+  previousFocus = document.activeElement as HTMLElement | null;
+  copyTip.value = false;
+  detail.value = resolved;
+  nextTick(() => {
+    drawerCloseBtn.value?.focus();
+  });
+}
+
+function closeDetailDrawer() {
+  if (!detail.value) return;
+  detail.value = null;
+  const target = previousFocus;
+  previousFocus = null;
+  nextTick(() => {
+    target?.focus();
+  });
+}
+
+async function rejudgeDetail() {
+  if (!detail.value || rejudging.value) return;
+  const current = detail.value;
+  const ok = await confirm({
+    title: `重判提交 #${current.row.submissionId}`,
+    message: REJUDGE_HINT,
+    confirmText: '确认重判',
+  });
+  if (!ok) return;
+
+  rejudging.value = true;
+  try {
+    if (current.kind === 'code') {
+      await adminApi.rejudgeSubmission(current.row.submissionId);
+    } else if (current.kind === 'database') {
+      await adminApi.rejudgeDbSubmission(current.row.submissionId);
+    } else {
+      await adminApi.rejudgeObjectiveSubmission(current.row.submissionId);
+    }
+    success('重判完成，列表已刷新');
+    await load();
+  } catch (e) {
+    error(e instanceof ApiError ? e.message : '重判失败，请稍后重试');
+  } finally {
+    rejudging.value = false;
   }
-  if (activeTab.value === 'objective' && isObjectiveSubmissionRow(row)) {
-    selectedObjRow.value = row;
-    return;
+}
+
+function handleWindowKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && detail.value) {
+    closeDetailDrawer();
   }
-  error('提交记录类型不匹配，请刷新页面后重试');
 }
 
 onMounted(() => {
+  window.addEventListener('keydown', handleWindowKeydown);
   load();
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleWindowKeydown);
   if (filterTimer !== null) clearTimeout(filterTimer);
+  if (copyTimer !== null) clearTimeout(copyTimer);
 });
 </script>
 
 <template>
-  <div class="admin container">
-    <header class="page-header"><h1 class="page-title">提交监控</h1><p>按题型检索提交，查看作答详情与评测状态。</p></header>
+  <div class="admin container submissions-page">
+    <header class="page-header">
+      <div class="header-copy">
+        <h1 class="page-title">提交监控</h1>
+        <p>按题型检索提交记录，核查代码与作答详情，或触发单条 / 按题重判。</p>
+      </div>
+      <div class="header-actions">
+        <button
+          class="btn btn-outline btn-sm refresh-btn"
+          type="button"
+          :disabled="currentLoading"
+          @click="load"
+        >
+          {{ currentLoading ? '刷新中…' : '刷新' }}
+        </button>
+      </div>
+    </header>
 
-    <div class="tabs">
-      <button class="tab" :class="{ active: activeTab === 'code' }" @click="switchTab('code')">
-        编程题
-      </button>
-      <button
-        class="tab"
-        :class="{ active: activeTab === 'database' }"
-        @click="switchTab('database')"
-      >
-        数据库题
-      </button>
-      <button
-        class="tab"
-        :class="{ active: activeTab === 'objective' }"
-        @click="switchTab('objective')"
-      >
-        客观题
-      </button>
+    <div class="toolbar-card card">
+      <div class="tabs" role="tablist" aria-label="提交题型">
+        <button
+          class="tab"
+          role="tab"
+          type="button"
+          :aria-selected="activeTab === 'code'"
+          :class="{ active: activeTab === 'code' }"
+          @click="switchTab('code')"
+        >
+          编程题
+        </button>
+        <button
+          class="tab"
+          role="tab"
+          type="button"
+          :aria-selected="activeTab === 'database'"
+          :class="{ active: activeTab === 'database' }"
+          @click="switchTab('database')"
+        >
+          数据库题
+        </button>
+        <button
+          class="tab"
+          role="tab"
+          type="button"
+          :aria-selected="activeTab === 'objective'"
+          :class="{ active: activeTab === 'objective' }"
+          @click="switchTab('objective')"
+        >
+          客观题
+        </button>
+      </div>
+
+      <div class="filter-bar">
+        <label class="filter">
+          <span class="filter-label">用户 ID</span>
+          <input
+            v-model="activeUserId"
+            class="input id-input"
+            type="search"
+            inputmode="numeric"
+            placeholder="精确用户 ID"
+          />
+        </label>
+        <label class="filter">
+          <span class="filter-label">题目 ID</span>
+          <input
+            v-model="activeQuestionId"
+            class="input id-input"
+            type="search"
+            inputmode="numeric"
+            placeholder="精确题目 ID"
+          />
+        </label>
+        <label v-if="activeTab !== 'objective'" class="filter">
+          <span class="filter-label">评测状态</span>
+          <select v-model="activeStatus" class="input">
+            <option v-for="s in statusOptions" :key="s.value || 'all'" :value="s.value">
+              {{ s.label }}
+            </option>
+          </select>
+        </label>
+        <label v-else class="filter">
+          <span class="filter-label">对错状态</span>
+          <select v-model="objCorrect" class="input">
+            <option v-for="c in correctOptions" :key="c.value || 'all'" :value="c.value">
+              {{ c.label }}
+            </option>
+          </select>
+        </label>
+        <div class="filter-actions">
+          <button
+            v-if="hasActiveFilters"
+            class="btn btn-ghost btn-sm"
+            type="button"
+            @click="resetFilters"
+          >
+            重置
+          </button>
+          <button
+            v-if="canBatchRejudge"
+            class="btn btn-outline btn-sm batch-btn"
+            type="button"
+            @click="rejudgeQuestionBatch"
+          >
+            按题批量重判
+          </button>
+        </div>
+      </div>
     </div>
 
-    <div class="filter-bar card">
-      <label class="filter">
-        <span class="filter-label">用户 ID</span>
-        <input
-          v-model="activeUserId"
-          class="input id-input"
-          type="search"
-          placeholder="提交者用户 ID"
-        />
-      </label>
-      <label class="filter">
-        <span class="filter-label">题目 ID</span>
-        <input
-          v-model="activeQuestionId"
-          class="input id-input"
-          type="search"
-          placeholder="题目 ID"
-        />
-      </label>
-      <label v-if="activeTab !== 'objective'" class="filter">
-        <span class="filter-label">状态</span>
-        <select v-model="activeStatus" class="input">
-          <option v-for="s in statusOptions" :key="s.value || 'all'" :value="s.value">
-            {{ s.label }}
-          </option>
-        </select>
-      </label>
-      <label v-else class="filter">
-        <span class="filter-label">对错</span>
-        <select v-model="objCorrect" class="input">
-          <option v-for="c in correctOptions" :key="c.value || 'all'" :value="c.value">
-            {{ c.label }}
-          </option>
-        </select>
-      </label>
-      <button
-        v-if="canBatchRejudge()"
-        class="btn btn-ghost btn-sm batch-btn"
-        type="button"
-        @click="rejudgeQuestionBatch"
-      >
-        按题批量重判
-      </button>
-    </div>
-
-    <p v-if="currentError()" class="submit-error">{{ currentError() }}</p>
+    <p v-if="currentError" class="submit-error" role="alert">{{ currentError }}</p>
 
     <DataTable
       :key="activeTab"
-      :columns="currentColumns()"
-      :rows="currentRows()"
-      :loading="currentLoading()"
+      :columns="currentColumns"
+      :rows="currentRows"
+      :loading="currentLoading"
       row-key="submissionId"
+      empty-text="暂无符合条件的提交记录"
     >
-      <template #cell-status="{ row }">
-        <span
-          class="status-badge clickable"
-          :class="statusTone((row.status ?? 'SYSTEM_ERROR') as SubmissionStatus)"
-          :title="activeTab === 'code' ? '点击查看代码' : '点击查看 SQL'"
-          @click="openViewModal(row)"
-        >
-          {{ STATUS_ABBR[(row.status ?? 'SYSTEM_ERROR') as SubmissionStatus] ?? row.status ?? '—' }}
-        </span>
+      <template #cell-submissionId="{ row }">
+        <div class="cell-primary">
+          <span class="mono sub-id">#{{ row.submissionId }}</span>
+          <span class="sub-user">{{ row.username }}</span>
+        </div>
       </template>
-      <template #cell-score="{ row }">
-        <span class="mono">{{ row.score ?? '-' }}</span>
-      </template>
-      <template #cell-timeUsedMs="{ row }">
-        <span class="mono">{{ row.timeUsedMs != null ? row.timeUsedMs + 'ms' : '-' }}</span>
-      </template>
-      <template #cell-memoryUsedKb="{ row }">
-        <span class="mono">{{ formatMemory(row.memoryUsedKb) }}</span>
+      <template #cell-questionTitle="{ row }">
+        <div class="cell-question">
+          <span class="q-title" :title="row.questionTitle || undefined">{{ row.questionTitle || '—' }}</span>
+          <span class="q-id mono">题目 #{{ row.questionId }}</span>
+        </div>
       </template>
       <template #cell-language="{ row }">
-        <span>{{ LANGUAGE_LABELS[row.language ?? ''] ?? row.language ?? '—' }}</span>
+        <span class="lang-tag">{{ LANGUAGE_LABELS[row.language ?? ''] ?? row.language ?? '—' }}</span>
       </template>
-      <template #cell-correct="{ row }">
-        <span
+      <template #cell-status="{ row }">
+        <button
+          type="button"
           class="status-badge clickable"
-          :class="row.correct === 1 ? 'ac' : 'wa'"
-          title="点击查看作答详情"
-          @click="openViewModal(row)"
+          :class="statusTone((row.status ?? 'SYSTEM_ERROR') as SubmissionStatus)"
+          :title="activeTab === 'code' ? '查看代码与详情' : '查看 SQL 与详情'"
+          @click="openDetailDrawer(row)"
         >
-          {{ row.correct === 1 ? 'AC' : 'WA' }}
+          {{ STATUS_ABBR[(row.status ?? 'SYSTEM_ERROR') as SubmissionStatus] ?? row.status ?? '—' }}
+        </button>
+      </template>
+      <template #cell-resource="{ row }">
+        <span class="mono resource-meta">
+          {{ row.timeUsedMs != null ? `${row.timeUsedMs}ms` : '-' }}
+          <template v-if="activeTab === 'code'"> / {{ formatMemory(row.memoryUsedKb) }}</template>
         </span>
       </template>
       <template #cell-type="{ row }">
         <span>{{ OBJECTIVE_TYPE_LABELS[row.type ?? ''] ?? row.type ?? '—' }}</span>
       </template>
-      <template #cell-questionTitle="{ row }">
-        <span class="q-title">{{ row.questionTitle || '—' }}</span>
+      <template #cell-correct="{ row }">
+        <button
+          type="button"
+          class="status-badge clickable"
+          :class="row.correct === 1 ? 'ac' : 'wa'"
+          title="查看作答详情"
+          @click="openDetailDrawer(row)"
+        >
+          {{ row.correct === 1 ? '答对 AC' : '答错 WA' }}
+        </button>
       </template>
       <template #cell-createdAt="{ row }">
-        <span class="time">{{ formatTime(row.createdAt) }}</span>
-      </template>
-      <template #cell-username="{ row }">
-        <span class="muted">{{ row.username }}</span>
+        <span class="time mono">{{ formatTime(row.createdAt) }}</span>
       </template>
       <template #actions="{ row }">
-        <div class="row-actions">
-          <button class="btn btn-outline btn-sm action-btn" type="button" @click="openViewModal(row)">
-            {{ activeTab === 'code' ? '查看代码' : activeTab === 'database' ? '查看 SQL' : '查看作答' }}
-          </button>
-          <button class="btn btn-ghost btn-sm action-btn" type="button" @click="rejudgeRow(row)">重判</button>
-        </div>
+        <button class="btn btn-outline btn-sm action-btn" type="button" @click="openDetailDrawer(row)">
+          查看详情
+        </button>
       </template>
     </DataTable>
 
@@ -579,400 +690,640 @@ onBeforeUnmount(() => {
       :key="'p-' + activeTab"
       v-model:page="activePage"
       :size="size"
-      :total="currentTotal()"
+      :total="currentTotal"
     />
 
-    <!-- 弹窗 1: 编程题代码预览弹窗 -->
+    <!-- 右侧详情抽屉 -->
     <Teleport to="body">
-      <div v-if="selectedCodeRow" class="modal-overlay" @click.self="selectedCodeRow = null">
-        <div class="modal-card code-view-modal" role="dialog" aria-modal="true">
-          <div class="modal-header">
-            <div class="code-modal-title-group">
-              <span class="mono code-modal-id">#{{ selectedCodeRow.submissionId }}</span>
-              <span class="code-modal-title">{{ selectedCodeRow.questionTitle || '编程题' }}</span>
-              <span class="status-badge" :class="statusTone(selectedCodeRow.status as SubmissionStatus)">
-                {{ STATUS_ABBR[selectedCodeRow.status as SubmissionStatus] ?? selectedCodeRow.status }}
+      <div
+        v-if="detail"
+        class="drawer-backdrop"
+        @click.self="closeDetailDrawer"
+      >
+        <aside
+          class="detail-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="submission-drawer-title"
+        >
+          <div class="drawer-header">
+            <div class="drawer-title-group">
+              <span class="mono drawer-id">#{{ detail.row.submissionId }}</span>
+              <h2 id="submission-drawer-title" class="drawer-title">
+                {{ detail.row.questionTitle || (detail.kind === 'code' ? '编程题提交' : detail.kind === 'database' ? '数据库题提交' : '客观题作答详情') }}
+              </h2>
+              <span
+                v-if="detail.kind === 'objective'"
+                class="status-badge"
+                :class="detail.row.correct === 1 ? 'ac' : 'wa'"
+              >
+                {{ detail.row.correct === 1 ? '答对 AC' : '答错 WA' }}
+              </span>
+              <span
+                v-else
+                class="status-badge"
+                :class="statusTone(detail.row.status as SubmissionStatus)"
+              >
+                {{ STATUS_ABBR[detail.row.status as SubmissionStatus] ?? detail.row.status }}
               </span>
             </div>
-            <button class="modal-close-btn" type="button" @click="selectedCodeRow = null">✕</button>
+            <button
+              ref="drawerCloseBtn"
+              class="drawer-close-btn"
+              type="button"
+              aria-label="关闭详情抽屉"
+              @click="closeDetailDrawer"
+            >
+              ✕
+            </button>
           </div>
 
-          <div class="modal-body modal-code-body">
-            <div class="code-modal-meta mono">
-              <span>用户: <b>{{ selectedCodeRow.username }}</b> (UID: {{ selectedCodeRow.userId }})</span>
-              <span>语言: <b>{{ LANGUAGE_LABELS[selectedCodeRow.language] ?? selectedCodeRow.language }}</b></span>
-              <span>得分: <b>{{ selectedCodeRow.score ?? '-' }}</b></span>
-              <span>用时: <b>{{ selectedCodeRow.timeUsedMs != null ? selectedCodeRow.timeUsedMs + 'ms' : '-' }}</b></span>
-              <span>内存: <b>{{ formatMemory(selectedCodeRow.memoryUsedKb) }}</b></span>
-              <span class="copy-action-span">
+          <div class="drawer-body">
+            <dl class="drawer-meta-grid">
+              <div class="meta-item">
+                <dt>提交用户</dt>
+                <dd>
+                  <strong>{{ detail.row.username }}</strong>
+                  <span class="mono muted-id">UID {{ detail.row.userId }}</span>
+                </dd>
+              </div>
+              <div class="meta-item">
+                <dt>关联题目</dt>
+                <dd class="mono">#{{ detail.row.questionId }}</dd>
+              </div>
+              <div class="meta-item">
+                <dt>提交时间</dt>
+                <dd class="mono">{{ formatTime(detail.row.createdAt) }}</dd>
+              </div>
+
+              <template v-if="detail.kind === 'code'">
+                <div class="meta-item">
+                  <dt>语言</dt>
+                  <dd>{{ LANGUAGE_LABELS[detail.row.language] ?? detail.row.language }}</dd>
+                </div>
+                <div class="meta-item">
+                  <dt>耗时</dt>
+                  <dd class="mono">{{ detail.row.timeUsedMs != null ? `${detail.row.timeUsedMs}ms` : '-' }}</dd>
+                </div>
+                <div class="meta-item">
+                  <dt>内存</dt>
+                  <dd class="mono">{{ formatMemory(detail.row.memoryUsedKb) }}</dd>
+                </div>
+              </template>
+
+              <template v-else-if="detail.kind === 'database'">
+                <div class="meta-item">
+                  <dt>耗时</dt>
+                  <dd class="mono">{{ detail.row.timeUsedMs != null ? `${detail.row.timeUsedMs}ms` : '-' }}</dd>
+                </div>
+              </template>
+
+              <template v-else>
+                <div class="meta-item">
+                  <dt>题型</dt>
+                  <dd>{{ OBJECTIVE_TYPE_LABELS[detail.row.type] ?? detail.row.type }}</dd>
+                </div>
+              </template>
+            </dl>
+
+            <template v-if="detail.kind === 'code'">
+              <div class="section-bar">
+                <span class="section-title">提交代码</span>
                 <button
                   type="button"
-                  class="btn btn-ghost btn-sm copy-btn"
-                  @click="copyText(parseCode(selectedCodeRow.codeContent))"
+                  class="btn btn-ghost btn-sm"
+                  @click="copyText(parseCode(detail.row.codeContent))"
                 >
-                  {{ copyTip ? '已复制 ✔' : '复制代码' }}
+                  {{ copyTip ? '已复制' : '复制代码' }}
                 </button>
-              </span>
-            </div>
-            <pre class="code-pre mono"><code>{{ parseCode(selectedCodeRow.codeContent) }}</code></pre>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+              </div>
+              <pre class="code-pre mono"><code>{{ parseCode(detail.row.codeContent) }}</code></pre>
+            </template>
 
-    <!-- 弹窗 2: 数据库 SQL 预览弹窗 -->
-    <Teleport to="body">
-      <div v-if="selectedDbRow" class="modal-overlay" @click.self="selectedDbRow = null">
-        <div class="modal-card code-view-modal" role="dialog" aria-modal="true">
-          <div class="modal-header">
-            <div class="code-modal-title-group">
-              <span class="mono code-modal-id">#{{ selectedDbRow.submissionId }}</span>
-              <span class="code-modal-title">{{ selectedDbRow.questionTitle || '数据库题' }}</span>
-              <span class="status-badge" :class="statusTone(selectedDbRow.status as SubmissionStatus)">
-                {{ STATUS_ABBR[selectedDbRow.status as SubmissionStatus] ?? selectedDbRow.status }}
-              </span>
-            </div>
-            <button class="modal-close-btn" type="button" @click="selectedDbRow = null">✕</button>
-          </div>
-
-          <div class="modal-body modal-code-body">
-            <div class="code-modal-meta mono">
-              <span>用户: <b>{{ selectedDbRow.username }}</b> (UID: {{ selectedDbRow.userId }})</span>
-              <span>得分: <b>{{ selectedDbRow.score ?? '-' }}</b></span>
-              <span>用时: <b>{{ selectedDbRow.timeUsedMs != null ? selectedDbRow.timeUsedMs + 'ms' : '-' }}</b></span>
-              <span class="copy-action-span">
+            <template v-else-if="detail.kind === 'database'">
+              <div class="section-bar">
+                <span class="section-title">提交 SQL</span>
                 <button
                   type="button"
-                  class="btn btn-ghost btn-sm copy-btn"
-                  @click="copyText(selectedDbRow.sqlContent)"
+                  class="btn btn-ghost btn-sm"
+                  @click="copyText(detail.row.sqlContent)"
                 >
-                  {{ copyTip ? '已复制 ✔' : '复制 SQL' }}
+                  {{ copyTip ? '已复制' : '复制 SQL' }}
                 </button>
-              </span>
-            </div>
-            <pre class="code-pre mono"><code>{{ selectedDbRow.sqlContent }}</code></pre>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <!-- 弹窗 3: 客观题作答预览弹窗 -->
-    <Teleport to="body">
-      <div v-if="selectedObjRow" class="modal-overlay" @click.self="selectedObjRow = null">
-        <div class="modal-card code-view-modal" role="dialog" aria-modal="true">
-          <div class="modal-header">
-            <div class="code-modal-title-group">
-              <span class="mono code-modal-id">#{{ selectedObjRow.submissionId }}</span>
-              <span class="code-modal-title">客观题作答详情</span>
-              <span class="status-badge" :class="selectedObjRow.correct === 1 ? 'ac' : 'wa'">
-                {{ selectedObjRow.correct === 1 ? '答对 AC' : '答错 WA' }}
-              </span>
-            </div>
-            <button class="modal-close-btn" type="button" @click="selectedObjRow = null">✕</button>
-          </div>
-
-          <div class="modal-body modal-code-body">
-            <div class="code-modal-meta mono">
-              <span>用户: <b>{{ selectedObjRow.username }}</b> (UID: {{ selectedObjRow.userId }})</span>
-              <span>题型: <b>{{ OBJECTIVE_TYPE_LABELS[selectedObjRow.type] ?? selectedObjRow.type }}</b></span>
-              <span>得分: <b>{{ selectedObjRow.score ?? '-' }} / {{ selectedObjRow.fullScore ?? '-' }}</b></span>
-            </div>
-            <div class="obj-detail-section">
-              <div class="obj-detail-label">题目内容：</div>
-              <div class="obj-detail-content">{{ selectedObjRow.questionTitle }}</div>
-            </div>
-            <div class="obj-detail-grid">
-              <div class="obj-detail-box user-ans" :class="selectedObjRow.correct === 1 ? 'box-correct' : 'box-wrong'">
-                <div class="box-label">学生作答</div>
-                <div class="box-content mono">{{ selectedObjRow.answer || '（未作答）' }}</div>
               </div>
-              <div class="obj-detail-box std-ans">
-                <div class="box-label">标准答案</div>
-                <div class="box-content mono">{{ selectedObjRow.correctAnswer || '—' }}</div>
+              <pre class="code-pre mono"><code>{{ detail.row.sqlContent }}</code></pre>
+            </template>
+
+            <template v-else>
+              <div class="obj-detail-section">
+                <div class="obj-detail-label">题目内容</div>
+                <div class="obj-detail-content">{{ detail.row.questionTitle || '—' }}</div>
               </div>
+              <div class="obj-detail-grid">
+                <div
+                  class="obj-detail-box"
+                  :class="detail.row.correct === 1 ? 'box-correct' : 'box-wrong'"
+                >
+                  <div class="box-label">学生作答</div>
+                  <div class="box-content mono">{{ detail.row.answer || '（未作答）' }}</div>
+                </div>
+                <div class="obj-detail-box std-ans">
+                  <div class="box-label">标准答案</div>
+                  <div class="box-content mono">{{ detail.row.correctAnswer || '—' }}</div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div class="drawer-footer">
+            <span class="drawer-foot-note">重判将按题目最新数据重新评测并更新本条记录</span>
+            <div class="drawer-foot-actions">
+              <button class="btn btn-ghost btn-sm" type="button" @click="closeDetailDrawer">
+                关闭
+              </button>
+              <button
+                class="btn btn-primary btn-sm rejudge-btn"
+                type="button"
+                :disabled="rejudging"
+                @click="rejudgeDetail"
+              >
+                {{ rejudging ? '重判中…' : '重判' }}
+              </button>
             </div>
           </div>
-        </div>
+        </aside>
       </div>
     </Teleport>
   </div>
 </template>
 
 <style scoped>
-.page-header { margin: 28px 0 24px; }
-.page-header .page-title { margin: 0 0 8px; font-size: 24px; }
-.page-header p { margin: 0; color: var(--ink-secondary); font-size: 14px; }
-.filter-bar { flex-wrap: wrap; }
 .admin {
-  padding-top: 32px;
+  padding-top: 8px;
 }
-.page-title {
-  margin: 28px 0 16px;
-  font-size: 22px;
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 18px;
+}
+
+.page-header .page-title {
+  margin: 0 0 4px;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.page-header p {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 13.5px;
+}
+
+.header-actions {
+  flex-shrink: 0;
+}
+
+.toolbar-card {
+  background: #ffffff;
+  border: 1px solid var(--kece-border, var(--line));
+  border-radius: var(--kece-card-radius, 0px);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--kece-border, var(--line));
+  padding-bottom: 10px;
+}
+
+.tab {
+  padding: 6px 16px;
+  border-radius: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  border: 1px solid transparent;
+  background: transparent;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.tab:hover {
+  color: var(--ink);
+  background: var(--kece-surface-muted, #f8fafc);
+}
+
+.tab.active {
+  background: var(--kece-accent-soft, #eef6f4);
+  border-color: var(--kece-accent, #137969);
+  color: var(--kece-accent-ink, #0f5f53);
   font-weight: 600;
 }
-.tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-.tab {
-  padding: 7px 20px;
-  border-radius: var(--pill);
-  font-size: 14px;
-  color: var(--ink-secondary);
-  border: 1px solid var(--line);
-  transition:
-    color 0.15s ease,
-    background 0.15s ease;
-}
-.tab.active {
-  background: var(--button);
-  border-color: var(--button);
-  color: #fff;
-}
+
 .filter-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px 20px;
-  padding: 16px;
-  margin-bottom: 24px;
+  gap: 10px 16px;
 }
+
 .filter {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
+
 .filter-label {
   color: var(--ink-secondary);
-  font-size: 14px;
+  font-size: 13px;
   white-space: nowrap;
 }
+
 .filter select {
   width: 130px;
 }
+
 .id-input {
-  width: 150px;
+  width: 136px;
 }
-.batch-btn {
+
+.filter-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+
 .submit-error {
-  margin: 0 0 16px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--kece-danger, #c4314b);
+  background: var(--kece-danger-soft, #fdf2f4);
+  color: var(--kece-danger, #c4314b);
+  font-size: 13px;
 }
+
+.cell-primary,
+.cell-question {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sub-id {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-tertiary);
+}
+
+.sub-user {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.q-title {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.q-id {
+  font-size: 12px;
+  color: var(--ink-tertiary);
+}
+
+.lang-tag {
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+.resource-meta {
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+.time {
+  color: var(--ink-tertiary);
+  font-size: 12.5px;
+}
+
 .status-badge {
   display: inline-block;
-  min-width: 44px;
-  padding: 2px 10px;
+  min-width: 48px;
+  padding: 3px 10px;
   border: none;
-  border-radius: var(--pill);
+  border-radius: 0;
   color: #fff;
   font-size: 12px;
   font-weight: 600;
   text-align: center;
   font-family: inherit;
 }
+
 .status-badge.ac {
   background: var(--success);
 }
+
 .status-badge.wa {
   background: var(--danger);
 }
+
 .status-badge.tle {
-  background: #000;
+  background: #111827;
 }
+
 .status-badge.mle {
-  background: #f57c00;
+  background: #d97706;
 }
+
 .status-badge.re {
-  background: #9c27b0;
+  background: #7c3aed;
 }
+
 .status-badge.ce,
 .status-badge.se {
-  background: #607d8b;
+  background: #475569;
 }
+
 .status-badge.run {
-  background: #9e9e9e;
+  background: #6b7280;
 }
-.q-title {
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: inline-block;
-  vertical-align: bottom;
-}
-.time {
-  color: var(--ink-tertiary);
-  font-size: 13px;
-}
+
 .clickable {
   cursor: pointer;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity 0.15s ease;
 }
+
 .clickable:hover {
-  opacity: 0.85;
-  transform: translateY(-1px);
+  opacity: 0.88;
 }
-.row-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+
 .action-btn {
-  padding: 3px 8px;
-  font-size: 12px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  border-color: var(--kece-border, var(--line));
 }
-.modal-overlay {
+
+.action-btn:hover {
+  border-color: var(--kece-accent, #137969);
+  color: var(--kece-accent-ink, #0f5f53);
+}
+
+/* 右侧详情抽屉 */
+.drawer-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(2px);
+  background: rgba(15, 23, 42, 0.35);
   display: flex;
-  align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   z-index: 9999;
-  padding: 20px;
 }
-.modal-card {
-  background: var(--bg, #fff);
-  border: 1px solid var(--line, #e5e7eb);
+
+.detail-drawer {
+  width: min(640px, 100vw);
+  height: 100dvh;
+  background: #ffffff;
+  border-left: 1px solid var(--kece-border, var(--line));
   border-radius: 0;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
-  width: 100%;
-  max-width: 820px;
-  max-height: 85vh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  animation: modalIn 0.18s ease-out;
+  box-shadow: -8px 0 32px rgba(15, 23, 42, 0.12);
 }
-@keyframes modalIn {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
+
+.drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--kece-border, var(--line));
+  background: var(--kece-surface-muted, #f8fafc);
 }
-.modal-header {
+
+.drawer-title-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-width: 0;
+}
+
+.drawer-id {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-secondary);
+}
+
+.drawer-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.drawer-close-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--kece-border, var(--line));
+  background: #ffffff;
+  color: var(--ink-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.drawer-close-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.drawer-meta-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--kece-border, var(--line));
+  background: var(--kece-surface-muted, #f8fafc);
+}
+
+.meta-item dt {
+  font-size: 11.5px;
+  color: var(--ink-tertiary);
+  margin-bottom: 2px;
+}
+
+.meta-item dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.muted-id {
+  font-size: 11.5px;
+  color: var(--ink-tertiary);
+}
+
+.section-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--line, #e5e7eb);
-  background: var(--bg-secondary, #fafafa);
 }
-.code-modal-title-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.code-modal-id {
-  font-size: 14px;
-  color: var(--ink-secondary);
-  font-weight: 700;
-}
-.code-modal-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--ink);
-}
-.modal-close-btn {
-  font-size: 16px;
-  color: var(--ink-tertiary);
-  padding: 4px;
-  line-height: 1;
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-.modal-close-btn:hover {
-  color: var(--ink);
-}
-.modal-code-body {
-  padding: 18px 20px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-}
-.code-modal-meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
+
+.section-title {
   font-size: 13px;
+  font-weight: 600;
   color: var(--ink-secondary);
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--line, #e5e7eb);
 }
-.copy-action-span {
-  margin-left: auto;
-}
+
 .code-pre {
   margin: 0;
-  padding: 16px 18px;
+  padding: 14px 16px;
   background: #f6f8fa;
-  color: #24292f;
-  border: 1px solid var(--line, #e1e4e8);
+  color: #1f2328;
+  border: 1px solid var(--kece-border, var(--line));
   border-radius: 0;
   font-size: 13px;
   line-height: 1.6;
-  max-height: 480px;
+  max-height: 520px;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
+
 .obj-detail-section {
-  padding: 10px 14px;
-  background: var(--bg-secondary, #f9fafb);
+  padding: 12px 14px;
+  background: var(--kece-surface-muted, #f8fafc);
   border-radius: 0;
-  border: 1px solid var(--line, #e5e7eb);
+  border: 1px solid var(--kece-border, var(--line));
   font-size: 14px;
   line-height: 1.6;
 }
+
 .obj-detail-label {
   font-weight: 600;
   color: var(--ink-secondary);
   margin-bottom: 4px;
   font-size: 12px;
 }
+
 .obj-detail-content {
   color: var(--ink);
 }
+
 .obj-detail-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
+
 .obj-detail-box {
   padding: 12px 14px;
   border-radius: 0;
-  border: 1px solid var(--line, #e5e7eb);
+  border: 1px solid var(--kece-border, var(--line));
 }
+
 .box-label {
   font-size: 12px;
   font-weight: 600;
   margin-bottom: 6px;
   color: var(--ink-secondary);
 }
+
 .box-content {
   font-size: 14px;
   font-weight: 600;
+  word-break: break-word;
 }
+
 .box-correct {
-  background: #f0fdf4;
+  background: var(--kece-success-soft, #eefbf3);
   border-color: #86efac;
-  color: #166534;
+  color: var(--kece-success, #16794f);
 }
+
 .box-wrong {
-  background: #fef2f2;
+  background: var(--kece-danger-soft, #fdf2f4);
   border-color: #fca5a5;
-  color: #991b1b;
+  color: var(--kece-danger, #c4314b);
 }
+
 .std-ans {
   background: #f8fafc;
   border-color: #cbd5e1;
   color: #1e293b;
+}
+
+.drawer-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--kece-border, var(--line));
+  background: var(--kece-surface-muted, #f8fafc);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.drawer-foot-note {
+  font-size: 12px;
+  color: var(--ink-tertiary);
+}
+
+.drawer-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rejudge-btn {
+  background: var(--kece-accent, #137969);
+  border-color: var(--kece-accent, #137969);
+  color: #ffffff;
+}
+
+.rejudge-btn:hover:not(:disabled) {
+  background: var(--kece-accent-hover, #0e6053);
+  border-color: var(--kece-accent-hover, #0e6053);
+}
+
+@media (max-width: 720px) {
+  .drawer-meta-grid,
+  .obj-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .filter-actions {
+    margin-left: 0;
+  }
 }
 </style>
