@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { examApi, type Exam, type RankRow } from '@/api/exam';
+import Pagination from '@/components/Pagination.vue';
 import { useUserStore } from '@/stores/user';
 import { useToast } from '@/composables/useToast';
 
@@ -22,6 +23,12 @@ const total = ref(0);
 const loading = ref(false);
 const error = ref('');
 
+const statusTabRefs = new Map<StatusTabKey, HTMLButtonElement>();
+function setStatusTabRef(key: StatusTabKey, el: HTMLButtonElement | null) {
+  if (el) statusTabRefs.set(key, el);
+  else statusTabRefs.delete(key);
+}
+
 // ---- 榜单弹窗状态 ----
 const rankingModalVisible = ref(false);
 const rankingExam = ref<Exam | null>(null);
@@ -29,14 +36,18 @@ const rankingList = ref<RankRow[]>([]);
 const rankingLoading = ref(false);
 const rankingError = ref('');
 const rankingCloseBtn = ref<HTMLButtonElement | null>(null);
+const rankingModalRef = ref<HTMLElement | null>(null);
 let rankingTimer: ReturnType<typeof setInterval> | null = null;
 
 // ---- 未开始场次安排弹窗 ----
 const scheduleExam = ref<Exam | null>(null);
 const scheduleCloseBtn = ref<HTMLButtonElement | null>(null);
+const scheduleModalRef = ref<HTMLElement | null>(null);
 
 let previousFocus: HTMLElement | null = null;
 let keywordTimer: ReturnType<typeof setTimeout> | null = null;
+let loadSeq = 0;
+let rankingSeq = 0;
 
 /** 解析时间串为时间戳：缺省无偏移的 ISO 默认视为北京时间 (+08:00)。 */
 function parseBeijingTimestamp(iso: string | null): number {
@@ -107,9 +118,51 @@ const filteredList = computed(() => {
   return rawList.value.filter((e) => getRealStatus(e) === statusFilter.value);
 });
 
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size)));
+/**
+ * 明确 statusFilter 与后端分页的边界：
+ * 当总条数不超过单页容量且启用了状态筛选时，分页器总条数与当前筛选结果对齐；
+ * 多页场景下保留服务端总条数以支持跨页查阅，并在此提示当前页筛选状态。
+ */
+const paginationTotal = computed(() => {
+  if (statusFilter.value === 'ALL') return total.value;
+  return total.value > size ? total.value : filteredList.value.length;
+});
+
+function syncBodyScrollLock() {
+  const anyModalOpen = rankingModalVisible.value || scheduleExam.value !== null;
+  document.body.style.overflow = anyModalOpen ? 'hidden' : '';
+}
+
+function selectStatusTab(key: StatusTabKey, moveFocus = false) {
+  statusFilter.value = key;
+  if (moveFocus) {
+    nextTick(() => {
+      statusTabRefs.get(key)?.focus();
+    });
+  }
+}
+
+function onStatusTabKeydown(e: KeyboardEvent, index: number) {
+  let nextIndex = -1;
+  if (e.key === 'ArrowRight') {
+    nextIndex = (index + 1) % statusTabs.length;
+  } else if (e.key === 'ArrowLeft') {
+    nextIndex = (index - 1 + statusTabs.length) % statusTabs.length;
+  } else if (e.key === 'Home') {
+    nextIndex = 0;
+  } else if (e.key === 'End') {
+    nextIndex = statusTabs.length - 1;
+  }
+  if (nextIndex === -1) return;
+  e.preventDefault();
+  const nextTab = statusTabs[nextIndex];
+  if (nextTab) {
+    selectStatusTab(nextTab.key, true);
+  }
+}
 
 async function load() {
+  const seq = ++loadSeq;
   loading.value = true;
   error.value = '';
   try {
@@ -118,24 +171,34 @@ async function load() {
       page: page.value,
       size,
     });
+    if (seq !== loadSeq) return;
     rawList.value = res.list;
     total.value = res.total;
   } catch (e) {
+    if (seq !== loadSeq) return;
     error.value = e instanceof Error ? e.message : '加载考试列表失败';
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) {
+      loading.value = false;
+    }
   }
 }
 
 async function fetchRanking(examId: number) {
+  const seq = ++rankingSeq;
   rankingLoading.value = true;
   rankingError.value = '';
   try {
-    rankingList.value = await examApi.ranking(examId);
+    const rows = await examApi.ranking(examId);
+    if (seq !== rankingSeq) return;
+    rankingList.value = rows;
   } catch (e) {
+    if (seq !== rankingSeq) return;
     rankingError.value = e instanceof Error ? e.message : '加载榜单失败，请稍后重试';
   } finally {
-    rankingLoading.value = false;
+    if (seq === rankingSeq) {
+      rankingLoading.value = false;
+    }
   }
 }
 
@@ -152,11 +215,16 @@ function openRankingModal(exam: Exam) {
   rankingList.value = [];
   rankingError.value = '';
   rankingModalVisible.value = true;
+  syncBodyScrollLock();
   fetchRanking(exam.id);
   stopRankingTimer();
   if (getRealStatus(exam) === 'ONGOING') {
     rankingTimer = setInterval(() => {
-      if (rankingExam.value && rankingModalVisible.value && getRealStatus(rankingExam.value) === 'ONGOING') {
+      if (
+        rankingExam.value &&
+        rankingModalVisible.value &&
+        getRealStatus(rankingExam.value) === 'ONGOING'
+      ) {
         fetchRanking(rankingExam.value.id);
       } else {
         stopRankingTimer();
@@ -173,6 +241,7 @@ function closeRankingModal() {
   rankingModalVisible.value = false;
   rankingExam.value = null;
   stopRankingTimer();
+  syncBodyScrollLock();
   const target = previousFocus;
   previousFocus = null;
   nextTick(() => {
@@ -183,6 +252,7 @@ function closeRankingModal() {
 function openScheduleModal(exam: Exam) {
   previousFocus = document.activeElement as HTMLElement | null;
   scheduleExam.value = exam;
+  syncBodyScrollLock();
   nextTick(() => {
     scheduleCloseBtn.value?.focus();
   });
@@ -191,6 +261,7 @@ function openScheduleModal(exam: Exam) {
 function closeScheduleModal() {
   if (!scheduleExam.value) return;
   scheduleExam.value = null;
+  syncBodyScrollLock();
   const target = previousFocus;
   previousFocus = null;
   nextTick(() => {
@@ -221,10 +292,42 @@ function changePage(p: number) {
   load();
 }
 
+function trapModalFocus(e: KeyboardEvent, container: HTMLElement | null) {
+  if (!container) return;
+  const focusable = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  );
+  if (focusable.length === 0) return;
+  const first = focusable[0]!;
+  const last = focusable[focusable.length - 1]!;
+  const active = document.activeElement as HTMLElement | null;
+
+  if (e.shiftKey) {
+    if (!active || active === first || !container.contains(active)) {
+      e.preventDefault();
+      last.focus();
+    }
+  } else if (!active || active === last || !container.contains(active)) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
 function onWindowKeydown(e: KeyboardEvent) {
-  if (e.key !== 'Escape') return;
-  if (rankingModalVisible.value) closeRankingModal();
-  else if (scheduleExam.value) closeScheduleModal();
+  if (e.key === 'Escape') {
+    if (rankingModalVisible.value) closeRankingModal();
+    else if (scheduleExam.value) closeScheduleModal();
+    return;
+  }
+  if (e.key === 'Tab') {
+    if (rankingModalVisible.value) {
+      trapModalFocus(e, rankingModalRef.value);
+    } else if (scheduleExam.value) {
+      trapModalFocus(e, scheduleModalRef.value);
+    }
+  }
 }
 
 watch(keyword, () => {
@@ -244,6 +347,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onWindowKeydown);
   stopRankingTimer();
   if (keywordTimer !== null) clearTimeout(keywordTimer);
+  document.body.style.overflow = '';
 });
 </script>
 
@@ -266,17 +370,22 @@ onBeforeUnmount(() => {
     <div class="toolbar card">
       <div class="status-tabs" role="tablist" aria-label="场次状态筛选">
         <button
-          v-for="tab in statusTabs"
+          v-for="(tab, idx) in statusTabs"
+          :id="`exam-status-tab-${tab.key.toLowerCase()}`"
           :key="tab.key"
+          :ref="(el) => setStatusTabRef(tab.key, el as HTMLButtonElement | null)"
           role="tab"
           type="button"
           class="tab"
           :aria-selected="statusFilter === tab.key"
+          aria-controls="exam-list-tabpanel"
+          :tabindex="statusFilter === tab.key ? 0 : -1"
           :class="{ active: statusFilter === tab.key }"
-          @click="statusFilter = tab.key"
+          @click="selectStatusTab(tab.key)"
+          @keydown="onStatusTabKeydown($event, idx)"
         >
           <span>{{ tab.label }}</span>
-          <span class="tab-count mono">{{ statusCounts[tab.key] }}</span>
+          <span class="tab-count mono tabular-nums">{{ statusCounts[tab.key] }}</span>
         </button>
       </div>
 
@@ -292,178 +401,187 @@ onBeforeUnmount(() => {
     </div>
 
     <p v-if="error" class="submit-error" role="alert">
-      {{ error }}
-      <button type="button" class="retry-link" @click="load">重试</button>
+      <span>{{ error }}</span>
+      <button type="button" class="btn-inline-retry retry-link" @click="load">重试</button>
     </p>
 
-    <div v-if="loading" class="state-card card">
-      <div class="loading-spinner"></div>
-      <p class="muted">正在加载考试场次…</p>
-    </div>
+    <div
+      id="exam-list-tabpanel"
+      role="tabpanel"
+      :aria-labelledby="`exam-status-tab-${statusFilter.toLowerCase()}`"
+    >
+      <div v-if="loading" class="state-card card">
+        <div class="loading-spinner"></div>
+        <p class="muted">正在加载考试场次…</p>
+      </div>
 
-    <div v-else-if="filteredList.length === 0" class="empty-card card">
-      <p class="empty-title">暂无匹配的考试场次</p>
-      <p class="muted">
-        {{
-          statusFilter !== 'ALL' || keyword.trim()
-            ? '可切换状态标签或清空关键词重新查看。'
-            : '当前暂未发布公开考试，请留意教师公告或稍后刷新。'
-        }}
-      </p>
-      <button
-        v-if="statusFilter !== 'ALL' || keyword.trim()"
-        class="btn btn-outline btn-sm"
-        type="button"
-        @click="statusFilter = 'ALL'; keyword = ''"
-      >
-        查看全部场次
-      </button>
-    </div>
+      <div v-else-if="filteredList.length === 0" class="empty-card card">
+        <p class="empty-title">暂无匹配的考试场次</p>
+        <p class="muted">
+          {{
+            statusFilter !== 'ALL' || keyword.trim()
+              ? total > size && statusFilter !== 'ALL'
+                ? '当前页暂无该状态场次，可切换页码或点击下方查看全部场次。'
+                : '可切换状态标签或清空关键词重新查看。'
+              : '当前暂未发布公开考试，请留意教师公告或稍后刷新。'
+          }}
+        </p>
+        <button
+          v-if="statusFilter !== 'ALL' || keyword.trim()"
+          class="btn btn-outline btn-sm"
+          type="button"
+          @click="
+            statusFilter = 'ALL';
+            keyword = '';
+          "
+        >
+          查看全部场次
+        </button>
+      </div>
 
-    <div v-else class="exam-list">
-      <article
-        v-for="exam in filteredList"
-        :key="exam.id"
-        class="exam-card card"
-        :class="`card-${getRealStatus(exam).toLowerCase()}`"
-      >
-        <div class="exam-main">
-          <div class="exam-badges">
-            <span
-              class="badge status-badge"
-              :class="`status-${getRealStatus(exam).toLowerCase()}`"
-            >
-              <span v-if="getRealStatus(exam) === 'ONGOING'" class="pulse-dot" aria-hidden="true"></span>
-              {{
-                getRealStatus(exam) === 'ONGOING'
-                  ? '进行中'
-                  : getRealStatus(exam) === 'UPCOMING'
-                    ? '未开始'
-                    : '已结束'
-              }}
-            </span>
-            <span class="badge mode-badge" :class="exam.mode === 'ACM' ? 'mode-acm' : 'mode-oi'">
-              {{ exam.mode === 'ACM' ? 'ACM 赛制' : 'OI 赛制' }}
-            </span>
-            <span class="exam-id mono">#{{ exam.id }}</span>
-            <span v-if="exam.submitted" class="badge badge-submitted">已交卷</span>
+      <div v-else class="exam-list">
+        <article
+          v-for="exam in filteredList"
+          :key="exam.id"
+          class="exam-card card"
+          :class="`card-${getRealStatus(exam).toLowerCase()}`"
+        >
+          <div class="exam-main">
+            <div class="exam-badges">
+              <span
+                class="badge status-badge"
+                :class="`status-${getRealStatus(exam).toLowerCase()}`"
+              >
+                <span
+                  v-if="getRealStatus(exam) === 'ONGOING'"
+                  class="pulse-dot"
+                  aria-hidden="true"
+                ></span>
+                {{
+                  getRealStatus(exam) === 'ONGOING'
+                    ? '进行中'
+                    : getRealStatus(exam) === 'UPCOMING'
+                      ? '未开始'
+                      : '已结束'
+                }}
+              </span>
+              <span class="badge mode-badge" :class="exam.mode === 'ACM' ? 'mode-acm' : 'mode-oi'">
+                {{ exam.mode === 'ACM' ? 'ACM 赛制' : 'OI 赛制' }}
+              </span>
+              <span class="exam-id mono tabular-nums">#{{ exam.id }}</span>
+              <span v-if="exam.submitted" class="badge badge-submitted">已交卷</span>
+            </div>
+
+            <h2 class="exam-title">{{ exam.title }}</h2>
+
+            <p v-if="exam.description" class="exam-desc">
+              {{ exam.description }}
+            </p>
+
+            <dl class="exam-meta-row">
+              <div class="meta-item">
+                <dt>开考时间</dt>
+                <dd class="mono tabular-nums">{{ formatTime(exam.startTime) }}</dd>
+              </div>
+              <div class="meta-item">
+                <dt>结束时间</dt>
+                <dd class="mono tabular-nums">{{ formatTime(exam.endTime) }}</dd>
+              </div>
+              <div class="meta-item">
+                <dt>考试时长</dt>
+                <dd class="mono tabular-nums">{{ exam.durationMinutes }} 分钟</dd>
+              </div>
+              <div class="meta-item">
+                <dt>交卷机制</dt>
+                <dd>截止自动收卷</dd>
+              </div>
+            </dl>
           </div>
 
-          <h2 class="exam-title">{{ exam.title }}</h2>
+          <div class="exam-action">
+            <!-- 进行中场次 -->
+            <template v-if="getRealStatus(exam) === 'ONGOING'">
+              <button
+                v-if="!exam.submitted"
+                class="btn btn-primary btn-enter accent-primary"
+                type="button"
+                @click="handleEnterExam(exam)"
+              >
+                进入考试
+              </button>
+              <template v-else>
+                <button
+                  class="btn btn-submitted"
+                  disabled
+                  type="button"
+                  title="本场考试已交卷，不可重复作答"
+                >
+                  已交卷
+                </button>
+                <button
+                  class="btn btn-primary btn-result accent-primary"
+                  type="button"
+                  @click="handleViewResult(exam)"
+                >
+                  查看结果
+                </button>
+              </template>
+              <button
+                class="btn btn-outline btn-ranking"
+                type="button"
+                @click="openRankingModal(exam)"
+              >
+                实时排名
+              </button>
+            </template>
 
-          <p v-if="exam.description" class="exam-desc">
-            {{ exam.description }}
-          </p>
+            <!-- 未开始场次 -->
+            <template v-else-if="getRealStatus(exam) === 'UPCOMING'">
+              <button
+                class="btn btn-outline btn-schedule"
+                type="button"
+                @click="openScheduleModal(exam)"
+              >
+                查看安排
+              </button>
+              <span class="upcoming-note">等待开考</span>
+            </template>
 
-          <dl class="exam-meta-row">
-            <div class="meta-item">
-              <dt>开考时间</dt>
-              <dd class="mono">{{ formatTime(exam.startTime) }}</dd>
-            </div>
-            <div class="meta-item">
-              <dt>结束时间</dt>
-              <dd class="mono">{{ formatTime(exam.endTime) }}</dd>
-            </div>
-            <div class="meta-item">
-              <dt>考试时长</dt>
-              <dd class="mono">{{ exam.durationMinutes }} 分钟</dd>
-            </div>
-            <div class="meta-item">
-              <dt>交卷机制</dt>
-              <dd>截止自动收卷</dd>
-            </div>
-          </dl>
-        </div>
-
-        <div class="exam-action">
-          <!-- 进行中场次 -->
-          <template v-if="getRealStatus(exam) === 'ONGOING'">
-            <button
-              v-if="!exam.submitted"
-              class="btn btn-primary btn-enter accent-primary"
-              type="button"
-              @click="handleEnterExam(exam)"
-            >
-              进入考试
-            </button>
+            <!-- 已结束场次：禁止展示“实时排名” -->
             <template v-else>
               <button
-                class="btn btn-submitted"
-                disabled
-                type="button"
-                title="本场考试已交卷，不可重复作答"
-              >
-                已交卷
-              </button>
-              <button
-                class="btn btn-primary btn-result accent-primary"
+                class="btn btn-primary btn-result"
                 type="button"
                 @click="handleViewResult(exam)"
               >
                 查看结果
               </button>
+              <button
+                class="btn btn-outline btn-ranking"
+                type="button"
+                @click="openRankingModal(exam)"
+              >
+                查看榜单
+              </button>
             </template>
-            <button
-              class="btn btn-outline btn-ranking"
-              type="button"
-              @click="openRankingModal(exam)"
-            >
-              实时排名
-            </button>
-          </template>
-
-          <!-- 未开始场次 -->
-          <template v-else-if="getRealStatus(exam) === 'UPCOMING'">
-            <button
-              class="btn btn-outline btn-schedule"
-              type="button"
-              @click="openScheduleModal(exam)"
-            >
-              查看安排
-            </button>
-            <span class="upcoming-note">等待开考</span>
-          </template>
-
-          <!-- 已结束场次：禁止展示“实时排名” -->
-          <template v-else>
-            <button
-              class="btn btn-primary btn-result"
-              type="button"
-              @click="handleViewResult(exam)"
-            >
-              查看结果
-            </button>
-            <button
-              class="btn btn-outline btn-ranking"
-              type="button"
-              @click="openRankingModal(exam)"
-            >
-              查看榜单
-            </button>
-          </template>
-        </div>
-      </article>
+          </div>
+        </article>
+      </div>
     </div>
 
-    <div v-if="total > 0" class="pagination">
-      <button class="btn btn-ghost btn-sm" type="button" :disabled="page <= 1" @click="changePage(page - 1)">
-        上一页
-      </button>
-      <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
-      <button
-        class="btn btn-ghost btn-sm"
-        type="button"
-        :disabled="page >= totalPages"
-        @click="changePage(page + 1)"
-      >
-        下一页
-      </button>
-    </div>
+    <Pagination
+      :page="page"
+      :size="size"
+      :total="paginationTotal"
+      :disabled="loading"
+      @update:page="changePage"
+    />
 
     <!-- 考试榜单弹窗 -->
     <Teleport to="body">
       <div v-if="rankingModalVisible" class="modal-backdrop" @click.self="closeRankingModal">
         <div
+          ref="rankingModalRef"
           class="modal-card card"
           role="dialog"
           aria-modal="true"
@@ -476,8 +594,15 @@ onBeforeUnmount(() => {
               </div>
               <h2 id="exam-ranking-title" class="modal-title">{{ rankingExam?.title }}</h2>
               <div class="modal-meta">
-                <span class="badge mode-badge" :class="rankingExam?.mode === 'ACM' ? 'mode-acm' : 'mode-oi'">
-                  {{ rankingExam?.mode === 'ACM' ? 'ACM 赛制（通过数 + 罚时）' : 'OI 赛制（综合总分）' }}
+                <span
+                  class="badge mode-badge"
+                  :class="rankingExam?.mode === 'ACM' ? 'mode-acm' : 'mode-oi'"
+                >
+                  {{
+                    rankingExam?.mode === 'ACM'
+                      ? 'ACM 赛制（通过数 + 罚时）'
+                      : 'OI 赛制（综合总分）'
+                  }}
                 </span>
                 <span v-if="isLiveRanking" class="refresh-tip mono">每 10 秒自动刷新</span>
               </div>
@@ -559,9 +684,7 @@ onBeforeUnmount(() => {
                       <span class="ac-text">{{ r.solved }} 题</span>
                     </td>
                     <td class="td-num mono">{{ r.penaltyMinutes }} 分钟</td>
-                    <td class="td-num mono final-score">
-                      {{ r.totalScore }} / {{ r.fullScore }}
-                    </td>
+                    <td class="td-num mono final-score">{{ r.totalScore }} / {{ r.fullScore }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -582,10 +705,15 @@ onBeforeUnmount(() => {
             </div>
             <div class="footer-right">
               <button
-                v-if="rankingExam && (rankingExam.submitted || getRealStatus(rankingExam) === 'ENDED')"
+                v-if="
+                  rankingExam && (rankingExam.submitted || getRealStatus(rankingExam) === 'ENDED')
+                "
                 class="btn btn-primary btn-sm"
                 type="button"
-                @click="handleViewResult(rankingExam); closeRankingModal()"
+                @click="
+                  handleViewResult(rankingExam);
+                  closeRankingModal();
+                "
               >
                 查看完整结果
               </button>
@@ -602,6 +730,7 @@ onBeforeUnmount(() => {
     <Teleport to="body">
       <div v-if="scheduleExam" class="modal-backdrop" @click.self="closeScheduleModal">
         <div
+          ref="scheduleModalRef"
           class="modal-card schedule-modal card"
           role="dialog"
           aria-modal="true"
@@ -609,7 +738,7 @@ onBeforeUnmount(() => {
         >
           <header class="modal-header">
             <div class="modal-header-info">
-              <div class="modal-tag mono">#{{ scheduleExam.id }} · 考试安排</div>
+              <div class="modal-tag mono tabular-nums">#{{ scheduleExam.id }} · 考试安排</div>
               <h2 id="exam-schedule-title" class="modal-title">{{ scheduleExam.title }}</h2>
             </div>
             <button
@@ -624,7 +753,9 @@ onBeforeUnmount(() => {
           </header>
 
           <div class="schedule-body">
-            <p v-if="scheduleExam.description" class="schedule-desc">{{ scheduleExam.description }}</p>
+            <p v-if="scheduleExam.description" class="schedule-desc">
+              {{ scheduleExam.description }}
+            </p>
             <dl class="schedule-grid">
               <div>
                 <dt>赛制模式</dt>
@@ -632,19 +763,21 @@ onBeforeUnmount(() => {
               </div>
               <div>
                 <dt>考试时长</dt>
-                <dd class="mono">{{ scheduleExam.durationMinutes }} 分钟</dd>
+                <dd class="mono tabular-nums">{{ scheduleExam.durationMinutes }} 分钟</dd>
               </div>
               <div>
                 <dt>开考时间</dt>
-                <dd class="mono">{{ formatTime(scheduleExam.startTime) }}</dd>
+                <dd class="mono tabular-nums">{{ formatTime(scheduleExam.startTime) }}</dd>
               </div>
               <div>
                 <dt>结束时间</dt>
-                <dd class="mono">{{ formatTime(scheduleExam.endTime) }}</dd>
+                <dd class="mono tabular-nums">{{ formatTime(scheduleExam.endTime) }}</dd>
               </div>
               <div>
                 <dt>实名登记</dt>
-                <dd>{{ scheduleExam.requireStudentInfo ? '开考前需填写学号与姓名' : '无需额外登记' }}</dd>
+                <dd>
+                  {{ scheduleExam.requireStudentInfo ? '开考前需填写学号与姓名' : '无需额外登记' }}
+                </dd>
               </div>
               <div>
                 <dt>交卷策略</dt>
@@ -701,9 +834,9 @@ onBeforeUnmount(() => {
   gap: 12px 16px;
   padding: 14px 16px;
   margin-bottom: 20px;
-  background: #ffffff;
-  border: 1px solid var(--kece-border, var(--line));
-  border-radius: var(--kece-card-radius, 0px);
+  background: var(--surface-white);
+  border: 1px solid var(--kece-border);
+  border-radius: var(--kece-card-radius);
 }
 
 .status-tabs {
@@ -721,31 +854,35 @@ onBeforeUnmount(() => {
   font-size: 13.5px;
   font-weight: 500;
   color: var(--ink-secondary);
-  border: 1px solid var(--kece-border, var(--line));
-  background: #ffffff;
+  border: 1px solid var(--kece-border);
+  background: var(--surface-white);
   cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
 }
 
 .tab:hover {
   color: var(--ink);
-  border-color: #9ca3af;
+  border-color: var(--kece-accent);
 }
 
 .tab.active {
-  background: var(--kece-accent-soft, #eef6f4);
-  border-color: var(--kece-accent, #137969);
-  color: var(--kece-accent-ink, #0f5f53);
+  background: var(--kece-accent-soft);
+  border-color: var(--kece-accent);
+  color: var(--kece-accent-ink);
   font-weight: 600;
 }
 
 .tab-count {
   font-size: 12px;
   color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .tab.active .tab-count {
-  color: var(--kece-accent-ink, #0f5f53);
+  color: var(--kece-accent-ink);
 }
 
 .search-wrap {
@@ -760,29 +897,22 @@ onBeforeUnmount(() => {
 .submit-error {
   margin: 0 0 16px;
   padding: 10px 14px;
-  border: 1px solid var(--kece-danger, #c4314b);
-  background: var(--kece-danger-soft, #fdf2f4);
-  color: var(--kece-danger, #c4314b);
+  border: 1px solid var(--kece-danger);
+  background: var(--kece-danger-soft);
+  color: var(--kece-danger);
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-.retry-link {
-  border: 0;
-  background: none;
-  color: inherit;
-  text-decoration: underline;
-  cursor: pointer;
+  gap: 12px;
 }
 
 .state-card,
 .empty-card {
   padding: 40px 24px;
   text-align: center;
-  border: 1px solid var(--kece-border, var(--line));
-  border-radius: var(--kece-card-radius, 0px);
-  background: #ffffff;
+  border: 1px solid var(--kece-border);
+  border-radius: var(--kece-card-radius);
+  background: var(--surface-white);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -808,13 +938,14 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 24px;
   padding: 20px 22px;
-  background: #ffffff;
-  border: 1px solid var(--kece-border, var(--line));
-  border-radius: var(--kece-card-radius, 0px);
+  background: var(--surface-white);
+  border: 1px solid var(--kece-border);
+  border-radius: var(--kece-card-radius);
 }
 
 .exam-card.card-ongoing {
-  border-left: 3px solid var(--kece-accent, #137969);
+  border: 1px solid var(--kece-accent);
+  box-shadow: inset 0 2px 0 var(--kece-accent);
 }
 
 .exam-main {
@@ -840,53 +971,55 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 600;
   border-radius: 0;
-  border: 1px solid var(--kece-border, var(--line));
+  border: 1px solid var(--kece-border);
 }
 
 .status-ongoing {
-  background: var(--kece-accent-soft, #eef6f4);
-  border-color: var(--kece-accent, #137969);
-  color: var(--kece-accent-ink, #0f5f53);
+  background: var(--kece-accent-soft);
+  border-color: var(--kece-accent);
+  color: var(--kece-accent-ink);
 }
 
 .status-upcoming {
-  background: var(--kece-warning-soft, #fff7ed);
-  border-color: #fed7aa;
-  color: var(--kece-warning, #b25c16);
+  background: var(--kece-warning-soft);
+  border-color: var(--kece-warning);
+  color: var(--kece-warning);
 }
 
 .status-ended {
-  background: var(--kece-surface-muted, #f8fafc);
-  border-color: var(--kece-border, var(--line));
+  background: var(--kece-surface-muted);
+  border-color: var(--kece-border);
   color: var(--ink-secondary);
 }
 
 .pulse-dot {
   width: 6px;
   height: 6px;
-  background: var(--kece-accent, #137969);
+  background: var(--kece-accent);
 }
 
 .mode-acm {
-  background: #ffffff;
+  background: var(--surface-white);
   color: var(--ink);
-  border-color: #cbd5e1;
+  border-color: var(--kece-border);
 }
 
 .mode-oi {
-  background: #ffffff;
+  background: var(--surface-white);
   color: var(--ink-secondary);
+  border-color: var(--kece-border);
 }
 
 .badge-submitted {
-  background: #f1f5f9;
-  color: #334155;
-  border-color: #cbd5e1;
+  background: var(--kece-surface-muted);
+  color: var(--ink-secondary);
+  border-color: var(--kece-border);
 }
 
 .exam-id {
   font-size: 12px;
   color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .exam-title {
@@ -914,7 +1047,7 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 10px 24px;
   padding-top: 10px;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--kece-border);
 }
 
 .meta-item {
@@ -932,6 +1065,7 @@ onBeforeUnmount(() => {
   margin: 0;
   color: var(--ink);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .exam-action {
@@ -950,20 +1084,20 @@ onBeforeUnmount(() => {
 }
 
 .accent-primary {
-  background: var(--kece-accent, #137969);
-  border-color: var(--kece-accent, #137969);
-  color: #ffffff;
+  background: var(--kece-accent);
+  border-color: var(--kece-accent);
+  color: var(--surface-white);
 }
 
 .accent-primary:hover:not(:disabled) {
-  background: var(--kece-accent-hover, #0e6053);
-  border-color: var(--kece-accent-hover, #0e6053);
+  background: var(--kece-accent-hover);
+  border-color: var(--kece-accent-hover);
 }
 
 .btn-submitted {
-  background: #f1f5f9;
+  background: var(--kece-surface-muted);
   color: var(--ink-tertiary);
-  border: 1px solid var(--kece-border, var(--line));
+  border: 1px solid var(--kece-border);
   cursor: not-allowed;
 }
 
@@ -987,8 +1121,8 @@ onBeforeUnmount(() => {
 .modal-card {
   width: 100%;
   max-width: 780px;
-  background: #ffffff;
-  border: 1px solid var(--kece-border, var(--line));
+  background: var(--surface-white);
+  border: 1px solid var(--kece-border);
   border-radius: 0;
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.2);
   display: flex;
@@ -1003,8 +1137,8 @@ onBeforeUnmount(() => {
 
 .modal-header {
   padding: 18px 22px;
-  border-bottom: 1px solid var(--kece-border, var(--line));
-  background: var(--kece-surface-muted, #f8fafc);
+  border-bottom: 1px solid var(--kece-border);
+  background: var(--kece-surface-muted);
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -1015,6 +1149,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--ink-secondary);
   margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
 .modal-title {
@@ -1034,6 +1169,7 @@ onBeforeUnmount(() => {
 .refresh-tip {
   font-size: 12px;
   color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .btn-close {
@@ -1042,11 +1178,14 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--kece-border, var(--line));
-  background: #ffffff;
+  border: 1px solid var(--kece-border);
+  background: var(--surface-white);
   color: var(--ink-secondary);
   cursor: pointer;
   flex-shrink: 0;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .btn-close:hover {
@@ -1087,13 +1226,14 @@ onBeforeUnmount(() => {
   padding: 12px 16px;
   color: var(--ink-secondary);
   font-weight: 600;
-  background: #ffffff;
-  border-bottom: 1px solid var(--kece-border, var(--line));
+  background: var(--surface-white);
+  border-bottom: 1px solid var(--kece-border);
 }
 
 .rank-table td {
   padding: 12px 16px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--kece-border);
+  font-variant-numeric: tabular-nums;
 }
 
 .th-rank,
@@ -1105,10 +1245,11 @@ onBeforeUnmount(() => {
 .th-num,
 .td-num {
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .rank-row.is-me {
-  background: var(--kece-accent-soft, #eef6f4);
+  background: var(--kece-accent-soft);
 }
 
 .rank-square-badge {
@@ -1119,26 +1260,27 @@ onBeforeUnmount(() => {
   justify-content: center;
   font-size: 12px;
   font-weight: 700;
-  border: 1px solid var(--kece-border, var(--line));
-  background: #ffffff;
+  border: 1px solid var(--kece-border);
+  background: var(--surface-white);
+  font-variant-numeric: tabular-nums;
 }
 
 .rank-square-badge.rank-1 {
-  background: #111827;
-  color: #ffffff;
-  border-color: #111827;
+  background: var(--line-strong);
+  color: var(--surface-white);
+  border-color: var(--line-strong);
 }
 
 .rank-square-badge.rank-2 {
-  background: #4b5563;
-  color: #ffffff;
-  border-color: #4b5563;
+  background: var(--ink-secondary);
+  color: var(--surface-white);
+  border-color: var(--ink-secondary);
 }
 
 .rank-square-badge.rank-3 {
-  background: #6b7280;
-  color: #ffffff;
-  border-color: #6b7280;
+  background: var(--ink-tertiary);
+  color: var(--surface-white);
+  border-color: var(--ink-tertiary);
 }
 
 .user-name {
@@ -1149,17 +1291,18 @@ onBeforeUnmount(() => {
 .me-tag {
   margin-left: 6px;
   font-size: 11px;
-  color: var(--kece-accent-ink, #0f5f53);
+  color: var(--kece-accent-ink);
   font-weight: 700;
 }
 
 .ac-text {
-  color: var(--kece-success, #16794f);
+  color: var(--kece-success);
 }
 
 .final-score {
   font-weight: 700;
   color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .schedule-body {
@@ -1182,8 +1325,8 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 16px;
   padding: 14px;
-  background: var(--kece-surface-muted, #f8fafc);
-  border: 1px solid var(--kece-border, var(--line));
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
 }
 
 .schedule-grid dt {
@@ -1197,12 +1340,13 @@ onBeforeUnmount(() => {
   font-size: 13.5px;
   color: var(--ink);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .modal-footer {
   padding: 14px 22px;
-  background: var(--kece-surface-muted, #f8fafc);
-  border-top: 1px solid var(--kece-border, var(--line));
+  background: var(--kece-surface-muted);
+  border-top: 1px solid var(--kece-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1219,19 +1363,7 @@ onBeforeUnmount(() => {
 .candidates-count {
   font-size: 12px;
   color: var(--ink-tertiary);
-}
-
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  padding: 28px 0 12px;
-}
-
-.page-info {
-  color: var(--ink-secondary);
-  font-size: 14px;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 768px) {
@@ -1252,6 +1384,13 @@ onBeforeUnmount(() => {
   }
   .schedule-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab,
+  .btn-close {
+    transition: none;
   }
 }
 </style>

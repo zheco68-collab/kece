@@ -1,66 +1,66 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import type { HeatmapData, HeatmapDay } from '@/api/profile'
+import { computed, ref } from 'vue';
+import type { HeatmapData, HeatmapDay } from '@/api/profile';
 
 const props = defineProps<{
-  data: HeatmapData | null
-  loading?: boolean
-}>()
+  data: HeatmapData | null;
+  loading?: boolean;
+}>();
 
 interface WeekColumn {
-  monthLabel?: string
-  days: (HeatmapDay | null)[]
+  monthLabel?: string;
+  days: (HeatmapDay | null)[];
 }
 
 const tooltip = ref<{
-  visible: boolean
-  x: number
-  y: number
-  text: string
+  visible: boolean;
+  x: number;
+  y: number;
+  text: string;
 }>({
   visible: false,
   x: 0,
   y: 0,
   text: '',
-})
+});
 
 function getDayOfWeek(dateStr: string): number {
-  const [year, month, day] = dateStr.split('-').map(Number)
-  const d = new Date(year, month - 1, day)
-  return (d.getDay() + 6) % 7 // Monday = 0, ..., Sunday = 6
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const d = new Date(year, month - 1, day);
+  return (d.getDay() + 6) % 7; // Monday = 0, ..., Sunday = 6
 }
 
 const weeks = computed<WeekColumn[]>(() => {
   if (!props.data || !props.data.days || props.data.days.length === 0) {
-    return []
+    return [];
   }
 
-  const result: WeekColumn[] = []
-  let currentWeek: (HeatmapDay | null)[] = []
-  let lastMonth = -1
+  const result: WeekColumn[] = [];
+  let currentWeek: (HeatmapDay | null)[] = [];
+  let lastMonth = -1;
 
   // 补齐第一周前面的空位
-  const firstDay = props.data.days[0]
-  const firstDayOfWeek = getDayOfWeek(firstDay.date)
+  const firstDay = props.data.days[0];
+  const firstDayOfWeek = getDayOfWeek(firstDay.date);
   for (let i = 0; i < firstDayOfWeek; i++) {
-    currentWeek.push(null)
+    currentWeek.push(null);
   }
 
   for (const day of props.data.days) {
-    const dayOfWeek = getDayOfWeek(day.date)
+    const dayOfWeek = getDayOfWeek(day.date);
     if (dayOfWeek === 0 && currentWeek.length > 0) {
-      result.push({ days: currentWeek })
-      currentWeek = []
+      result.push({ days: currentWeek });
+      currentWeek = [];
     }
-    currentWeek.push(day)
+    currentWeek.push(day);
   }
 
   // 补齐最后一周后面的空位
   if (currentWeek.length > 0) {
     while (currentWeek.length < 7) {
-      currentWeek.push(null)
+      currentWeek.push(null);
     }
-    result.push({ days: currentWeek })
+    result.push({ days: currentWeek });
   }
 
   const monthNames = [
@@ -76,43 +76,43 @@ const weeks = computed<WeekColumn[]>(() => {
     '10月',
     '11月',
     '12月',
-  ]
+  ];
   for (const week of result) {
-    const validDay = week.days.find((d) => d !== null)
+    const validDay = week.days.find((d) => d !== null);
     if (validDay) {
-      const [, m] = validDay.date.split('-').map(Number)
+      const [, m] = validDay.date.split('-').map(Number);
       if (m !== lastMonth) {
-        week.monthLabel = monthNames[m - 1]
-        lastMonth = m
+        week.monthLabel = monthNames[m - 1];
+        lastMonth = m;
       }
     }
   }
 
-  return result
-})
+  return result;
+});
 
 function getLevelClass(count: number): string {
-  if (count <= 0) return 'lvl-0'
-  if (count <= 2) return 'lvl-1'
-  if (count <= 5) return 'lvl-2'
-  if (count <= 9) return 'lvl-3'
-  return 'lvl-4'
+  if (count <= 0) return 'lvl-0';
+  if (count <= 2) return 'lvl-1';
+  if (count <= 5) return 'lvl-2';
+  if (count <= 9) return 'lvl-3';
+  return 'lvl-4';
 }
 
 function onCellMouseEnter(e: MouseEvent, day: HeatmapDay | null) {
-  if (!day) return
-  const text = `${day.date}: ${day.count} 题通过 (AC)`
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  if (!day) return;
+  const text = `${day.date}: ${day.count} 题通过 (AC)`;
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   tooltip.value = {
     visible: true,
     x: rect.left + rect.width / 2,
     y: rect.top - 8,
     text,
-  }
+  };
 }
 
 function onCellMouseLeave() {
-  tooltip.value.visible = false
+  tooltip.value.visible = false;
 }
 </script>
 
@@ -121,8 +121,8 @@ function onCellMouseLeave() {
     <div class="heatmap-header">
       <div class="heatmap-title-group">
         <div class="title-row">
-          <h3 class="heatmap-title">年度 AC 打卡记录</h3>
-          <span class="heatmap-badge">52 周</span>
+          <h2 class="heatmap-title">年度 AC 打卡记录</h2>
+          <span class="heatmap-badge tabular-nums">52 周</span>
         </div>
         <span class="heatmap-sub">记录过去 365 天算法题与数据库题目的 Accepted 评测记录</span>
       </div>
@@ -153,7 +153,8 @@ function onCellMouseLeave() {
     </div>
 
     <div v-if="loading" class="heatmap-loading muted">
-      <div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载热力图数据…</p>
+      <div class="loading-spinner"></div>
+      <p class="muted" style="margin: 0">正在加载热力图数据…</p>
     </div>
 
     <div v-else class="heatmap-scroll">
@@ -174,22 +175,14 @@ function onCellMouseLeave() {
         <div class="weeks-container">
           <!-- 月份标签行 -->
           <div class="months-row">
-            <div
-              v-for="(week, wIdx) in weeks"
-              :key="'m-' + wIdx"
-              class="month-cell"
-            >
+            <div v-for="(week, wIdx) in weeks" :key="'m-' + wIdx" class="month-cell">
               <span v-if="week.monthLabel" class="month-label mono">{{ week.monthLabel }}</span>
             </div>
           </div>
 
           <!-- 列网格 -->
           <div class="grid-columns">
-            <div
-              v-for="(week, wIdx) in weeks"
-              :key="'w-' + wIdx"
-              class="week-col"
-            >
+            <div v-for="(week, wIdx) in weeks" :key="'w-' + wIdx" class="week-col">
               <div
                 v-for="(day, dIdx) in week.days"
                 :key="'d-' + wIdx + '-' + dIdx"
@@ -318,6 +311,7 @@ function onCellMouseLeave() {
   font-weight: 800;
   color: var(--ink);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-unit {
@@ -486,6 +480,15 @@ function onCellMouseLeave() {
   .stat-box {
     flex: 1;
     min-width: 90px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .day-cell {
+    transition: none;
+  }
+  .day-cell:hover {
+    transform: none;
   }
 }
 </style>

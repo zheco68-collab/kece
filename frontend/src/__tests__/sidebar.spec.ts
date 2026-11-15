@@ -1,7 +1,9 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { systemApi } from '@/api/system'
 import AppSidebar from '@/components/AppSidebar.vue'
+import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import router from '@/router'
 import { useUserStore } from '@/stores/user'
 
@@ -176,6 +178,159 @@ describe('AppSidebar.vue 侧边栏与方案 C 鉴权测试 (frontend/src/__tests
     expect(nameLink.exists()).toBe(true)
     expect(nameLink.attributes('href')).toBe('/profile')
     expect(nameLink.text()).toContain('zheco68')
+  })
+
+  it('7. 手风琴触发器使用原生 <button> 并支持 aria-expanded / aria-controls 与 Escape 收起及焦点回归', async () => {
+    const wrapper = mount(AppSidebar, {
+      attachTo: document.body,
+      global: {
+        plugins: [router],
+      },
+    })
+
+    try {
+      const triggers = wrapper.findAll('button.nav-accordion-trigger')
+      expect(triggers).toHaveLength(2)
+
+      const questionsTrigger = triggers[0]
+      const problemSetsTrigger = triggers[1]
+
+      expect(questionsTrigger.attributes('type')).toBe('button')
+      expect(questionsTrigger.attributes('aria-expanded')).toBe('false')
+      expect(questionsTrigger.attributes('aria-controls')).toBe('sidebar-questions-panel')
+      expect(problemSetsTrigger.attributes('type')).toBe('button')
+      expect(problemSetsTrigger.attributes('aria-expanded')).toBe('false')
+      expect(problemSetsTrigger.attributes('aria-controls')).toBe('sidebar-problem-sets-panel')
+
+      // 展开题库手风琴
+      await questionsTrigger.trigger('click')
+      expect(questionsTrigger.attributes('aria-expanded')).toBe('true')
+      const questionsPanel = wrapper.find('#sidebar-questions-panel')
+      expect(questionsPanel.exists()).toBe(true)
+
+      // 焦点在子菜单项上按 Escape：收起面板并将焦点归还至触发按钮
+      const subItem = questionsPanel.find('.sub-nav-item')
+      ;(subItem.element as HTMLElement).focus()
+      expect(document.activeElement).toBe(subItem.element)
+      await subItem.trigger('keydown', { key: 'Escape' })
+
+      expect(questionsTrigger.attributes('aria-expanded')).toBe('false')
+      expect(wrapper.find('#sidebar-questions-panel').exists()).toBe(false)
+      expect(document.activeElement).toBe(questionsTrigger.element)
+
+      // 展开题集手风琴并在触发器上按 Escape 收起
+      await problemSetsTrigger.trigger('click')
+      expect(problemSetsTrigger.attributes('aria-expanded')).toBe('true')
+      expect(wrapper.find('#sidebar-problem-sets-panel').exists()).toBe(true)
+
+      await problemSetsTrigger.trigger('keydown', { key: 'Escape' })
+      expect(problemSetsTrigger.attributes('aria-expanded')).toBe('false')
+      expect(wrapper.find('#sidebar-problem-sets-panel').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('8. 折叠态 .flyout-popover 支持键盘 focusin/focusout 开合与 Escape 焦点归还', async () => {
+    localStorage.setItem('kece_sidebar_collapsed', 'true')
+    const wrapper = mount(AppSidebar, {
+      attachTo: document.body,
+      global: {
+        plugins: [router],
+      },
+    })
+
+    try {
+      const groups = wrapper.findAll('.nav-accordion-group')
+      const questionsGroup = groups[0]
+      const problemSetsGroup = groups[1]
+      const questionsTrigger = questionsGroup.find('button.nav-accordion-trigger')
+      const problemSetsTrigger = problemSetsGroup.find('button.nav-accordion-trigger')
+
+      expect(questionsTrigger.attributes('aria-expanded')).toBe('false')
+      expect(questionsTrigger.attributes('aria-controls')).toBe('sidebar-questions-flyout')
+
+      // focusin 触发题库浮层展开
+      await questionsTrigger.trigger('focusin')
+      expect(questionsTrigger.attributes('aria-expanded')).toBe('true')
+      const questionsFlyout = wrapper.find('#sidebar-questions-flyout')
+      expect(questionsFlyout.exists()).toBe(true)
+
+      // 焦点移入浮层子项时不会因 focusout 误关
+      const firstFlyoutItem = questionsFlyout.find('.flyout-item')
+      await questionsTrigger.trigger('focusout', { relatedTarget: firstFlyoutItem.element })
+      expect(wrapper.find('#sidebar-questions-flyout').exists()).toBe(true)
+
+      // 焦点在浮层子项时按 Escape 关闭浮层并归还焦点至触发器，且不立即重开
+      ;(firstFlyoutItem.element as HTMLElement).focus()
+      await firstFlyoutItem.trigger('keydown', { key: 'Escape' })
+      expect(questionsTrigger.attributes('aria-expanded')).toBe('false')
+      expect(wrapper.find('#sidebar-questions-flyout').exists()).toBe(false)
+      expect(document.activeElement).toBe(questionsTrigger.element)
+
+      // focusin 触发题集浮层展开，focusout 移出组外时关闭
+      await problemSetsTrigger.trigger('focusin')
+      expect(problemSetsTrigger.attributes('aria-expanded')).toBe('true')
+      expect(wrapper.find('#sidebar-problem-sets-flyout').exists()).toBe(true)
+
+      await problemSetsGroup.trigger('focusout', { relatedTarget: document.body })
+      expect(problemSetsTrigger.attributes('aria-expanded')).toBe('false')
+      expect(wrapper.find('#sidebar-problem-sets-flyout').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+})
+
+describe('DefaultLayout.vue 桌面外壳无障碍与遥测状态测试', () => {
+  beforeEach(async () => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+    await router.push('/')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('首节点提供跳转主内容链接、#main-content 地标及无障碍遥测胶囊', async () => {
+    vi.spyOn(systemApi, 'getClusterSummary').mockResolvedValue({
+      asOf: Date.now(),
+      freshness: 'FRESH',
+      readyPools: 3,
+      totalPools: 5,
+      pools: [],
+    })
+
+    const wrapper = mount(DefaultLayout, {
+      global: {
+        plugins: [router],
+        stubs: {
+          RouterView: true,
+          ConfirmModal: true,
+          ToastHost: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const skipLink = wrapper.find('.default-layout > .skip-link')
+    expect(skipLink.exists()).toBe(true)
+    expect(skipLink.attributes('href')).toBe('#main-content')
+    expect(skipLink.text()).toBe('跳到主要内容')
+
+    const main = wrapper.find('main#main-content.main-content')
+    expect(main.exists()).toBe(true)
+    expect(main.attributes('tabindex')).toBe('-1')
+
+    const telemetry = wrapper.find('.telemetry-pill')
+    expect(telemetry.attributes('role')).toBe('status')
+    expect(telemetry.attributes('aria-live')).toBe('polite')
+    expect(telemetry.find('.dot-status').attributes('aria-hidden')).toBe('true')
+    expect(telemetry.text()).toContain('POOLS: 3/5 READY')
+
+    wrapper.unmount()
   })
 })
 

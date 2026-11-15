@@ -1,14 +1,22 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { practiceApi } from '@/api/practice'
-import { useToast } from '@/composables/useToast'
-import { useConfirm } from '@/composables/useConfirm'
-import { useUserStore } from '@/stores/user'
-import { copyToClipboard } from '@/utils/clipboard'
-import { renderMarkdown } from '@/utils/markdown'
-import { LANGUAGE_LABELS } from '@/utils/submission'
-import { useCountdown } from '@/shared/composables/useCountdown'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { practiceApi } from '@/api/practice';
+import { useToast } from '@/composables/useToast';
+import { useConfirm } from '@/composables/useConfirm';
+import { useUserStore } from '@/stores/user';
+import { copyToClipboard } from '@/utils/clipboard';
+import { renderMarkdown } from '@/utils/markdown';
+import { stripMarkdown } from '@/utils/plainText';
+import {
+  formatLanguageLabel,
+  getDialectLabel,
+  OBJECTIVE_TYPE_LABELS,
+  OBJECTIVE_TYPE_TONE_MAP,
+  sortLanguages,
+} from '@/utils/questionMeta';
+import { STATUS_ABBR } from '@/utils/submission';
+import { useCountdown } from '@/shared/composables/useCountdown';
 import {
   isObjectiveOptionSelected,
   normalizeJudgeAnswer,
@@ -16,495 +24,522 @@ import {
   objectiveOptionText,
   parseMultipleAnswer,
   toggleMultipleAnswer,
-} from '@/features/questions/lib/objectiveAnswer'
+} from '@/features/questions/lib/objectiveAnswer';
+import type { SubmissionStatus } from '@/types';
 import type {
   PracticeDetail,
   PracticeObjectiveQuestion,
   PracticePracticalQuestion,
   PracticeScoreboard,
-} from '@/types/practice'
+} from '@/types/practice';
 
-const route = useRoute()
-const router = useRouter()
-const userStore = useUserStore()
-const { success, error: toastError } = useToast()
-const { confirm } = useConfirm()
+const route = useRoute();
+const router = useRouter();
+const userStore = useUserStore();
+const { success, error: toastError } = useToast();
+const { confirm } = useConfirm();
 
-const code = computed(() => String(route.params.code).toUpperCase())
-const activeTab = ref<'questions' | 'scoreboard'>('questions')
-const loading = ref(true)
-const scoreboardLoading = ref(false)
-const submittingPractice = ref(false)
+const code = computed(() => String(route.params.code).toUpperCase());
+const activeTab = ref<'questions' | 'scoreboard'>('questions');
+const loading = ref(true);
+const detailError = ref('');
+const scoreboardLoading = ref(false);
+const scoreboardError = ref('');
+const submittingPractice = ref(false);
 
-const detail = ref<PracticeDetail | null>(null)
-const scoreboard = ref<PracticeScoreboard | null>(null)
+const detail = ref<PracticeDetail | null>(null);
+const scoreboard = ref<PracticeScoreboard | null>(null);
+const drawerCloseBtnRef = ref<HTMLButtonElement | null>(null);
+let drawerReturnFocusEl: HTMLElement | null = null;
 
 // 章节折叠状态
 const collapsedSections = ref<Record<string, boolean>>({
   objective: false,
   db: false,
   algo: false,
-})
+});
 
 // 成绩榜脱敏开关
-const isAnonymous = ref(false)
+const isAnonymous = ref(false);
 
 // 倒计时与状态轮询
-let scoreboardPollTimer: number | null = null
-let pendingJudgeTimer: ReturnType<typeof setTimeout> | null = null
-let isPendingPolling = false
+let scoreboardPollTimer: number | null = null;
+let pendingJudgeTimer: ReturnType<typeof setTimeout> | null = null;
+let isPendingPolling = false;
 const { remainingSec, start: startCountdown } = useCountdown({
   onExpire: () => {
-    if (detail.value) detail.value.status = 'ENDED'
+    if (detail.value) detail.value.status = 'ENDED';
   },
-})
+});
 
 // 客观题内联抽屉状态
-const objectiveDrawerVisible = ref(false)
-const currentObjectiveQuestion = ref<PracticeObjectiveQuestion | null>(null)
-const objectiveAnswers = ref<Record<number, string>>({})
-const multiDraft = ref<string[]>([])
-const fillDraft = ref('')
-const savingObjective = ref(false)
+const objectiveDrawerVisible = ref(false);
+const currentObjectiveQuestion = ref<PracticeObjectiveQuestion | null>(null);
+const objectiveAnswers = ref<Record<number, string>>({});
+const multiDraft = ref<string[]>([]);
+const fillDraft = ref('');
+const savingObjective = ref(false);
 
 const isTeacherPreview = computed(() =>
   Boolean(detail.value?.canManage && !detail.value?.myJoined),
-)
+);
 
 const isPracticeLocked = computed(() =>
   Boolean(detail.value?.status === 'ENDED' || detail.value?.mySubmitted),
-)
+);
 
 const isAnswerReadonly = computed(() =>
   Boolean(!detail.value || isPracticeLocked.value || isTeacherPreview.value),
-)
+);
 
 const formattedRemaining = computed(() => {
   if (detail.value?.status === 'ENDED') {
-    return '00:00 (已截止)'
+    return '00:00 (已截止)';
   }
   if (detail.value?.durationMinutes === 0) {
-    return '不限时'
+    return '不限时';
   }
   if (remainingSec.value !== null && remainingSec.value <= 0) {
-    return '00:00 (已截止)'
+    return '00:00 (已截止)';
   }
-  if (remainingSec.value === null) return '--:--'
-  const m = Math.floor(remainingSec.value / 60)
-  const s = remainingSec.value % 60
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-})
+  if (remainingSec.value === null) return '--:--';
+  const m = Math.floor(remainingSec.value / 60);
+  const s = remainingSec.value % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+});
 
 // 章节分类
-const objectiveQuestions = computed(() => detail.value?.objectiveQuestions ?? [])
+const objectiveQuestions = computed(() => detail.value?.objectiveQuestions ?? []);
 const dbQuestions = computed(
   () => detail.value?.practicalQuestions.filter((q) => q.questionType === 'DB') ?? [],
-)
+);
 const algoQuestions = computed(
   () => detail.value?.practicalQuestions.filter((q) => q.questionType === 'ALGO') ?? [],
-)
+);
 
 const totalQuestionsCount = computed(() => {
-  return objectiveQuestions.value.length + dbQuestions.value.length + algoQuestions.value.length
-})
+  return objectiveQuestions.value.length + dbQuestions.value.length + algoQuestions.value.length;
+});
 
 const totalFullScore = computed(() => {
-  const o = objectiveQuestions.value.reduce((s, q) => s + (q.score || 0), 0)
-  const d = dbQuestions.value.reduce((s, q) => s + (q.score || 0), 0)
-  const a = algoQuestions.value.reduce((s, q) => s + (q.score || 0), 0)
-  return o + d + a
-})
+  const o = objectiveQuestions.value.reduce((s, q) => s + (q.score || 0), 0);
+  const d = dbQuestions.value.reduce((s, q) => s + (q.score || 0), 0);
+  const a = algoQuestions.value.reduce((s, q) => s + (q.score || 0), 0);
+  return o + d + a;
+});
 
 // 动态连续章节编号（避免缺某类题型时从 02/03 跳号）
-const objectiveSecIdx = computed(() => '01')
+const objectiveSecIdx = computed(() => '01');
 const dbSecIdx = computed(() =>
   String((objectiveQuestions.value.length > 0 ? 1 : 0) + 1).padStart(2, '0'),
-)
+);
 const algoSecIdx = computed(() =>
   String(
-    (objectiveQuestions.value.length > 0 ? 1 : 0) +
-      (dbQuestions.value.length > 0 ? 1 : 0) +
-      1,
+    (objectiveQuestions.value.length > 0 ? 1 : 0) + (dbQuestions.value.length > 0 ? 1 : 0) + 1,
   ).padStart(2, '0'),
-)
+);
 
 // 各章节统计
 const objectiveStat = computed(() => {
-  const list = objectiveQuestions.value
-  const passed = list.filter((q) => q.isCorrect).length
-  const earned = list.reduce((sum, q) => sum + (q.userScore || 0), 0)
-  const total = list.reduce((sum, q) => sum + (q.score || 0), 0)
-  return { passed, totalCount: list.length, earned, total }
-})
+  const list = objectiveQuestions.value;
+  const passed = list.filter((q) => q.isCorrect).length;
+  const earned = list.reduce((sum, q) => sum + (q.userScore || 0), 0);
+  const total = list.reduce((sum, q) => sum + (q.score || 0), 0);
+  return { passed, totalCount: list.length, earned, total };
+});
 
 const dbStat = computed(() => {
-  const list = dbQuestions.value
-  const passed = list.filter((q) => q.userStatus === 'ACCEPTED').length
-  const earned = list.reduce((sum, q) => sum + (q.userScore || 0), 0)
-  const total = list.reduce((sum, q) => sum + (q.score || 0), 0)
-  return { passed, totalCount: list.length, earned, total }
-})
+  const list = dbQuestions.value;
+  const passed = list.filter((q) => q.userStatus === 'ACCEPTED').length;
+  const earned = list.reduce((sum, q) => sum + (q.userScore || 0), 0);
+  const total = list.reduce((sum, q) => sum + (q.score || 0), 0);
+  return { passed, totalCount: list.length, earned, total };
+});
 
 const algoStat = computed(() => {
-  const list = algoQuestions.value
-  const passed = list.filter((q) => q.userStatus === 'ACCEPTED').length
-  const earned = list.reduce((sum, q) => sum + (q.userScore || 0), 0)
-  const total = list.reduce((sum, q) => sum + (q.score || 0), 0)
-  return { passed, totalCount: list.length, earned, total }
-})
+  const list = algoQuestions.value;
+  const passed = list.filter((q) => q.userStatus === 'ACCEPTED').length;
+  const earned = list.reduce((sum, q) => sum + (q.userScore || 0), 0);
+  const total = list.reduce((sum, q) => sum + (q.score || 0), 0);
+  return { passed, totalCount: list.length, earned, total };
+});
 
 const currentObjectiveStemHtml = computed(() =>
   renderMarkdown(currentObjectiveQuestion.value?.content ?? ''),
-)
+);
 
 function plainStemPreview(raw: string): string {
-  return (raw || '')
-    .replace(/```[\s\S]*?```/g, ' [代码片段] ')
-    .replace(/[#>*`~]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+  return stripMarkdown(raw, 120);
 }
 
 function getObjectivePill(type?: string) {
-  const t = (type || 'SINGLE').toUpperCase()
-  if (t === 'MULTIPLE') return { label: '多选题', cls: 'pill-multiple' }
-  if (t === 'JUDGE') return { label: '判断题', cls: 'pill-judge' }
-  if (t === 'FILL') return { label: '填空题', cls: 'pill-fill' }
-  return { label: '单选题', cls: 'pill-single' }
+  const t = (type || 'SINGLE').toUpperCase();
+  const label = (OBJECTIVE_TYPE_LABELS as Record<string, string>)[t] ?? '单选题';
+  const tone = (OBJECTIVE_TYPE_TONE_MAP as Record<string, string>)[t] ?? 'tone-neutral';
+  return { label, cls: `hud-pill ${tone}` };
 }
 
 function getDbPill(q: PracticePracticalQuestion) {
-  const t = (q.difficulty || 'SELECT').toUpperCase()
-  if (t === 'DML') return { label: 'DML 操作', cls: 'pill-dml' }
-  return { label: 'SELECT 查询', cls: 'pill-select' }
+  const t = (q.difficulty || 'SELECT').toUpperCase();
+  if (t === 'DML') return { label: 'DML 操作', cls: 'hud-pill tone-warning' };
+  return { label: 'SELECT 查询', cls: 'hud-pill tone-teal' };
 }
 
 function getAlgoPill(q: PracticePracticalQuestion) {
-  const d = (q.difficulty || 'MEDIUM').toUpperCase()
-  if (d === 'EASY') return { label: '简单', cls: 'pill-easy' }
-  if (d === 'HARD') return { label: '困难', cls: 'pill-hard' }
-  return { label: '中等', cls: 'pill-medium' }
+  const d = (q.difficulty || 'MEDIUM').toUpperCase();
+  if (d === 'EASY') return { label: '简单', cls: 'hud-pill tone-success' };
+  if (d === 'HARD') return { label: '困难', cls: 'hud-pill tone-danger' };
+  return { label: '中等', cls: 'hud-pill tone-warning' };
 }
 
 function getAlgoLangLabels(q: PracticePracticalQuestion): string[] {
-  const langs = q.languages && q.languages.length > 0 ? q.languages : ['cpp', 'java', 'python']
-  return langs.map((l) => LANGUAGE_LABELS[l] ?? l)
+  const langs = q.languages && q.languages.length > 0 ? q.languages : ['cpp', 'java', 'python'];
+  return sortLanguages(langs).map((l) => formatLanguageLabel(l));
 }
 
 function isPendingStatus(st?: string): boolean {
-  return st === 'PENDING' || st === 'COMPILING' || st === 'JUDGING'
-}
-
-const STATUS_SHORT_MAP: Record<string, string> = {
-  WRONG_ANSWER: 'WA',
-  TIME_LIMIT_EXCEEDED: 'TLE',
-  MEMORY_LIMIT_EXCEEDED: 'MLE',
-  RUNTIME_ERROR: 'RE',
-  COMPILE_ERROR: 'CE',
-  SYSTEM_ERROR: 'SE',
+  return st === 'PENDING' || st === 'COMPILING' || st === 'JUDGING';
 }
 
 function getPracticalBadge(q: PracticePracticalQuestion): { cls: string; text: string } {
-  const st = q.userStatus || 'UNATTEMPTED'
+  const st = q.userStatus || 'UNATTEMPTED';
   if (st === 'ACCEPTED') {
-    return { cls: 'ac', text: `✓ ${q.userScore}/${q.score} AC` }
+    return { cls: 'ac', text: `✓ ${q.userScore}/${q.score} AC` };
   }
   if (isPendingStatus(st)) {
-    return { cls: 'running', text: '⟳ 评测中…' }
+    return { cls: 'running', text: '⟳ 评测中…' };
   }
   if ((q.userScore ?? 0) > 0) {
-    return { cls: 'partial', text: `! ${q.userScore}/${q.score} PARTIAL` }
+    return { cls: 'partial', text: `! ${q.userScore}/${q.score} PARTIAL` };
   }
   if (st === 'UNATTEMPTED') {
-    return { cls: 'none', text: '未作答' }
+    return { cls: 'none', text: '未作答' };
   }
-  const abbr = STATUS_SHORT_MAP[st] || st
-  return { cls: 'wa', text: `✗ 0/${q.score} ${abbr}` }
+  const abbr = STATUS_ABBR[st as SubmissionStatus] ?? st;
+  return { cls: 'wa', text: `✗ 0/${q.score} ${abbr}` };
 }
 
 function getPracticalCtaText(q: PracticePracticalQuestion): string {
   if (isPracticeLocked.value && q.submissionId) {
-    return '评测详情'
+    return '评测详情';
   }
   if (q.userStatus === 'ACCEPTED') {
-    return q.questionType === 'DB' ? '复查 SQL' : '查看提交'
+    return q.questionType === 'DB' ? '复查 SQL' : '查看提交';
   }
   if (q.userStatus && q.userStatus !== 'UNATTEMPTED') {
-    return q.questionType === 'DB' ? '继续调试' : '继续调试'
+    return q.questionType === 'DB' ? '继续调试' : '继续调试';
   }
-  return q.questionType === 'DB' ? '进入实操' : '进入编程'
+  return q.questionType === 'DB' ? '进入实操' : '进入编程';
 }
 
 function stopPendingJudgePolling() {
   if (pendingJudgeTimer) {
-    clearTimeout(pendingJudgeTimer)
-    pendingJudgeTimer = null
+    clearTimeout(pendingJudgeTimer);
+    pendingJudgeTimer = null;
   }
-  isPendingPolling = false
+  isPendingPolling = false;
 }
 
 function syncPendingJudgePolling() {
   const hasPending = (detail.value?.practicalQuestions ?? []).some((q) =>
     isPendingStatus(q.userStatus),
-  )
+  );
   if (hasPending && activeTab.value === 'questions') {
     if (!isPendingPolling) {
-      isPendingPolling = true
-      scheduleNextPendingPoll()
+      isPendingPolling = true;
+      scheduleNextPendingPoll();
     }
   } else {
-    stopPendingJudgePolling()
+    stopPendingJudgePolling();
   }
 }
 
 function scheduleNextPendingPoll() {
-  if (!isPendingPolling) return
+  if (!isPendingPolling) return;
   pendingJudgeTimer = setTimeout(async () => {
-    if (!isPendingPolling) return
+    if (!isPendingPolling) return;
     try {
-      await fetchDetail(true)
+      await fetchDetail(true);
     } finally {
       if (isPendingPolling) {
         const stillPending = (detail.value?.practicalQuestions ?? []).some((q) =>
           isPendingStatus(q.userStatus),
-        )
+        );
         if (stillPending && activeTab.value === 'questions') {
-          scheduleNextPendingPoll()
+          scheduleNextPendingPoll();
         } else {
-          stopPendingJudgePolling()
+          stopPendingJudgePolling();
         }
       }
     }
-  }, 2500)
+  }, 2500);
 }
 
 async function fetchDetail(silent = false) {
-  if (!silent) loading.value = true
+  if (!silent) {
+    loading.value = true;
+    detailError.value = '';
+  }
   try {
-    const res = await practiceApi.detail(code.value)
-    detail.value = res
-    startCountdown(res.status === 'ENDED' || res.durationMinutes === 0 ? null : res.remainingSeconds)
+    const res = await practiceApi.detail(code.value);
+    detail.value = res;
+    detailError.value = '';
+    startCountdown(
+      res.status === 'ENDED' || res.durationMinutes === 0 ? null : res.remainingSeconds,
+    );
     if (res.objectiveQuestions) {
       for (const q of res.objectiveQuestions) {
         if (q.userAnswer != null && q.userAnswer !== '') {
-          objectiveAnswers.value[q.practiceQuestionId] = q.userAnswer
+          objectiveAnswers.value[q.practiceQuestionId] = q.userAnswer;
         }
       }
       // 如果抽屉正打开，同步当前题目对象
       if (currentObjectiveQuestion.value) {
         const latest = res.objectiveQuestions.find(
           (item) => item.practiceQuestionId === currentObjectiveQuestion.value?.practiceQuestionId,
-        )
+        );
         if (latest) {
-          currentObjectiveQuestion.value = latest
+          currentObjectiveQuestion.value = latest;
         }
       }
     }
-    syncPendingJudgePolling()
+    syncPendingJudgePolling();
   } catch (e) {
-    const msg = e instanceof Error ? e.message : '加载课练详情失败'
-    if (!silent) toastError(msg)
-    if (!detail.value) {
-      router.replace({ path: '/practice', query: { unlock: code.value } })
+    const msg = e instanceof Error ? e.message : '加载课练详情失败';
+    if (!silent) {
+      detailError.value = msg;
+      toastError(msg);
     }
   } finally {
-    if (!silent) loading.value = false
+    if (!silent) loading.value = false;
   }
 }
 
 async function fetchScoreboard(silent = false) {
-  if (!silent) scoreboardLoading.value = true
+  if (!silent) {
+    scoreboardLoading.value = true;
+    scoreboardError.value = '';
+  }
   try {
-    const res = await practiceApi.scoreboard(code.value)
-    scoreboard.value = res
+    const res = await practiceApi.scoreboard(code.value);
+    scoreboard.value = res;
+    scoreboardError.value = '';
     if (res.status === 'ENDED') {
-      startCountdown(null)
-      if (detail.value) detail.value.status = 'ENDED'
+      startCountdown(null);
+      if (detail.value) detail.value.status = 'ENDED';
     } else if (res.remainingSeconds !== undefined && res.remainingSeconds !== null) {
-      startCountdown(res.remainingSeconds)
+      startCountdown(res.remainingSeconds);
     }
   } catch (e) {
-    if (!silent) toastError(e instanceof Error ? e.message : '加载实时成绩榜失败')
+    const msg = e instanceof Error ? e.message : '加载实时成绩榜失败';
+    if (!silent) {
+      scoreboardError.value = msg;
+      toastError(msg);
+    }
   } finally {
-    if (!silent) scoreboardLoading.value = false
+    if (!silent) scoreboardLoading.value = false;
+  }
+}
+
+function handleTabKeydown(e: KeyboardEvent) {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    switchTab(activeTab.value === 'questions' ? 'scoreboard' : 'questions');
   }
 }
 
 function switchTab(tab: 'questions' | 'scoreboard') {
-  activeTab.value = tab
+  activeTab.value = tab;
   if (tab === 'scoreboard') {
-    stopPendingJudgePolling()
-    fetchScoreboard()
-    startScoreboardPolling()
+    stopPendingJudgePolling();
+    fetchScoreboard();
+    startScoreboardPolling();
   } else {
-    stopScoreboardPolling()
-    fetchDetail()
+    stopScoreboardPolling();
+    fetchDetail();
   }
 }
 
 function startScoreboardPolling() {
-  stopScoreboardPolling()
+  stopScoreboardPolling();
   scoreboardPollTimer = window.setInterval(() => {
     if (activeTab.value === 'scoreboard' && detail.value?.status !== 'ENDED') {
-      fetchScoreboard(true)
+      fetchScoreboard(true);
     }
-  }, 5000)
+  }, 5000);
 }
 
 function stopScoreboardPolling() {
   if (scoreboardPollTimer) {
-    clearInterval(scoreboardPollTimer)
-    scoreboardPollTimer = null
+    clearInterval(scoreboardPollTimer);
+    scoreboardPollTimer = null;
   }
 }
 
 function toggleSection(sec: 'objective' | 'db' | 'algo') {
-  collapsedSections.value[sec] = !collapsedSections.value[sec]
+  collapsedSections.value[sec] = !collapsedSections.value[sec];
 }
 
 async function copyRoomCode() {
-  if (!detail.value?.accessCode) return
-  const ok = await copyToClipboard(detail.value.accessCode)
+  if (!detail.value?.accessCode) return;
+  const ok = await copyToClipboard(detail.value.accessCode);
   if (ok) {
-    success(`房间口令 ${detail.value.accessCode} 已复制到剪贴板`)
+    success(`房间口令 ${detail.value.accessCode} 已复制到剪贴板`);
   } else {
-    toastError('复制失败，请手动复制')
+    toastError('复制失败，请手动复制');
   }
 }
 
 // 打开客观题作答抽屉并初始化对应题型草稿
 function openObjectiveDrawer(q: PracticeObjectiveQuestion) {
-  currentObjectiveQuestion.value = q
-  const saved = objectiveAnswers.value[q.practiceQuestionId] ?? q.userAnswer ?? ''
-  const qType = (q.type || 'SINGLE').toUpperCase()
+  drawerReturnFocusEl =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  currentObjectiveQuestion.value = q;
+  const saved = objectiveAnswers.value[q.practiceQuestionId] ?? q.userAnswer ?? '';
+  const qType = (q.type || 'SINGLE').toUpperCase();
   if (qType === 'MULTIPLE') {
-    multiDraft.value = parseMultipleAnswer(saved)
+    multiDraft.value = parseMultipleAnswer(saved);
   } else if (qType === 'FILL') {
-    fillDraft.value = saved
+    fillDraft.value = saved;
   }
-  objectiveDrawerVisible.value = true
+  objectiveDrawerVisible.value = true;
+  nextTick(() => {
+    drawerCloseBtnRef.value?.focus();
+  });
 }
 
 function closeObjectiveDrawer() {
-  objectiveDrawerVisible.value = false
-  currentObjectiveQuestion.value = null
+  objectiveDrawerVisible.value = false;
+  currentObjectiveQuestion.value = null;
+  const returnEl = drawerReturnFocusEl;
+  drawerReturnFocusEl = null;
+  nextTick(() => {
+    returnEl?.focus();
+  });
+}
+
+function handleGlobalKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && objectiveDrawerVisible.value) {
+    e.preventDefault();
+    closeObjectiveDrawer();
+  }
 }
 
 function isSingleSelected(optIdx: number): boolean {
-  const q = currentObjectiveQuestion.value
-  if (!q) return false
-  const letter = objectiveOptionLetter(optIdx)
+  const q = currentObjectiveQuestion.value;
+  if (!q) return false;
+  const letter = objectiveOptionLetter(optIdx);
   const saved = (objectiveAnswers.value[q.practiceQuestionId] ?? q.userAnswer ?? '')
     .trim()
-    .toUpperCase()
-  return isObjectiveOptionSelected(saved, letter, q.type)
+    .toUpperCase();
+  return isObjectiveOptionSelected(saved, letter, q.type);
 }
 
 function isJudgeSelected(target: '对' | '错'): boolean {
-  const q = currentObjectiveQuestion.value
-  if (!q) return false
-  const saved = objectiveAnswers.value[q.practiceQuestionId] ?? q.userAnswer ?? ''
-  return normalizeJudgeAnswer(saved) === target
+  const q = currentObjectiveQuestion.value;
+  if (!q) return false;
+  const saved = objectiveAnswers.value[q.practiceQuestionId] ?? q.userAnswer ?? '';
+  return normalizeJudgeAnswer(saved) === target;
 }
 
 function isMultiOptionChecked(optIdx: number): boolean {
-  const letter = objectiveOptionLetter(optIdx)
-  return multiDraft.value.includes(letter)
+  const letter = objectiveOptionLetter(optIdx);
+  return multiDraft.value.includes(letter);
 }
 
 function toggleMultiOption(optIdx: number) {
-  if (isAnswerReadonly.value) return
-  multiDraft.value = toggleMultipleAnswer(multiDraft.value, objectiveOptionLetter(optIdx))
+  if (isAnswerReadonly.value) return;
+  multiDraft.value = toggleMultipleAnswer(multiDraft.value, objectiveOptionLetter(optIdx));
 }
 
 async function persistObjectiveAnswer(answerValue: string) {
-  const q = currentObjectiveQuestion.value
-  if (!q || isAnswerReadonly.value || savingObjective.value) return
-  const pqId = q.practiceQuestionId
-  objectiveAnswers.value[pqId] = answerValue
+  const q = currentObjectiveQuestion.value;
+  if (!q || isAnswerReadonly.value || savingObjective.value) return;
+  const pqId = q.practiceQuestionId;
+  objectiveAnswers.value[pqId] = answerValue;
 
-  savingObjective.value = true
+  savingObjective.value = true;
   try {
-    const res = await practiceApi.submitObjective(code.value, { [pqId]: answerValue })
-    const itemRes = res.items.find((i) => i.practiceQuestionId === pqId)
+    const res = await practiceApi.submitObjective(code.value, { [pqId]: answerValue });
+    const itemRes = res.items.find((i) => i.practiceQuestionId === pqId);
     if (itemRes) {
-      q.userAnswer = answerValue
-      q.userScore = itemRes.score
-      q.isCorrect = itemRes.correct
-      q.answered = answerValue.trim().length > 0
+      q.userAnswer = answerValue;
+      q.userScore = itemRes.score;
+      q.isCorrect = itemRes.correct;
+      q.answered = answerValue.trim().length > 0;
       if (itemRes.correctAnswer != null) {
-        q.correctAnswer = itemRes.correctAnswer
+        q.correctAnswer = itemRes.correctAnswer;
       }
       // 同步回列表引用
       const targetInList = detail.value?.objectiveQuestions.find(
         (item) => item.practiceQuestionId === pqId,
-      )
+      );
       if (targetInList && targetInList !== q) {
-        targetInList.userAnswer = q.userAnswer
-        targetInList.userScore = q.userScore
-        targetInList.isCorrect = q.isCorrect
-        targetInList.answered = q.answered
-        targetInList.correctAnswer = q.correctAnswer
+        targetInList.userAnswer = q.userAnswer;
+        targetInList.userScore = q.userScore;
+        targetInList.isCorrect = q.isCorrect;
+        targetInList.answered = q.answered;
+        targetInList.correctAnswer = q.correctAnswer;
       }
     }
     if (detail.value) {
-      if (res.myTotalScore !== undefined) detail.value.myScore = res.myTotalScore
-      if (res.mySolvedCount !== undefined) detail.value.mySolvedCount = res.mySolvedCount
+      if (res.myTotalScore !== undefined) detail.value.myScore = res.myTotalScore;
+      if (res.mySolvedCount !== undefined) detail.value.mySolvedCount = res.mySolvedCount;
     }
   } catch (e) {
-    toastError(e instanceof Error ? e.message : '客观题答案保存失败')
+    toastError(e instanceof Error ? e.message : '客观题答案保存失败');
   } finally {
-    savingObjective.value = false
+    savingObjective.value = false;
   }
 }
 
 function selectSingleOption(optIdx: number) {
-  if (isAnswerReadonly.value) return
-  const letter = String.fromCharCode(65 + optIdx)
-  persistObjectiveAnswer(letter)
+  if (isAnswerReadonly.value) return;
+  const letter = String.fromCharCode(65 + optIdx);
+  persistObjectiveAnswer(letter);
 }
 
 function selectJudgeOption(val: '对' | '错') {
-  if (isAnswerReadonly.value) return
-  persistObjectiveAnswer(val)
+  if (isAnswerReadonly.value) return;
+  persistObjectiveAnswer(val);
 }
 
 function submitMultipleAnswer() {
-  if (isAnswerReadonly.value) return
+  if (isAnswerReadonly.value) return;
   if (multiDraft.value.length === 0) {
-    toastError('请至少勾选一个选项后再保存')
-    return
+    toastError('请至少勾选一个选项后再保存');
+    return;
   }
-  const joined = [...multiDraft.value].sort().join(',')
-  persistObjectiveAnswer(joined)
+  const joined = [...multiDraft.value].sort().join(',');
+  persistObjectiveAnswer(joined);
 }
 
 function submitFillAnswer() {
-  if (isAnswerReadonly.value) return
-  const val = fillDraft.value.trim()
+  if (isAnswerReadonly.value) return;
+  const val = fillDraft.value.trim();
   if (!val) {
-    toastError('请填写答案后再保存')
-    return
+    toastError('请填写答案后再保存');
+    return;
   }
-  persistObjectiveAnswer(val)
+  persistObjectiveAnswer(val);
 }
 
 // 跳转主站做题工作台（已交卷/已截止且存在提交记录时优先直达评测详情页）
 function goToCoding(q: PracticePracticalQuestion) {
-  const pqId = q.practiceQuestionId
-  const query = { practiceCode: code.value, pqId: String(pqId) }
+  const pqId = q.practiceQuestionId;
+  const query = { practiceCode: code.value, pqId: String(pqId) };
   if (isPracticeLocked.value && q.submissionId) {
     const resultPath =
       q.questionType === 'DB'
         ? `/database/${q.questionId}/result/${q.submissionId}`
-        : `/questions/${q.questionId}/result/${q.submissionId}`
-    router.push({ path: resultPath, query })
-    return
+        : `/questions/${q.questionId}/result/${q.submissionId}`;
+    router.push({ path: resultPath, query });
+    return;
   }
   if (q.questionType === 'DB') {
-    router.push({ path: `/database/${q.questionId}`, query })
+    router.push({ path: `/database/${q.questionId}`, query });
   } else {
-    router.push({ path: `/questions/${q.questionId}`, query })
+    router.push({ path: `/questions/${q.questionId}`, query });
   }
 }
 
@@ -512,50 +547,66 @@ function goToCoding(q: PracticePracticalQuestion) {
 async function handleSubmitPractice() {
   const ok = await confirm({
     title: '确认提交整场课练',
-    message: '提交后本次课练作答将锁定归档，不能再次更改答案，且将解锁客观题参考答案。确定要正式交卷吗？',
+    message:
+      '提交后本次课练作答将锁定归档，不能再次更改答案，且将解锁客观题参考答案。确定要正式交卷吗？',
     confirmText: '确认交卷',
     cancelText: '继续作答',
-  })
-  if (!ok) return
+  });
+  if (!ok) return;
 
-  submittingPractice.value = true
+  submittingPractice.value = true;
   try {
-    await practiceApi.submit(code.value)
-    success('已成功交卷！')
-    await fetchDetail()
+    await practiceApi.submit(code.value);
+    success('已成功交卷！');
+    await fetchDetail();
   } catch (e) {
-    toastError(e instanceof Error ? e.message : '交卷失败')
+    toastError(e instanceof Error ? e.message : '交卷失败');
   } finally {
-    submittingPractice.value = false
+    submittingPractice.value = false;
   }
 }
 
 function formatScoreboardStudent(row: { userId: number; username: string }): string {
-  const isMe = row.userId === userStore.userInfo?.id
-  if (isMe) return `${row.username} (我)`
-  if (!isAnonymous.value || !row.username) return row.username
-  if (row.username.length <= 2) return `${row.username.charAt(0)}***`
-  return `${row.username.slice(0, 2)}${'*'.repeat(Math.min(5, row.username.length - 2))}`
+  const isMe = row.userId === userStore.userInfo?.id;
+  if (isMe) return `${row.username} (我)`;
+  if (!isAnonymous.value || !row.username) return row.username;
+  if (row.username.length <= 2) return `${row.username.charAt(0)}***`;
+  return `${row.username.slice(0, 2)}${'*'.repeat(Math.min(5, row.username.length - 2))}`;
 }
 
 onMounted(() => {
-  fetchDetail()
-})
+  window.addEventListener('keydown', handleGlobalKeydown);
+  fetchDetail();
+});
+
+watch(
+  () => route.params.code,
+  () => {
+    closeObjectiveDrawer();
+    detail.value = null;
+    scoreboard.value = null;
+    activeTab.value = 'questions';
+    stopPendingJudgePolling();
+    stopScoreboardPolling();
+    fetchDetail();
+  },
+);
 
 onBeforeUnmount(() => {
-  stopPendingJudgePolling()
-  stopScoreboardPolling()
-})
+  window.removeEventListener('keydown', handleGlobalKeydown);
+  stopPendingJudgePolling();
+  stopScoreboardPolling();
+});
 </script>
 
 <template>
   <div class="practice-detail-page container">
     <!-- 极简面包屑 -->
-    <nav class="nav-trail">
+    <nav class="nav-trail" aria-label="面包屑导航">
       <router-link to="/">首页</router-link>
-      <span class="sep">/</span>
+      <span class="sep" aria-hidden="true">/</span>
       <router-link to="/practice">随堂课练</router-link>
-      <span class="sep">/</span>
+      <span class="sep" aria-hidden="true">/</span>
       <span class="current">{{ detail?.title || '加载中...' }}</span>
     </nav>
 
@@ -566,30 +617,45 @@ onBeforeUnmount(() => {
           <span class="status-dot" :class="{ ended: detail?.status === 'ENDED' }" />
           {{ detail?.status === 'ENDED' ? '已结束' : '进行中' }}
         </span>
-        <button class="room-code-tag mono" title="点击复制口令" @click="copyRoomCode">
+        <button type="button" class="room-code-tag mono" title="点击复制口令" @click="copyRoomCode">
           #{{ code }} ⧉
         </button>
         <span class="badge-tag mono">ACM 赛制</span>
-        <span class="text-sep">·</span>
+        <span class="text-sep" aria-hidden="true">·</span>
         <span class="teacher-info">授课教师：{{ detail?.teacherName || '任课教师' }}</span>
       </div>
 
-      <div class="top-segmented-tabs">
+      <div
+        class="top-segmented-tabs"
+        role="tablist"
+        aria-label="课练视图切换"
+        @keydown="handleTabKeydown"
+      >
         <button
+          type="button"
+          role="tab"
+          :aria-selected="activeTab === 'questions'"
+          :tabindex="activeTab === 'questions' ? 0 : -1"
           class="top-tab-btn"
           :class="{ active: activeTab === 'questions' }"
           @click="switchTab('questions')"
         >
           题目列表
-          <span class="top-tab-num mono">({{ totalQuestionsCount }})</span>
+          <span class="top-tab-num mono tabular-nums">({{ totalQuestionsCount }})</span>
         </button>
         <button
+          type="button"
+          role="tab"
+          :aria-selected="activeTab === 'scoreboard'"
+          :tabindex="activeTab === 'scoreboard' ? 0 : -1"
           class="top-tab-btn"
           :class="{ active: activeTab === 'scoreboard' }"
           @click="switchTab('scoreboard')"
         >
           实时成绩榜
-          <span class="top-tab-num mono">({{ scoreboard?.rows.length ?? detail?.memberCount ?? 0 }})</span>
+          <span class="top-tab-num mono tabular-nums">
+            ({{ scoreboard?.rows?.length ?? detail?.memberCount ?? 0 }})
+          </span>
         </button>
       </div>
     </div>
@@ -604,25 +670,28 @@ onBeforeUnmount(() => {
       <div class="header-ops">
         <div v-if="detail?.myJoined" class="countdown-widget">
           <span class="countdown-label">当前得分</span>
-          <span class="countdown-num mono">{{ detail.myScore ?? 0 }} / {{ totalFullScore }}</span>
+          <span class="countdown-num mono tabular-nums"
+            >{{ detail.myScore ?? 0 }} / {{ totalFullScore }}</span
+          >
         </div>
 
         <div class="countdown-widget">
           <span class="countdown-label">剩余作答时间</span>
-          <span class="countdown-num mono">{{ formattedRemaining }}</span>
+          <span class="countdown-num mono tabular-nums">{{ formattedRemaining }}</span>
         </div>
 
         <template v-if="isTeacherPreview && detail">
-          <span class="status-pill-preview">教师预览视角</span>
+          <span class="hud-pill tone-teal">教师预览视角</span>
           <router-link
             :to="`/admin/practices/${detail.id}/overview`"
             class="btn btn-primary btn-sm"
           >
-            考务大盘 ↗
+            考务大盘 <span aria-hidden="true">↗</span>
           </router-link>
         </template>
         <button
           v-else-if="!detail?.mySubmitted && detail?.status !== 'ENDED'"
+          type="button"
           class="btn btn-primary"
           :disabled="submittingPractice"
           @click="handleSubmitPractice"
@@ -635,10 +704,18 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 全局统一加载态 -->
-    <div v-if="loading && !detail" class="loading-box card muted">
-      <span class="loading-spin"></span>
+    <!-- 全局统一加载态 / 错误态 -->
+    <div v-if="loading && !detail" class="loading-box card muted" role="status" aria-live="polite">
+      <span class="loading-spin" aria-hidden="true"></span>
       <span>正在载入随堂实训数据…</span>
+    </div>
+
+    <div v-else-if="detailError && !detail" class="state-banner is-error" role="alert">
+      <span>{{ detailError }}</span>
+      <div style="display: flex; gap: 10px; align-items: center">
+        <button type="button" class="btn-inline-retry" @click="fetchDetail()">重新加载</button>
+        <router-link to="/practice" class="btn btn-ghost btn-sm">返回课练列表</router-link>
+      </div>
     </div>
 
     <!-- ========================================================
@@ -651,44 +728,51 @@ onBeforeUnmount(() => {
 
       <!-- 章节：客观理论选择题 -->
       <section v-if="objectiveQuestions.length > 0" class="section-block card">
-        <div class="section-head" @click="toggleSection('objective')">
+        <div class="section-head">
           <div class="sec-head-left">
-            <span class="sec-index mono">{{ objectiveSecIdx }}</span>
+            <span class="sec-index mono tabular-nums">{{ objectiveSecIdx }}</span>
             <div>
-              <h2 class="sec-title">客观理论题</h2>
+              <h2 class="sec-title">
+                <button
+                  type="button"
+                  class="section-head-trigger"
+                  :aria-expanded="!collapsedSections.objective"
+                  @click="toggleSection('objective')"
+                >
+                  客观理论题
+                </button>
+              </h2>
               <p class="sec-desc">即答即判 · 支持单选、判断、多选与填空实时订正</p>
             </div>
           </div>
-          <div class="sec-head-right mono">
+          <div class="sec-head-right mono tabular-nums">
             <span
               class="sec-stat"
               :class="{
                 'stat-ac':
-                  objectiveStat.passed === objectiveStat.totalCount &&
-                  objectiveStat.totalCount > 0,
+                  objectiveStat.passed === objectiveStat.totalCount && objectiveStat.totalCount > 0,
               }"
             >
               {{ objectiveStat.passed }} / {{ objectiveStat.totalCount }} 已通过 ·
               {{ objectiveStat.earned }}/{{ objectiveStat.total }} 分
             </span>
-            <span class="sec-toggle">
+            <span class="sec-toggle" aria-hidden="true">
               {{ collapsedSections.objective ? '+ 展开' : '− 收起' }}
             </span>
           </div>
         </div>
 
         <div v-if="!collapsedSections.objective" class="section-items">
-          <div
+          <article
             v-for="(q, idx) in objectiveQuestions"
             :key="q.practiceQuestionId"
             class="question-item card"
-            :style="{ '--drop-index': idx }"
-            @click="openObjectiveDrawer(q)"
+            :style="{ '--drop-index': Math.min(idx, 10) }"
           >
             <div class="q-main-layout">
               <div class="q-status-wrap">
                 <span v-if="q.isCorrect" class="status-icon solved" title="已攻克 (Accepted)">
-                  <svg viewBox="0 0 16 16" fill="currentColor">
+                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                     <path
                       d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05Z"
                     />
@@ -699,7 +783,7 @@ onBeforeUnmount(() => {
                   class="status-icon partial"
                   title="部分正确"
                 >
-                  <svg viewBox="0 0 16 16" fill="currentColor">
+                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                     <path
                       d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14Zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16Zm-.75-9.75a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0v-3.5Zm.75 6.25a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75Z"
                     />
@@ -710,12 +794,18 @@ onBeforeUnmount(() => {
                 </span>
               </div>
 
-              <span class="q-number mono">#{{ String(idx + 1).padStart(2, '0') }}</span>
+              <span class="q-number mono tabular-nums"
+                >#{{ String(idx + 1).padStart(2, '0') }}</span
+              >
 
               <div class="q-content">
-                <h3 class="q-title">{{ plainStemPreview(q.content) }}</h3>
+                <h3 class="q-title">
+                  <button type="button" class="q-title-trigger" @click="openObjectiveDrawer(q)">
+                    {{ plainStemPreview(q.content) }}
+                  </button>
+                </h3>
                 <div class="q-tags-row">
-                  <span class="meta-tag score mono">{{ q.score }} 分</span>
+                  <span class="meta-tag score mono tabular-nums">{{ q.score }} 分</span>
                   <span class="meta-tag type mono">{{ getObjectivePill(q.type).label }}</span>
                   <span class="meta-tag limits mono">内联即答即判</span>
                 </div>
@@ -723,22 +813,25 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="q-right-layout">
-              <span class="difficulty-pill" :class="getObjectivePill(q.type).cls">
+              <span :class="getObjectivePill(q.type).cls">
                 {{ getObjectivePill(q.type).label }}
               </span>
 
-              <span v-if="q.isCorrect" class="status-badge ac">
+              <span v-if="q.isCorrect" class="status-badge ac tabular-nums">
                 ✓ {{ q.userScore }}/{{ q.score }} AC
               </span>
-              <span v-else-if="q.userScore && q.userScore > 0" class="status-badge partial">
+              <span
+                v-else-if="q.userScore && q.userScore > 0"
+                class="status-badge partial tabular-nums"
+              >
                 ! {{ q.userScore }}/{{ q.score }} PARTIAL
               </span>
-              <span v-else-if="q.answered" class="status-badge wa">
+              <span v-else-if="q.answered" class="status-badge wa tabular-nums">
                 ✗ 0/{{ q.score }} WA
               </span>
               <span v-else class="status-badge none">未作答</span>
 
-              <span class="action-cta">
+              <span class="action-cta" aria-hidden="true">
                 <span>{{ q.answered ? '查看/订正' : '开始作答' }}</span>
                 <svg
                   class="cta-arrow"
@@ -746,46 +839,57 @@ onBeforeUnmount(() => {
                   fill="none"
                   stroke="currentColor"
                   stroke-width="2"
+                  aria-hidden="true"
                 >
                   <path d="M6 3l5 5-5 5" />
                 </svg>
               </span>
             </div>
-          </div>
+          </article>
         </div>
       </section>
 
       <!-- 章节：数据库 SQL 结构分析 -->
       <section v-if="dbQuestions.length > 0" class="section-block card">
-        <div class="section-head" @click="toggleSection('db')">
+        <div class="section-head">
           <div class="sec-head-left">
-            <span class="sec-index mono">{{ dbSecIdx }}</span>
+            <span class="sec-index mono tabular-nums">{{ dbSecIdx }}</span>
             <div>
-              <h2 class="sec-title">数据库 SQL 结构分析</h2>
+              <h2 class="sec-title">
+                <button
+                  type="button"
+                  class="section-head-trigger"
+                  :aria-expanded="!collapsedSections.db"
+                  @click="toggleSection('db')"
+                >
+                  数据库 SQL 结构分析
+                </button>
+              </h2>
               <p class="sec-desc">沙箱隔离实例 · 考查 SQL 查询、分组聚合与数据操作</p>
             </div>
           </div>
-          <div class="sec-head-right mono">
+          <div class="sec-head-right mono tabular-nums">
             <span
               class="sec-stat"
               :class="{ 'stat-ac': dbStat.passed === dbStat.totalCount && dbStat.totalCount > 0 }"
             >
-              {{ dbStat.passed }} / {{ dbStat.totalCount }} 已通过 ·
-              {{ dbStat.earned }}/{{ dbStat.total }} 分
+              {{ dbStat.passed }} / {{ dbStat.totalCount }} 已通过 · {{ dbStat.earned }}/{{
+                dbStat.total
+              }}
+              分
             </span>
-            <span class="sec-toggle">
+            <span class="sec-toggle" aria-hidden="true">
               {{ collapsedSections.db ? '+ 展开' : '− 收起' }}
             </span>
           </div>
         </div>
 
         <div v-if="!collapsedSections.db" class="section-items">
-          <div
+          <article
             v-for="(q, idx) in dbQuestions"
             :key="q.practiceQuestionId"
             class="question-item card"
-            :style="{ '--drop-index': idx }"
-            @click="goToCoding(q)"
+            :style="{ '--drop-index': Math.min(idx, 10) }"
           >
             <div class="q-main-layout">
               <div class="q-status-wrap">
@@ -794,14 +898,14 @@ onBeforeUnmount(() => {
                   class="status-icon solved"
                   title="已攻克 (Accepted)"
                 >
-                  <svg viewBox="0 0 16 16" fill="currentColor">
+                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                     <path
                       d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05Z"
                     />
                   </svg>
                 </span>
                 <span v-else-if="q.userScore > 0" class="status-icon partial" title="部分分通过">
-                  <svg viewBox="0 0 16 16" fill="currentColor">
+                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                     <path
                       d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14Zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16Zm-.75-9.75a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0v-3.5Zm.75 6.25a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75Z"
                     />
@@ -812,30 +916,34 @@ onBeforeUnmount(() => {
                 </span>
               </div>
 
-              <span class="q-number mono">
+              <span class="q-number mono tabular-nums">
                 #{{ String(objectiveQuestions.length + idx + 1).padStart(2, '0') }}
               </span>
 
               <div class="q-content">
-                <h3 class="q-title">{{ q.title }}</h3>
+                <h3 class="q-title">
+                  <button type="button" class="q-title-trigger" @click="goToCoding(q)">
+                    {{ q.title }}
+                  </button>
+                </h3>
                 <div class="q-tags-row">
-                  <span class="meta-tag score mono">{{ q.score }} 分</span>
-                  <span class="meta-tag dialect mono">MySQL 8.0</span>
+                  <span class="meta-tag score mono tabular-nums">{{ q.score }} 分</span>
+                  <span class="meta-tag dialect mono">{{ getDialectLabel(undefined) }}</span>
                   <span class="meta-tag limits mono">结果集严格校验</span>
                 </div>
               </div>
             </div>
 
             <div class="q-right-layout">
-              <span class="difficulty-pill" :class="getDbPill(q).cls">
+              <span :class="getDbPill(q).cls">
                 {{ getDbPill(q).label }}
               </span>
 
-              <span class="status-badge" :class="getPracticalBadge(q).cls">
+              <span class="status-badge tabular-nums" :class="getPracticalBadge(q).cls">
                 {{ getPracticalBadge(q).text }}
               </span>
 
-              <span class="action-cta">
+              <span class="action-cta" aria-hidden="true">
                 <span>{{ getPracticalCtaText(q) }}</span>
                 <svg
                   class="cta-arrow"
@@ -843,48 +951,59 @@ onBeforeUnmount(() => {
                   fill="none"
                   stroke="currentColor"
                   stroke-width="2"
+                  aria-hidden="true"
                 >
                   <path d="M6 3l5 5-5 5" />
                 </svg>
               </span>
             </div>
-          </div>
+          </article>
         </div>
       </section>
 
       <!-- 章节：算法与实操编程评测 -->
       <section v-if="algoQuestions.length > 0" class="section-block card">
-        <div class="section-head" @click="toggleSection('algo')">
+        <div class="section-head">
           <div class="sec-head-left">
-            <span class="sec-index mono">{{ algoSecIdx }}</span>
+            <span class="sec-index mono tabular-nums">{{ algoSecIdx }}</span>
             <div>
-              <h2 class="sec-title">算法与实操编程评测</h2>
+              <h2 class="sec-title">
+                <button
+                  type="button"
+                  class="section-head-trigger"
+                  :aria-expanded="!collapsedSections.algo"
+                  @click="toggleSection('algo')"
+                >
+                  算法与实操编程评测
+                </button>
+              </h2>
               <p class="sec-desc">标准在线沙箱评测 · 包含数据结构逻辑构建与时空复杂度约束</p>
             </div>
           </div>
-          <div class="sec-head-right mono">
+          <div class="sec-head-right mono tabular-nums">
             <span
               class="sec-stat"
               :class="{
                 'stat-ac': algoStat.passed === algoStat.totalCount && algoStat.totalCount > 0,
               }"
             >
-              {{ algoStat.passed }} / {{ algoStat.totalCount }} 已通过 ·
-              {{ algoStat.earned }}/{{ algoStat.total }} 分
+              {{ algoStat.passed }} / {{ algoStat.totalCount }} 已通过 · {{ algoStat.earned }}/{{
+                algoStat.total
+              }}
+              分
             </span>
-            <span class="sec-toggle">
+            <span class="sec-toggle" aria-hidden="true">
               {{ collapsedSections.algo ? '+ 展开' : '− 收起' }}
             </span>
           </div>
         </div>
 
         <div v-if="!collapsedSections.algo" class="section-items">
-          <div
+          <article
             v-for="(q, idx) in algoQuestions"
             :key="q.practiceQuestionId"
             class="question-item card"
-            :style="{ '--drop-index': idx }"
-            @click="goToCoding(q)"
+            :style="{ '--drop-index': Math.min(idx, 10) }"
           >
             <div class="q-main-layout">
               <div class="q-status-wrap">
@@ -893,14 +1012,14 @@ onBeforeUnmount(() => {
                   class="status-icon solved"
                   title="已攻克 (Accepted)"
                 >
-                  <svg viewBox="0 0 16 16" fill="currentColor">
+                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                     <path
                       d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05Z"
                     />
                   </svg>
                 </span>
                 <span v-else-if="q.userScore > 0" class="status-icon partial" title="部分分通过">
-                  <svg viewBox="0 0 16 16" fill="currentColor">
+                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                     <path
                       d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14Zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16Zm-.75-9.75a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0v-3.5Zm.75 6.25a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75Z"
                     />
@@ -911,15 +1030,21 @@ onBeforeUnmount(() => {
                 </span>
               </div>
 
-              <span class="q-number mono">
-                #{{ String(objectiveQuestions.length + dbQuestions.length + idx + 1).padStart(2, '0') }}
+              <span class="q-number mono tabular-nums">
+                #{{
+                  String(objectiveQuestions.length + dbQuestions.length + idx + 1).padStart(2, '0')
+                }}
               </span>
 
               <div class="q-content">
-                <h3 class="q-title">{{ q.title }}</h3>
+                <h3 class="q-title">
+                  <button type="button" class="q-title-trigger" @click="goToCoding(q)">
+                    {{ q.title }}
+                  </button>
+                </h3>
                 <div class="q-tags-row">
-                  <span class="meta-tag score mono">{{ q.score }} 分</span>
-                  <span class="meta-tag limits mono">
+                  <span class="meta-tag score mono tabular-nums">{{ q.score }} 分</span>
+                  <span class="meta-tag limits mono tabular-nums">
                     {{ q.timeLimitMs ? `${q.timeLimitMs}ms` : '1000ms' }} /
                     {{ q.memoryLimitKb ? `${Math.round(q.memoryLimitKb / 1024)}MB` : '256MB' }}
                   </span>
@@ -935,15 +1060,15 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="q-right-layout">
-              <span class="difficulty-pill" :class="getAlgoPill(q).cls">
+              <span :class="getAlgoPill(q).cls">
                 {{ getAlgoPill(q).label }}
               </span>
 
-              <span class="status-badge" :class="getPracticalBadge(q).cls">
+              <span class="status-badge tabular-nums" :class="getPracticalBadge(q).cls">
                 {{ getPracticalBadge(q).text }}
               </span>
 
-              <span class="action-cta">
+              <span class="action-cta" aria-hidden="true">
                 <span>{{ getPracticalCtaText(q) }}</span>
                 <svg
                   class="cta-arrow"
@@ -951,12 +1076,13 @@ onBeforeUnmount(() => {
                   fill="none"
                   stroke="currentColor"
                   stroke-width="2"
+                  aria-hidden="true"
                 >
                   <path d="M6 3l5 5-5 5" />
                 </svg>
               </span>
             </div>
-          </div>
+          </article>
         </div>
       </section>
     </div>
@@ -978,9 +1104,19 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="scoreboardLoading && !scoreboard" class="loading-box card muted">
-        <span class="loading-spin"></span>
+      <div
+        v-if="scoreboardLoading && !scoreboard"
+        class="loading-box card muted"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="loading-spin" aria-hidden="true"></span>
         <span>正在同步实时成绩榜…</span>
+      </div>
+
+      <div v-else-if="scoreboardError && !scoreboard" class="state-banner is-error" role="alert">
+        <span>{{ scoreboardError }}</span>
+        <button type="button" class="btn-inline-retry" @click="fetchScoreboard()">重新加载</button>
       </div>
 
       <div v-else class="scoreboard-container card">
@@ -997,13 +1133,9 @@ onBeforeUnmount(() => {
                 style="min-width: 90px"
               >
                 {{
-                  h.questionType === 'OBJECTIVE'
-                    ? '客观'
-                    : h.questionType === 'DB'
-                      ? 'SQL'
-                      : '算法'
+                  h.questionType === 'OBJECTIVE' ? '客观' : h.questionType === 'DB' ? 'SQL' : '算法'
                 }}
-                <span class="mono" style="opacity: 0.8">({{ h.score }})</span>
+                <span class="mono th-score-sub">({{ h.score }})</span>
               </th>
               <th style="width: 120px">最后提交</th>
             </tr>
@@ -1034,7 +1166,12 @@ onBeforeUnmount(() => {
             >
               <td class="mono" style="text-align: center; font-weight: 600">
                 {{ row.rank }}
-                <span v-if="row.userId === userStore.userInfo?.id" style="color: #2b8a3e">★</span>
+                <span
+                  v-if="row.userId === userStore.userInfo?.id"
+                  class="my-rank-star"
+                  aria-hidden="true"
+                  >★</span
+                >
               </td>
               <td class="mono">{{ formatScoreboardStudent(row) }}</td>
               <td class="mono" style="font-weight: 700; text-align: center">
@@ -1061,27 +1198,25 @@ onBeforeUnmount(() => {
               >
                 <template v-if="cell.status === 'ACCEPTED'">
                   +{{ cell.attempts || 1 }}
-                  <span v-if="cell.elapsedMinutes" class="time-sub">{{ cell.elapsedMinutes }}'</span>
+                  <span v-if="cell.elapsedMinutes" class="time-sub"
+                    >{{ cell.elapsedMinutes }}'</span
+                  >
                 </template>
-                <template v-else-if="isPendingStatus(cell.status)">
-                  评测中
-                </template>
-                <template v-else-if="cell.status === 'PARTIAL'">
-                  {{ cell.score }}分
-                </template>
-                <template
-                  v-else-if="
-                    cell.status &&
-                    cell.status !== 'UNATTEMPTED'
-                  "
-                >
+                <template v-else-if="isPendingStatus(cell.status)"> 评测中 </template>
+                <template v-else-if="cell.status === 'PARTIAL'"> {{ cell.score }}分 </template>
+                <template v-else-if="cell.status && cell.status !== 'UNATTEMPTED'">
                   -{{ cell.attempts || 1 }}
                 </template>
                 <template v-else>-</template>
               </td>
 
-              <td class="mono" style="font-size: 11px; color: var(--ink-secondary); text-align: center">
-                {{ row.lastSubmitTime ? row.lastSubmitTime.replace('T', ' ').substring(11, 19) : '-' }}
+              <td
+                class="mono"
+                style="font-size: 11px; color: var(--ink-secondary); text-align: center"
+              >
+                {{
+                  row.lastSubmitTime ? row.lastSubmitTime.replace('T', ' ').substring(11, 19) : '-'
+                }}
               </td>
             </tr>
             <tr v-if="!scoreboard?.rows?.length">
@@ -1104,22 +1239,37 @@ onBeforeUnmount(() => {
       :class="{ active: objectiveDrawerVisible }"
       @click.self="closeObjectiveDrawer"
     >
-      <div class="drawer-content">
+      <div
+        class="drawer-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="practice-objective-drawer-title"
+      >
         <div class="drawer-header">
           <div class="drawer-title-wrap">
+            <h2 id="practice-objective-drawer-title" class="sr-only">
+              客观题作答：{{ getObjectivePill(currentObjectiveQuestion.type).label }}
+            </h2>
             <div class="drawer-meta-bar">
-              <span
-                class="difficulty-pill"
-                :class="getObjectivePill(currentObjectiveQuestion.type).cls"
-              >
+              <span :class="getObjectivePill(currentObjectiveQuestion.type).cls">
                 {{ getObjectivePill(currentObjectiveQuestion.type).label }}
               </span>
-              <span class="mono drawer-score-tag">满分 {{ currentObjectiveQuestion.score }} 分</span>
+              <span class="mono drawer-score-tag"
+                >满分 {{ currentObjectiveQuestion.score }} 分</span
+              >
               <span v-if="isTeacherPreview" class="mono drawer-readonly-tag">教师预览只读</span>
               <span v-else-if="isPracticeLocked" class="mono drawer-readonly-tag">已封卷只读</span>
             </div>
           </div>
-          <button class="btn btn-ghost btn-sm" @click="closeObjectiveDrawer">关闭 ✕</button>
+          <button
+            ref="drawerCloseBtnRef"
+            type="button"
+            class="btn btn-ghost btn-sm"
+            aria-label="关闭客观题抽屉"
+            @click="closeObjectiveDrawer"
+          >
+            关闭 <span aria-hidden="true">✕</span>
+          </button>
         </div>
 
         <div class="drawer-body">
@@ -1135,20 +1285,22 @@ onBeforeUnmount(() => {
               type="button"
               class="judge-card"
               :class="{ selected: isJudgeSelected('对'), disabled: isAnswerReadonly }"
+              :aria-pressed="isJudgeSelected('对')"
               :disabled="isAnswerReadonly || savingObjective"
               @click="selectJudgeOption('对')"
             >
-              <span class="judge-symbol mono">✓</span>
+              <span class="judge-symbol mono" aria-hidden="true">✓</span>
               <span class="judge-text">对（正确）</span>
             </button>
             <button
               type="button"
               class="judge-card"
               :class="{ selected: isJudgeSelected('错'), disabled: isAnswerReadonly }"
+              :aria-pressed="isJudgeSelected('错')"
               :disabled="isAnswerReadonly || savingObjective"
               @click="selectJudgeOption('错')"
             >
-              <span class="judge-symbol mono">✕</span>
+              <span class="judge-symbol mono" aria-hidden="true">✕</span>
               <span class="judge-text">错（错误）</span>
             </button>
           </div>
@@ -1159,22 +1311,28 @@ onBeforeUnmount(() => {
             class="q-options-container"
           >
             <div class="multi-hint muted">
-              多选题：请勾选所有正确选项（漏选可得部分分，选错得 0 分），勾选完毕后点击「保存本题答案」。
+              多选题：请勾选所有正确选项（漏选可得部分分，选错得 0
+              分），勾选完毕后点击「保存本题答案」。
             </div>
-            <div
+            <button
               v-for="(opt, optIdx) in currentObjectiveQuestion.options"
               :key="optIdx"
+              type="button"
               class="option-item"
               :class="{
                 selected: isMultiOptionChecked(optIdx),
                 disabled: isAnswerReadonly,
               }"
+              :aria-pressed="isMultiOptionChecked(optIdx)"
+              :disabled="isAnswerReadonly || savingObjective"
               @click="toggleMultiOption(optIdx)"
             >
-              <span class="opt-check mono">{{ isMultiOptionChecked(optIdx) ? '✓' : '' }}</span>
+              <span class="opt-check mono" aria-hidden="true">{{
+                isMultiOptionChecked(optIdx) ? '✓' : ''
+              }}</span>
               <span class="opt-label mono">{{ objectiveOptionLetter(optIdx) }}</span>
               <span class="opt-text">{{ objectiveOptionText(opt) }}</span>
-            </div>
+            </button>
 
             <div v-if="!isAnswerReadonly" class="drawer-inline-save">
               <span class="mono muted" style="font-size: 12px">
@@ -1196,9 +1354,12 @@ onBeforeUnmount(() => {
             v-else-if="(currentObjectiveQuestion.type || '').toUpperCase() === 'FILL'"
             class="fill-editor-box"
           >
-            <label class="fill-input-label">请在下方填写答案（支持回车直接提交判分）：</label>
+            <label for="practice-fill-input" class="fill-input-label">
+              请在下方填写答案（支持回车直接提交判分）：
+            </label>
             <div class="fill-input-row">
               <input
+                id="practice-fill-input"
                 v-model="fillDraft"
                 type="text"
                 class="input fill-input mono"
@@ -1220,19 +1381,22 @@ onBeforeUnmount(() => {
 
           <!-- 4. 单选题选项列表（点击即传选项字母 A/B/C/D 判分） -->
           <div v-else class="q-options-container">
-            <div
+            <button
               v-for="(opt, optIdx) in currentObjectiveQuestion.options"
               :key="optIdx"
+              type="button"
               class="option-item"
               :class="{
                 selected: isSingleSelected(optIdx),
                 disabled: isAnswerReadonly,
               }"
+              :aria-pressed="isSingleSelected(optIdx)"
+              :disabled="isAnswerReadonly || savingObjective"
               @click="selectSingleOption(optIdx)"
             >
               <span class="opt-label mono">{{ objectiveOptionLetter(optIdx) }}</span>
               <span class="opt-text">{{ objectiveOptionText(opt) }}</span>
-            </div>
+            </button>
           </div>
 
           <!-- 方案 B：即时判分反馈 + 交卷/截止/教师视角标准答案展示 -->
@@ -1242,27 +1406,22 @@ onBeforeUnmount(() => {
           >
             <div v-if="currentObjectiveQuestion.answered" class="feedback-head">
               <span class="mono" style="font-weight: 600">判定状态：</span>
-              <span
-                v-if="currentObjectiveQuestion.isCorrect"
-                style="color: #2b8a3e; font-weight: 700"
-              >
+              <span v-if="currentObjectiveQuestion.isCorrect" class="feedback-ac">
                 ✓ 完全正确 (+{{ currentObjectiveQuestion.userScore }} 分)
               </span>
               <span
                 v-else-if="(currentObjectiveQuestion.userScore ?? 0) > 0"
-                style="color: #e67700; font-weight: 700"
+                class="feedback-partial"
               >
-                ! 部分正确 (+{{ currentObjectiveQuestion.userScore }} / {{ currentObjectiveQuestion.score }} 分)
+                ! 部分正确 (+{{ currentObjectiveQuestion.userScore }} /
+                {{ currentObjectiveQuestion.score }} 分)
               </span>
-              <span v-else style="color: #c92a2a; font-weight: 700">
+              <span v-else class="feedback-wa">
                 ✗ 回答错误 (0 分{{ isAnswerReadonly ? '' : ' · 可直接修改重答' }})
               </span>
             </div>
 
-            <div
-              v-if="currentObjectiveQuestion.correctAnswer != null"
-              class="feedback-std mono"
-            >
+            <div v-if="currentObjectiveQuestion.correctAnswer != null" class="feedback-std mono">
               <span>标准参考答案：</span>
               <strong>{{ currentObjectiveQuestion.correctAnswer }}</strong>
             </div>
@@ -1279,7 +1438,9 @@ onBeforeUnmount(() => {
                   : '作答结果已实时计入随堂总分'
             }}
           </span>
-          <button class="btn btn-primary btn-sm" @click="closeObjectiveDrawer">完成并关闭</button>
+          <button type="button" class="btn btn-primary btn-sm" @click="closeObjectiveDrawer">
+            完成并关闭
+          </button>
         </div>
       </div>
     </div>
@@ -1314,7 +1475,7 @@ onBeforeUnmount(() => {
   color: var(--ink);
 }
 .nav-trail .sep {
-  color: var(--line);
+  color: var(--ink-secondary);
 }
 .nav-trail .current {
   color: var(--ink);
@@ -1381,7 +1542,7 @@ onBeforeUnmount(() => {
 }
 
 .text-sep {
-  color: var(--line);
+  color: var(--ink-secondary);
 }
 
 .teacher-info {
@@ -1419,7 +1580,7 @@ onBeforeUnmount(() => {
 }
 .top-tab-num {
   font-size: 11px;
-  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 标题与动作行 */
@@ -1519,8 +1680,6 @@ onBeforeUnmount(() => {
   padding: 16px 22px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
-  cursor: pointer;
-  user-select: none;
   transition: background 0.15s ease;
 }
 .section-head:hover {
@@ -1553,6 +1712,26 @@ onBeforeUnmount(() => {
   margin: 0;
 }
 
+.section-head-trigger {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.section-head-trigger::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.section-head-trigger:focus-visible {
+  outline: 2px solid var(--kece-accent);
+  outline-offset: 2px;
+}
+
 .sec-desc {
   font-size: 12.5px;
   color: var(--ink-secondary);
@@ -1567,7 +1746,7 @@ onBeforeUnmount(() => {
   color: var(--ink-secondary);
 }
 .sec-stat.stat-ac {
-  color: #2b8a3e;
+  color: var(--kece-success);
   font-weight: 700;
 }
 .sec-toggle {
@@ -1589,6 +1768,7 @@ onBeforeUnmount(() => {
 }
 
 .question-item {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1599,40 +1779,35 @@ onBeforeUnmount(() => {
   border-radius: 0;
   text-decoration: none;
   color: inherit;
-  cursor: pointer;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-  animation: cardDropIn 0.44s cubic-bezier(0.25, 1.15, 0.5, 1) backwards;
-  animation-delay: calc(var(--drop-index, 0) * 45ms);
-  will-change: transform, opacity;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+  animation: kece-card-drop-in 0.44s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(min(var(--drop-index, 0), 11) * 45ms);
 }
 .question-item:hover {
-  border-color: var(--ink);
+  border-color: var(--kece-accent);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-  transform: translateY(-2px) !important;
-}
-
-@keyframes cardDropIn {
-  0% {
-    opacity: 0;
-    transform: translateY(-38px) scale(0.985);
-  }
-  60% {
-    opacity: 1;
-    transform: translateY(3px) scale(1.002);
-  }
-  82% {
-    opacity: 1;
-    transform: translateY(-1.5px) scale(0.999);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  transform: translateY(-2px);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .question-item {
+  .question-item,
+  .scoreboard-wrapper {
     animation: none !important;
+  }
+  .question-item:hover {
+    transform: none !important;
+  }
+  .question-item,
+  .section-head,
+  .top-tab-btn,
+  .option-item,
+  .judge-card,
+  .action-cta,
+  .cta-arrow {
+    transition: none !important;
   }
 }
 
@@ -1653,13 +1828,13 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 .status-icon.solved {
-  color: #2b8a3e;
+  color: var(--kece-success);
   width: 20px;
   height: 20px;
   display: inline-flex;
 }
 .status-icon.partial {
-  color: #e67700;
+  color: var(--kece-warning);
   width: 20px;
   height: 20px;
   display: inline-flex;
@@ -1674,7 +1849,7 @@ onBeforeUnmount(() => {
 .unsolved-ring {
   width: 12px;
   height: 12px;
-  border: 1.5px solid #d0d0d0;
+  border: 1.5px solid #8b95a5;
   border-radius: 50%;
 }
 
@@ -1697,9 +1872,31 @@ onBeforeUnmount(() => {
   font-size: 16px;
   font-weight: 600;
   color: var(--ink);
+  min-width: 0;
+}
+.q-title-trigger {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: block;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.q-title-trigger::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.q-title-trigger:focus-visible {
+  outline: 2px solid var(--kece-accent);
+  outline-offset: 2px;
 }
 
 .q-tags-row {
@@ -1811,27 +2008,28 @@ onBeforeUnmount(() => {
   font-weight: 600;
   text-align: center;
   white-space: nowrap;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 .status-badge.ac {
-  background: #ebfbee;
-  color: #2b8a3e;
-  border: 1px solid #b2f2bb;
+  background: var(--kece-success-soft, #eefbf3);
+  color: var(--kece-success, #16794f);
+  border: 1px solid rgba(22, 121, 79, 0.28);
 }
 .status-badge.running {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border: 1px solid #93c5fd;
+  background: var(--kece-accent-soft, #eef6f4);
+  color: var(--kece-accent-ink, #0f5f53);
+  border: 1px solid rgba(19, 121, 105, 0.28);
 }
 .status-badge.partial {
-  background: #fff9db;
-  color: #e67700;
-  border: 1px solid #ffe066;
+  background: var(--kece-warning-soft, #fff7ed);
+  color: var(--kece-warning, #b25c16);
+  border: 1px solid rgba(178, 92, 22, 0.28);
 }
 .status-badge.wa {
-  background: #fdebec;
-  color: #c92a2a;
-  border: 1px solid #ffa8a8;
+  background: var(--kece-danger-soft, #fdf2f4);
+  color: var(--kece-danger, #c4314b);
+  border: 1px solid rgba(196, 49, 75, 0.28);
 }
 .status-badge.none {
   background: var(--bg);
@@ -1848,10 +2046,10 @@ onBeforeUnmount(() => {
   color: var(--ink-secondary);
   min-width: 72px;
   justify-content: flex-end;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease;
 }
 .question-item:hover .action-cta {
-  color: var(--ink);
+  color: var(--kece-accent-ink);
 }
 .question-item:hover .cta-arrow {
   transform: translateX(3px);
@@ -1865,7 +2063,7 @@ onBeforeUnmount(() => {
 /* 实时成绩榜 Scoreboard 网格 */
 .scoreboard-wrapper {
   margin-bottom: 40px;
-  animation: cardDropIn 0.44s cubic-bezier(0.25, 1.15, 0.5, 1) backwards;
+  animation: kece-row-drop-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 .scoreboard-toolbar {
   display: flex;
@@ -1934,59 +2132,68 @@ onBeforeUnmount(() => {
   padding: 9px 12px;
   vertical-align: middle;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.th-score-sub {
+  color: var(--ink-tertiary);
+  font-weight: 500;
+}
+
+.my-rank-star {
+  color: var(--kece-accent-ink);
+  margin-left: 2px;
 }
 
 .scoreboard-table tr.my-position td {
-  background: #f8fafc !important;
+  background: var(--kece-accent-soft, #eef6f4) !important;
+  box-shadow: inset 0 2px 0 var(--kece-accent);
   font-weight: 600;
-}
-.scoreboard-table tr.my-position td:first-child {
-  border-left: 3px solid var(--ink);
 }
 
 .base-summary-row td {
   background: var(--surface);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--ink-secondary);
   border-bottom: 1px solid var(--line);
 }
 
 .cell-state-ac {
-  background: #ebfbee;
-  color: #2b8a3e;
+  background: var(--kece-success-soft, #eefbf3);
+  color: var(--kece-success, #16794f);
   text-align: center;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   font-weight: 600;
 }
 .cell-state-ac .time-sub {
   display: block;
   font-size: 9.5px;
-  color: #16a34a;
+  color: var(--kece-success, #16794f);
   font-weight: 400;
 }
 .cell-state-running {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--kece-accent-soft, #eef6f4);
+  color: var(--kece-accent-ink, #0f5f53);
   text-align: center;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
 }
 .cell-state-partial {
-  background: #fff9db;
-  color: #e67700;
+  background: var(--kece-warning-soft, #fff7ed);
+  color: var(--kece-warning, #b25c16);
   text-align: center;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   font-weight: 600;
 }
 .cell-state-wa {
-  background: #fdebec;
-  color: #c92a2a;
+  background: var(--kece-danger-soft, #fdf2f4);
+  color: var(--kece-danger, #c4314b);
   text-align: center;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   font-weight: 600;
 }
@@ -2098,6 +2305,10 @@ onBeforeUnmount(() => {
   margin-bottom: 2px;
 }
 .option-item {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2105,22 +2316,26 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
   background: var(--surface);
   cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
 }
-.option-item:hover:not(.disabled) {
+.option-item:hover:not(:disabled) {
   background: var(--bg);
-  border-color: var(--ink);
+  border-color: var(--kece-accent);
 }
 .option-item.selected {
-  background: var(--bg);
-  border-color: var(--ink);
-  border-left: 3px solid var(--ink);
+  background: var(--kece-accent-soft, #eef6f4);
+  border-color: var(--kece-accent);
+  box-shadow: inset 0 0 0 1px var(--kece-accent);
   font-weight: 600;
 }
-.option-item.disabled {
-  cursor: default;
-  opacity: 0.88;
+.option-item.disabled,
+.option-item:disabled {
+  cursor: not-allowed;
+  background: var(--kece-surface-muted, #f8fafc);
+  color: #5c6370;
+  border-color: var(--kece-border, #e4e7ec);
 }
 .opt-check {
   width: 18px;
@@ -2202,8 +2417,15 @@ onBeforeUnmount(() => {
   color: #ffffff;
 }
 .judge-card:disabled {
-  cursor: default;
-  opacity: 0.85;
+  cursor: not-allowed;
+  background: var(--kece-surface-muted, #f8fafc);
+  color: #5c6370;
+  border-color: var(--kece-border, #e4e7ec);
+}
+.judge-card.selected:disabled {
+  background: var(--ink);
+  color: #ffffff;
+  border-color: var(--ink);
 }
 .judge-symbol {
   font-size: 17px;
@@ -2246,6 +2468,18 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   font-size: 13.5px;
+}
+.feedback-ac {
+  color: var(--kece-success);
+  font-weight: 700;
+}
+.feedback-partial {
+  color: var(--kece-warning);
+  font-weight: 700;
+}
+.feedback-wa {
+  color: var(--kece-danger);
+  font-weight: 700;
 }
 .feedback-std {
   font-size: 12.5px;

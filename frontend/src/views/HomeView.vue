@@ -1,33 +1,35 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
-import ClusterConsole from '@/components/ClusterConsole.vue'
-import HomePracticeBoard from '@/components/HomePracticeBoard.vue'
-import { systemApi } from '@/api/system'
-import Prism from 'prismjs'
-import 'prismjs/components/prism-clike'
-import 'prismjs/components/prism-java'
-import 'prismjs/components/prism-sql'
-import 'prismjs/components/prism-json'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { RouterLink, useRouter } from 'vue-router';
+import ClusterConsole from '@/components/ClusterConsole.vue';
+import HomePracticeBoard from '@/components/HomePracticeBoard.vue';
+import { systemApi } from '@/api/system';
+import DOMPurify from 'dompurify';
+import Prism from 'prismjs';
+import 'prismjs/components/prism-clike';
+import 'prismjs/components/prism-java';
+import 'prismjs/components/prism-sql';
+import 'prismjs/components/prism-json';
 
-const router = useRouter()
+const router = useRouter();
 
 // =========================================
 // 交互终端演示 Tab 切换
 // =========================================
-type DemoMode = 'algo' | 'sql' | 'exam'
-const activeTab = ref<DemoMode>('algo')
+type DemoMode = 'algo' | 'sql' | 'exam';
+const activeTab = ref<DemoMode>('algo');
+const hasLiveAlgoSnippet = ref(false);
 
 interface DemoContent {
-  filename: string
-  langBadge: string
-  code: string
+  filename: string;
+  langBadge: string;
+  code: string;
   verdict: {
-    status: string
-    statusClass: string
-    metrics: { label: string; value: string }[]
-    details: string
-  }
+    status: string;
+    statusClass: string;
+    metrics: { label: string; value: string }[];
+    details: string;
+  };
 }
 
 const demos = reactive<Record<DemoMode, DemoContent>>({
@@ -107,273 +109,224 @@ LIMIT 3;`,
       details: 'ACM 实时榜单结算 · 客观题 + 编程题自动折算分值',
     },
   },
-})
+});
+
+const isLiveSnippet = computed(() => activeTab.value === 'algo' && hasLiveAlgoSnippet.value);
+const snippetSourceLabel = computed(() =>
+  isLiveSnippet.value ? 'LIVE SNIPPET · 每日题库模板' : 'SIMULATION PREVIEW · 沙箱演练样例',
+);
 
 function start() {
-  router.push('/questions')
+  router.push('/questions');
 }
 
-// Trae 风格故障切片动效（仅在鼠标主动移动时触发，鼠标放上去不动或离开时立即完全静止）
-const isGlitching = ref(false)
-const glitchStyle = ref<Record<string, string>>({})
-let glitchTimer: ReturnType<typeof setTimeout> | null = null
-
-function handleTitleMouseMove(e: MouseEvent) {
-  isGlitching.value = true
-
-  const target = e.currentTarget as HTMLElement
-  if (!target) return
-  const rect = target.getBoundingClientRect()
-  const relY = ((e.clientY - rect.top) / rect.height) * 100
-
-  // 围绕光标 Y 动态产生阶梯切片区间
-  const y1 = Math.max(5, (relY - 15) % 100)
-  const y2 = Math.min(95, y1 + 18)
-  const y3 = (y2 + 25) % 95
-  const y4 = Math.min(98, y3 + 16)
-
-  const s1 = (Math.random() > 0.4 ? 1 : -1) * (7 + Math.random() * 8)
-  const s2 = -s1 * (0.8 + Math.random() * 0.4)
-
-  glitchStyle.value = {
-    '--shift-1': `${s1.toFixed(1)}px`,
-    '--shift-2': `${s2.toFixed(1)}px`,
-    '--clip-1': `polygon(0 ${y1.toFixed(1)}%, 100% ${y1.toFixed(1)}%, 100% ${y2.toFixed(1)}%, 0 ${y2.toFixed(1)}%, 0 ${y3.toFixed(1)}%, 100% ${y3.toFixed(1)}%, 100% ${y4.toFixed(1)}%, 0 ${y4.toFixed(1)}%)`,
-    '--clip-2': `polygon(0 ${((y1 + 20) % 90).toFixed(1)}%, 100% ${((y1 + 20) % 90).toFixed(1)}%, 100% ${((y1 + 38) % 95).toFixed(1)}%, 0 ${((y1 + 38) % 95).toFixed(1)}%)`,
-  }
-
-  if (glitchTimer) clearTimeout(glitchTimer)
-  // 鼠标停止移动 130ms 后，故障切片动效立即停止，文字完全恢复静止
-  glitchTimer = setTimeout(() => {
-    isGlitching.value = false
-  }, 130)
-}
-
-function handleTitleMouseLeave() {
-  if (glitchTimer) clearTimeout(glitchTimer)
-  isGlitching.value = false
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 // =========================================
-// 首屏副标题打字机效果 (Typewriter Effect)
+// 交互终端代码演示：惰性加载与减弱动效适配
 // =========================================
-const HERO_SUB_LINE_1 = '无缝集成算法 OJ、数据库 OJ、前端 AI 智能评测及标准客观题系统。'
-const HERO_SUB_LINE_2 = '基于高可用强隔离沙箱与独立临时库，提供确定性、防作弊的全真技术考核。'
-
-const typedLine1 = ref('')
-const typedLine2 = ref('')
-const activeTypingLine = ref<1 | 2>(1)
-let typewriterTimer: ReturnType<typeof setTimeout> | null = null
-
-function startTypewriter() {
-  if (typewriterTimer) clearTimeout(typewriterTimer)
-  typedLine1.value = ''
-  typedLine2.value = ''
-  activeTypingLine.value = 1
-
-  let i = 0
-  let j = 0
-
-  const stepLine1 = () => {
-    if (i < HERO_SUB_LINE_1.length) {
-      i += 1
-      typedLine1.value = HERO_SUB_LINE_1.slice(0, i)
-      const ch = HERO_SUB_LINE_1[i - 1]
-      const delay = ch === '、' || ch === '。' ? 110 : 42
-      typewriterTimer = setTimeout(stepLine1, delay)
-    } else {
-      activeTypingLine.value = 2
-      typewriterTimer = setTimeout(stepLine2, 240)
-    }
-  }
-
-  const stepLine2 = () => {
-    if (j < HERO_SUB_LINE_2.length) {
-      j += 1
-      typedLine2.value = HERO_SUB_LINE_2.slice(0, j)
-      const ch = HERO_SUB_LINE_2[j - 1]
-      const delay = ch === '，' || ch === '、' || ch === '。' ? 110 : 42
-      typewriterTimer = setTimeout(stepLine2, delay)
-    } else {
-      // 完整打出后保持展示 6 秒，再循环重播打字动效
-      typewriterTimer = setTimeout(startTypewriter, 6000)
-    }
-  }
-
-  typewriterTimer = setTimeout(stepLine1, 200)
-}
+const typedCode = ref('');
+const isTyping = ref(false);
+const isVerdictReady = ref(false);
+const testingProgress = ref(1);
+const hasTriggeredScroll = ref(false);
+const terminalSectionRef = ref<HTMLElement | null>(null);
+let codeTypeTimer: ReturnType<typeof setTimeout> | null = null;
+let terminalObserver: IntersectionObserver | null = null;
+let isUnmounted = false;
 
 onBeforeUnmount(() => {
-  if (glitchTimer) clearTimeout(glitchTimer)
-  if (typewriterTimer) clearTimeout(typewriterTimer)
-  if (codeTypeTimer) clearTimeout(codeTypeTimer)
-  if (terminalObserver) {
-    terminalObserver.disconnect()
-    terminalObserver = null
+  isUnmounted = true;
+  if (codeTypeTimer) {
+    clearTimeout(codeTypeTimer);
+    codeTypeTimer = null;
   }
-})
-
-// =========================================
-// 交互终端代码演示：惰性加载与打字机特效
-// =========================================
-const typedCode = ref('')
-const isTyping = ref(false)
-const isVerdictReady = ref(false)
-const testingProgress = ref(1)
-const hasTriggeredScroll = ref(false)
-const terminalSectionRef = ref<HTMLElement | null>(null)
-const terminalBodyRef = ref<HTMLElement | null>(null)
-let codeTypeTimer: ReturnType<typeof setTimeout> | null = null
-let terminalObserver: IntersectionObserver | null = null
+  if (terminalObserver) {
+    terminalObserver.disconnect();
+    terminalObserver = null;
+  }
+});
 
 const totalLines = computed(() => {
   const code = hasTriggeredScroll.value
-    ? (typedCode.value || ' ')
-    : (demos[activeTab.value]?.code || ' ')
-  return Math.max(1, code.split('\n').length)
-})
+    ? typedCode.value || ' '
+    : demos[activeTab.value]?.code || ' ';
+  return Math.max(1, code.split('\n').length);
+});
 
-// 针对首页沙箱评测终端演示代码的高亮（支持 Java / SQL / JSON，在打字过程中实时渲染）
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (ch) => {
+    const entities: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    };
+    return entities[ch] ?? ch;
+  });
+}
+
+// 针对首页沙箱评测终端演示代码的高亮（支持 Java / SQL / JSON）
 const highlightedCode = computed(() => {
-  const current = demos[activeTab.value]
-  if (!current) return ''
-  const text = hasTriggeredScroll.value ? typedCode.value : ''
-  if (!text) return ''
+  const current = demos[activeTab.value];
+  if (!current) return '';
+  const text = hasTriggeredScroll.value ? typedCode.value : '';
+  if (!text) return '';
 
-  let grammar = Prism.languages.clike
-  let langId = 'clike'
+  let grammar = Prism.languages.clike;
+  let langId = 'clike';
 
   if (activeTab.value === 'algo') {
-    grammar = Prism.languages.java || Prism.languages.clike
-    langId = 'java'
+    grammar = Prism.languages.java || Prism.languages.clike;
+    langId = 'java';
   } else if (activeTab.value === 'sql') {
-    grammar = Prism.languages.sql || Prism.languages.clike
-    langId = 'sql'
+    grammar = Prism.languages.sql || Prism.languages.clike;
+    langId = 'sql';
   } else if (activeTab.value === 'exam') {
-    grammar = Prism.languages.json || Prism.languages.clike
-    langId = 'json'
+    grammar = Prism.languages.json || Prism.languages.clike;
+    langId = 'json';
   }
 
   try {
-    return Prism.highlight(text, grammar, langId)
+    return DOMPurify.sanitize(Prism.highlight(text, grammar, langId), {
+      ALLOWED_TAGS: ['span'],
+      ALLOWED_ATTR: ['class'],
+    });
   } catch {
-    return text
+    return escapeHtml(text);
   }
-})
+});
 
 function startCodeTyping() {
   if (codeTypeTimer) {
-    clearTimeout(codeTypeTimer)
-    codeTypeTimer = null
+    clearTimeout(codeTypeTimer);
+    codeTypeTimer = null;
   }
-  const fullCode = (demos[activeTab.value]?.code || '').trim()
-  if (!fullCode) return
+  if (isUnmounted) return;
 
-  typedCode.value = ''
-  isTyping.value = true
-  isVerdictReady.value = false
-  testingProgress.value = 1
+  const fullCode = (demos[activeTab.value]?.code || '').trim();
+  if (!fullCode) return;
 
-  let index = 0
-  const totalLen = fullCode.length
+  if (prefersReducedMotion()) {
+    typedCode.value = fullCode;
+    isTyping.value = false;
+    isVerdictReady.value = true;
+    testingProgress.value = 10;
+    return;
+  }
+
+  typedCode.value = '';
+  isTyping.value = true;
+  isVerdictReady.value = false;
+  testingProgress.value = 1;
+
+  let index = 0;
+  const totalLen = fullCode.length;
 
   const typeNext = () => {
+    if (isUnmounted) return;
     if (index < totalLen) {
       // 真实编码打字节奏：缩进空白一次性快速跃进
       if (
         fullCode.slice(index, index + 4) === '    ' ||
         fullCode.slice(index, index + 2) === '  '
       ) {
-        index += fullCode.slice(index, index + 4) === '    ' ? 4 : 2
+        index += fullCode.slice(index, index + 4) === '    ' ? 4 : 2;
       } else if (fullCode[index] === '\t') {
-        index += 1
+        index += 1;
       } else {
-        const step = Math.min(totalLen - index, Math.random() > 0.45 ? 2 : 1)
-        index += step
+        const step = Math.min(totalLen - index, Math.random() > 0.45 ? 2 : 1);
+        index += step;
       }
 
-      typedCode.value = fullCode.slice(0, index)
+      typedCode.value = fullCode.slice(0, index);
 
       // 动态推进测试点进度 (1 -> 10)
-      const ratio = index / totalLen
-      testingProgress.value = Math.min(10, Math.max(1, Math.ceil(ratio * 10)))
+      const ratio = index / totalLen;
+      testingProgress.value = Math.min(10, Math.max(1, Math.ceil(ratio * 10)));
 
-      // 终端视口随光标自动滚动
-      nextTick(() => {
-        if (terminalBodyRef.value) {
-          terminalBodyRef.value.scrollTop = terminalBodyRef.value.scrollHeight
-        }
-      })
-
-      const lastChar = fullCode[index - 1]
-      let delay = 10 + Math.random() * 12
+      const lastChar = fullCode[index - 1];
+      let delay = 10 + Math.random() * 12;
 
       if (lastChar === '\n') {
-        delay = 55 + Math.random() * 30
+        delay = 55 + Math.random() * 30;
       } else if (lastChar === ';' || lastChar === '{' || lastChar === '}') {
-        delay = 35 + Math.random() * 20
+        delay = 35 + Math.random() * 20;
       }
 
-      codeTypeTimer = setTimeout(typeNext, delay)
+      codeTypeTimer = setTimeout(typeNext, delay);
     } else {
-      typedCode.value = fullCode
+      typedCode.value = fullCode;
       // 代码敲完，模拟沙箱 280ms 综合判定延迟，随后 ACCEPTED 判定落地
       codeTypeTimer = setTimeout(() => {
-        isTyping.value = false
-        isVerdictReady.value = true
-        testingProgress.value = 10
-      }, 280)
+        if (isUnmounted) return;
+        isTyping.value = false;
+        isVerdictReady.value = true;
+        testingProgress.value = 10;
+      }, 280);
     }
-  }
+  };
 
-  codeTypeTimer = setTimeout(typeNext, 160)
+  codeTypeTimer = setTimeout(typeNext, 160);
 }
 
 function replayTyping() {
-  startCodeTyping()
+  hasTriggeredScroll.value = true;
+  startCodeTyping();
 }
 
 watch(activeTab, () => {
   if (hasTriggeredScroll.value) {
-    startCodeTyping()
+    startCodeTyping();
   }
-})
+});
 
 // 动态拉取后端每日更新的随机 Java 算法模板（秒级响应，离线/超时高可用保底）
 onMounted(async () => {
-  startTypewriter()
-
-  // 惰性加载：当且仅当用户滚动翻到沙箱演示区时才启动代码打字动效
-  if (typeof IntersectionObserver !== 'undefined' && terminalSectionRef.value) {
+  // 减弱动效或缺少 IntersectionObserver 时直接呈现终端内容；否则滚动进入视口再启动打字演示
+  if (
+    prefersReducedMotion() ||
+    typeof IntersectionObserver === 'undefined' ||
+    !terminalSectionRef.value
+  ) {
+    hasTriggeredScroll.value = true;
+    startCodeTyping();
+  } else {
     terminalObserver = new IntersectionObserver(
       (entries) => {
-        const entry = entries[0]
+        const entry = entries[0];
         if (entry && entry.isIntersecting) {
           if (!hasTriggeredScroll.value) {
-            hasTriggeredScroll.value = true
-            startCodeTyping()
+            hasTriggeredScroll.value = true;
+            startCodeTyping();
           }
         }
       },
-      { threshold: 0.2 }
-    )
-    terminalObserver.observe(terminalSectionRef.value)
-  } else {
-    hasTriggeredScroll.value = true
-    startCodeTyping()
+      { threshold: 0.2 },
+    );
+    terminalObserver.observe(terminalSectionRef.value);
   }
 
   try {
-    const res = await systemApi.getDemoSnippet()
+    const res = await systemApi.getDemoSnippet();
+    if (isUnmounted) return;
     if (res && res.code && res.code.trim()) {
-      demos.algo.filename = res.filename || 'Solution.java'
-      demos.algo.langBadge = res.langBadge || 'Java 17'
-      demos.algo.code = res.code.trim()
+      demos.algo.filename = res.filename || 'Solution.java';
+      demos.algo.langBadge = res.langBadge || 'Java 17';
+      demos.algo.code = res.code.trim();
+      hasLiveAlgoSnippet.value = true;
+      if (activeTab.value === 'algo' && hasTriggeredScroll.value) {
+        startCodeTyping();
+      }
     }
   } catch (err) {
-    console.warn('Failed to fetch dynamic demo snippet, using fallback template:', err)
+    console.warn('Failed to fetch dynamic demo snippet, using fallback template:', err);
   }
-})
+});
 </script>
 
 <template>
@@ -382,43 +335,29 @@ onMounted(async () => {
     <section class="hero container">
       <div class="hero-text">
         <div class="hero-eyebrow mono">// HIGH-PERFORMANCE JUDGMENT PLATFORM</div>
-        <h1
-          class="hero-title trae-glitch-wrapper"
-          :class="{ 'is-glitching': isGlitching }"
-          :style="glitchStyle"
-          @mousemove="handleTitleMouseMove"
-          @mouseleave="handleTitleMouseLeave"
-        >
-          <span class="trae-glitch" data-text="多维度编程与">多维度编程与</span><br />
-          <span class="trae-glitch" data-text="技能评测平台">技能评测平台</span>
+        <h1 class="hero-title">
+          多维度编程与<br />
+          技能评测平台
         </h1>
         <p class="hero-sub">
-          <!-- 隐形占位层：锁定段落高度，防止打字换行过程中下方按钮跳动 -->
-          <span class="hero-sub-ghost" aria-hidden="true">
-            {{ HERO_SUB_LINE_1 }}<br />
-            {{ HERO_SUB_LINE_2 }}
-          </span>
-          <!-- 实时打字机渲染层 -->
-          <span class="hero-sub-typed">
-            <span>{{ typedLine1 }}</span><span v-if="activeTypingLine === 1" class="typewriter-cursor"></span>
-            <br v-if="activeTypingLine === 2 || typedLine2.length > 0" />
-            <span>{{ typedLine2 }}</span><span v-if="activeTypingLine === 2" class="typewriter-cursor"></span>
-          </span>
+          集成算法 OJ、MySQL 8.0 数据库 OJ、标准客观题库与赛制考核系统。<br />
+          基于高可用强隔离沙箱与独立临时库，提供确定性、防作弊的全真技术考核。
         </p>
 
         <div class="hero-actions">
-          <button class="btn btn-primary btn-lg hero-cta" @click="start">开始使用 →</button>
+          <button type="button" class="btn btn-primary btn-lg hero-cta" @click="start">
+            开始使用 →
+          </button>
           <RouterLink to="/exams" class="btn btn-ghost btn-lg">在线考试系统</RouterLink>
         </div>
 
-        <!-- 工业规格小标条 -->
-        <div class="hero-spec-strip mono">
-          <span class="spec-pill">DOCKER CGROUPS V2</span>
-          <span class="spec-dot">·</span>
-          <span class="spec-pill">MYSQL 8.0 临时库</span>
-          <span class="spec-dot">·</span>
-          <span class="spec-pill">PLAYWRIGHT + AI 审计</span>
-        </div>
+        <!-- 核心引擎导航条（诚实对齐已上线四大主路由） -->
+        <nav class="hero-spec-strip mono" aria-label="核心评测引擎导航">
+          <RouterLink to="/questions" class="spec-pill">算法 OJ · Docker 沙箱</RouterLink>
+          <RouterLink to="/database" class="spec-pill">数据库 OJ · MySQL 8.0</RouterLink>
+          <RouterLink to="/objective" class="spec-pill">客观题 · 自动批改</RouterLink>
+          <RouterLink to="/exams" class="spec-pill">赛制考核 · 在线考试</RouterLink>
+        </nav>
       </div>
 
       <!-- 右侧真实沙箱评测集群控制台（硬核工控控制台） -->
@@ -429,10 +368,10 @@ onMounted(async () => {
 
     <HomePracticeBoard />
 
-    <!-- 交互式技术体验区：实时沙箱评测终端（支持惰性加载打字动效与真实沙箱评测联动） -->
+    <!-- 交互式技术体验区：沙箱评测终端体验（明确标注每日模板与演练样例来源） -->
     <section ref="terminalSectionRef" class="demo-section container">
       <div class="demo-header">
-        <div class="demo-eyebrow mono">// SANDBOX RUNNER · LIVE VERDICT</div>
+        <div class="demo-eyebrow mono">// SANDBOX RUNNER · INTERACTIVE PREVIEW</div>
         <h2 class="demo-title">真实评测闭环体验</h2>
         <p class="demo-desc">
           基于 Linux 强隔离容器沙箱与独立 MySQL 临时库，提供毫秒级、防作弊、确定性的技术评测。
@@ -449,22 +388,28 @@ onMounted(async () => {
 
           <div class="terminal-tabs">
             <button
+              type="button"
               class="terminal-tab"
               :class="{ active: activeTab === 'algo' }"
+              :aria-pressed="activeTab === 'algo'"
               @click="activeTab = 'algo'"
             >
               Java 算法 OJ
             </button>
             <button
+              type="button"
               class="terminal-tab"
               :class="{ active: activeTab === 'sql' }"
+              :aria-pressed="activeTab === 'sql'"
               @click="activeTab = 'sql'"
             >
               SQL 数据库 OJ
             </button>
             <button
+              type="button"
               class="terminal-tab"
               :class="{ active: activeTab === 'exam' }"
+              :aria-pressed="activeTab === 'exam'"
               @click="activeTab = 'exam'"
             >
               ACM 考试结算
@@ -475,9 +420,14 @@ onMounted(async () => {
               title="重新播放代码打字与沙箱判定动效"
               @click="replayTyping"
             >
-              <svg viewBox="0 0 16 16" fill="currentColor" class="replay-icon">
-                <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
-                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+              <svg viewBox="0 0 16 16" fill="currentColor" class="replay-icon" aria-hidden="true">
+                <path
+                  fill-rule="evenodd"
+                  d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"
+                />
+                <path
+                  d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"
+                />
               </svg>
               <span>重播</span>
             </button>
@@ -485,30 +435,37 @@ onMounted(async () => {
         </div>
 
         <div class="terminal-meta-bar">
-          <span class="file-name">{{ demos[activeTab].filename }}</span>
-          <span class="lang-tag">{{ demos[activeTab].langBadge }}</span>
+          <div class="terminal-meta-info">
+            <span class="file-name">{{ demos[activeTab].filename }}</span>
+            <span class="lang-tag">{{ demos[activeTab].langBadge }}</span>
+          </div>
+          <span class="snippet-source-badge" :class="isLiveSnippet ? 'is-live' : 'is-simulation'">
+            {{ snippetSourceLabel }}
+          </span>
         </div>
 
-        <div ref="terminalBodyRef" class="terminal-body">
+        <div class="terminal-body">
           <div class="terminal-code-wrapper">
             <div class="line-numbers mono" aria-hidden="true">
               <span v-for="n in totalLines" :key="n">{{ n }}</span>
             </div>
-            <pre class="code-view mono"><template v-if="!hasTriggeredScroll"><span class="waiting-hint">// 终端待命中 · 滚动进入视口自动启动沙箱...</span></template><template v-else><code v-html="highlightedCode"></code><span class="terminal-cursor" :class="{ typing: isTyping }"></span></template></pre>
+            <!-- eslint-disable vue/no-v-html -- highlightedCode 已经过 Prism 高亮与 DOMPurify 清洗 -->
+            <pre
+              class="code-view mono"
+            ><template v-if="!hasTriggeredScroll"><span class="waiting-hint">// 终端待命中 · 滚动进入视口自动启动沙箱...</span></template><template v-else><code v-html="highlightedCode"></code><span class="terminal-cursor" :class="{ typing: isTyping }" aria-hidden="true"></span></template></pre>
+            <!-- eslint-enable vue/no-v-html -->
           </div>
         </div>
 
         <div class="terminal-hud">
           <div class="hud-status-row">
             <template v-if="!hasTriggeredScroll">
-              <span class="verdict-tag status-idle mono">
-                ● STANDBY 待命
-              </span>
+              <span class="verdict-tag status-idle mono"> ● STANDBY 待命 </span>
               <span class="verdict-detail">沙箱环境就绪 · 滚动至此加载全流程评测</span>
             </template>
             <template v-else-if="!isVerdictReady">
               <span class="verdict-tag status-running mono">
-                <span class="pulse-spin"></span>
+                <span class="pulse-spin" aria-hidden="true"></span>
                 <span>SANDBOX EXECUTING...</span>
               </span>
               <span class="verdict-detail mono">
@@ -516,26 +473,34 @@ onMounted(async () => {
               </span>
             </template>
             <template v-else>
-              <span class="verdict-tag" :class="[demos[activeTab].verdict.statusClass, 'just-arrived']">
+              <span
+                class="verdict-tag"
+                :class="[demos[activeTab].verdict.statusClass, 'just-arrived']"
+              >
                 ● {{ demos[activeTab].verdict.status }}
               </span>
               <span class="verdict-detail">{{ demos[activeTab].verdict.details }}</span>
             </template>
           </div>
           <div class="hud-metric-row">
-            <div
-              v-for="m in demos[activeTab].verdict.metrics"
-              :key="m.label"
-              class="metric-item"
-            >
+            <div v-for="m in demos[activeTab].verdict.metrics" :key="m.label" class="metric-item">
               <div class="metric-title">{{ m.label }}</div>
               <div class="metric-data" :class="{ 'is-loading': !isVerdictReady }">
                 <span v-if="isVerdictReady">{{ m.value }}</span>
                 <span v-else-if="!hasTriggeredScroll" class="metric-idle mono">待测</span>
                 <span v-else class="metric-skeleton mono">
-                  <span v-if="m.label.includes('耗时') || m.label.includes('执行')">{{ (testingProgress * 1.5).toFixed(0) }} ms...</span>
+                  <span v-if="m.label.includes('耗时') || m.label.includes('执行')"
+                    >{{ (testingProgress * 1.5).toFixed(0) }} ms...</span
+                  >
                   <span v-else-if="m.label.includes('内存')">cgroups 采样</span>
-                  <span v-else-if="m.label.includes('测试点') || m.label.includes('数据') || m.label.includes('通过')">{{ testingProgress }} / 10 判定</span>
+                  <span
+                    v-else-if="
+                      m.label.includes('测试点') ||
+                      m.label.includes('数据') ||
+                      m.label.includes('通过')
+                    "
+                    >{{ testingProgress }} / 10 判定</span
+                  >
                   <span v-else>实时计算中...</span>
                 </span>
               </div>
@@ -544,33 +509,25 @@ onMounted(async () => {
         </div>
       </div>
     </section>
-
-    <!-- 底部行动区 CTA（对齐项目浅色直角工业风） -->
-    <section class="cta-section container">
-      <div class="cta-card">
-        <div class="cta-left">
-          <div class="cta-eyebrow mono">// READY FOR ASSESSMENT</div>
-          <h2 class="cta-title">准备好开启专业级技术测评了吗？</h2>
-          <p class="cta-desc">
-            无论是日常算法与 SQL 训练，还是举办随堂课练与正规机考，KECE 现已全面就绪。
-          </p>
-        </div>
-        <div class="cta-right">
-          <button class="btn btn-primary btn-lg" @click="start">开始使用 →</button>
-          <RouterLink to="/exams" class="btn btn-ghost btn-lg">参加在线考试</RouterLink>
-        </div>
-      </div>
-    </section>
   </div>
 </template>
 
 <style scoped>
 .home {
-  padding-bottom: 84px;
+  padding-bottom: 40px;
 }
 
 .mono {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, 'PingFang SC', 'Microsoft YaHei', monospace;
+  font-family: var(
+    --font-mono,
+    'SFMono-Regular',
+    Consolas,
+    'Liberation Mono',
+    Menlo,
+    'PingFang SC',
+    'Microsoft YaHei',
+    monospace
+  );
 }
 
 /* =========================================
@@ -586,7 +543,7 @@ onMounted(async () => {
 }
 
 .hero-text {
-  max-width: 490px;
+  max-width: 520px;
 }
 
 .hero-eyebrow {
@@ -604,93 +561,14 @@ onMounted(async () => {
   letter-spacing: -0.6px;
   color: var(--ink);
   margin: 0 0 18px;
-  cursor: default;
-}
-
-/* =========================================
-   Trae 官网风格故障风切片 Hover 动效 (Glitch Slicing)
-   ========================================= */
-.trae-glitch-wrapper {
-  position: relative;
-  display: inline-block;
-}
-
-.trae-glitch {
-  position: relative;
-  display: inline-block;
-  user-select: none;
-}
-
-.trae-glitch::before,
-.trae-glitch::after {
-  content: attr(data-text);
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  color: var(--ink);
-  background: var(--bg);
-  pointer-events: none;
-  opacity: 0;
-}
-
-/* 仅在鼠标主动滑动（.is-glitching）时触发切片与阶梯位移；鼠标静止或离开时完全静止，绝不持续自颤 */
-.trae-glitch-wrapper.is-glitching .trae-glitch::before {
-  opacity: 1;
-  clip-path: var(--clip-1, polygon(0 20%, 100% 20%, 100% 40%, 0 40%, 0 65%, 100% 65%, 100% 85%, 0 85%));
-  transform: translate(var(--shift-1, 10px), 0);
-  transition: transform 0.04s ease-out;
-}
-
-.trae-glitch-wrapper.is-glitching .trae-glitch::after {
-  opacity: 1;
-  clip-path: var(--clip-2, polygon(0 10%, 100% 10%, 100% 30%, 0 30%, 0 50%, 100% 50%, 100% 70%, 0 70%));
-  transform: translate(var(--shift-2, -10px), 0);
-  transition: transform 0.04s ease-out;
 }
 
 .hero-sub {
-  position: relative;
   font-size: 15.5px;
   line-height: 1.65;
   color: var(--ink-secondary);
   margin: 0 0 32px;
   font-weight: 400;
-}
-
-.hero-sub-ghost {
-  display: block;
-  visibility: hidden;
-  pointer-events: none;
-  user-select: none;
-}
-
-.hero-sub-typed {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-}
-
-.typewriter-cursor {
-  display: inline-block;
-  width: 2px;
-  height: 1.05em;
-  background-color: var(--ink);
-  vertical-align: text-bottom;
-  margin-left: 2px;
-  animation: typewriter-blink 0.85s step-end infinite;
-}
-
-@keyframes typewriter-blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
 }
 
 .hero-actions {
@@ -717,21 +595,33 @@ onMounted(async () => {
 .hero-spec-strip {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--ink-tertiary);
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
 }
 
 .spec-pill {
-  padding: 2px 6px;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  background: var(--kece-surface-muted, #f8fafc);
+  border: 1px solid var(--kece-border, var(--line));
   color: var(--ink-secondary);
+  text-decoration: none;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background-color 0.15s ease;
 }
 
-.spec-dot {
-  color: var(--ink-tertiary);
+.spec-pill:hover {
+  border-color: var(--kece-accent);
+  color: var(--kece-accent-ink, #0f5f53);
+  background: var(--kece-accent-soft, #eef6f4);
 }
 
 .hero-visual {
@@ -746,7 +636,7 @@ onMounted(async () => {
    ========================================= */
 .demo-section {
   padding-top: 12px;
-  padding-bottom: 68px;
+  padding-bottom: 48px;
 }
 
 .demo-header {
@@ -788,10 +678,16 @@ onMounted(async () => {
     0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
+.terminal-card button:focus-visible {
+  outline: 2px solid #2dd4bf;
+  outline-offset: 2px;
+}
+
 .terminal-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   padding: 12px 20px;
   background: #1b1b1d;
   border-bottom: 1px solid #28282a;
@@ -802,10 +698,10 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 12px;
   font-weight: 600;
-  color: #8c8c90;
+  color: #cbd5e1;
   letter-spacing: 0.5px;
 }
 
@@ -813,21 +709,22 @@ onMounted(async () => {
   width: 7px;
   height: 7px;
   border-radius: 0;
-  background: #40c057;
-  box-shadow: 0 0 8px rgba(64, 192, 87, 0.7);
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.55);
 }
 
 .terminal-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .terminal-tab {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 12px;
   padding: 5px 14px;
   border-radius: var(--pill);
-  color: #88888e;
+  color: #a1a7b3;
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
@@ -841,28 +738,56 @@ onMounted(async () => {
 
 .terminal-tab.active {
   color: #ffffff;
-  background: #2c2c30;
-  border-color: #404046;
+  background: #222a29;
+  border-color: #2dd4bf;
 }
 
 .terminal-meta-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   padding: 8px 20px;
   background: #171719;
   border-bottom: 1px solid #232326;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 12px;
-  color: #66666e;
+  color: #a1a7b3;
+}
+
+.terminal-meta-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .file-name {
-  color: #9da0a8;
+  color: #cbd5e1;
 }
 
 .lang-tag {
-  color: #7b7e87;
+  color: #a1a7b3;
+}
+
+.snippet-source-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  letter-spacing: 0.04em;
+  border-radius: 0px;
+}
+
+.snippet-source-badge.is-live {
+  color: #2dd4bf;
+  background: rgba(45, 212, 191, 0.14);
+  border: 1px solid rgba(45, 212, 191, 0.38);
+}
+
+.snippet-source-badge.is-simulation {
+  color: #cbd5e1;
+  background: rgba(161, 167, 179, 0.14);
+  border: 1px solid rgba(161, 167, 179, 0.35);
 }
 
 .terminal-code-wrapper {
@@ -875,7 +800,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   user-select: none;
-  color: #4b4b52;
+  color: #a1a7b3;
   text-align: right;
   font-size: 13.5px;
   line-height: 1.6;
@@ -888,42 +813,52 @@ onMounted(async () => {
   display: inline-block;
   width: 7.5px;
   height: 15px;
-  background: #3b82f6;
+  background: #2dd4bf;
   vertical-align: -2.5px;
   margin-left: 2px;
   animation: cursorBlink 0.85s infinite;
 }
 
 .terminal-cursor.typing {
-  background: #60a5fa;
+  background: #5eead4;
   animation: none;
   opacity: 1;
 }
 
 @keyframes cursorBlink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 
 .waiting-hint {
-  color: #636674;
+  color: #a1a7b3;
   font-style: italic;
 }
 
 .badge-running-pill {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   padding: 1px 6px;
-  background: rgba(59, 130, 246, 0.2);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.4);
+  background: rgba(45, 212, 191, 0.16);
+  color: #2dd4bf;
+  border: 1px solid rgba(45, 212, 191, 0.42);
   letter-spacing: 0.5px;
   animation: pulseRunning 1.2s infinite;
 }
 
 @keyframes pulseRunning {
-  0%, 100% { opacity: 0.9; }
-  50% { opacity: 0.45; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
 }
 
 .btn-replay {
@@ -938,20 +873,20 @@ onMounted(async () => {
 }
 
 .live-dot.is-running {
-  background: #3b82f6;
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.9);
+  background: #2dd4bf;
+  box-shadow: 0 0 10px rgba(45, 212, 191, 0.75);
 }
 
 .verdict-tag.status-idle {
-  background: rgba(140, 140, 144, 0.14);
-  color: #9da0a8;
-  border: 1px solid rgba(140, 140, 144, 0.28);
+  background: rgba(161, 167, 179, 0.14);
+  color: #cbd5e1;
+  border: 1px solid rgba(161, 167, 179, 0.35);
 }
 
 .verdict-tag.status-running {
-  background: rgba(59, 130, 246, 0.16);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.38);
+  background: rgba(45, 212, 191, 0.16);
+  color: #2dd4bf;
+  border: 1px solid rgba(45, 212, 191, 0.4);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -961,14 +896,16 @@ onMounted(async () => {
   display: inline-block;
   width: 8px;
   height: 8px;
-  border: 1.5px solid rgba(96, 165, 250, 0.3);
-  border-top-color: #60a5fa;
-  border-radius: 50%;
+  border: 1.5px solid rgba(45, 212, 191, 0.32);
+  border-top-color: #2dd4bf;
+  border-radius: 0px;
   animation: spinVerdict 0.6s linear infinite;
 }
 
 @keyframes spinVerdict {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .verdict-tag.just-arrived {
@@ -976,30 +913,49 @@ onMounted(async () => {
 }
 
 @keyframes verdictPopIn {
-  0% { transform: scale(1.08); filter: brightness(1.5); }
-  100% { transform: scale(1); filter: brightness(1); }
+  0% {
+    transform: scale(1.08);
+    filter: brightness(1.5);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
 }
 
 .metric-idle {
-  color: #55555c;
+  color: #a1a7b3;
   font-size: 12px;
 }
 
 .metric-skeleton {
-  color: #60a5fa;
+  color: #2dd4bf;
   font-size: 12px;
   animation: skeletonPulse 1s infinite alternate;
 }
 
 @keyframes skeletonPulse {
-  0% { opacity: 0.6; }
-  100% { opacity: 1; }
+  0% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 .terminal-body {
   padding: 20px;
   background: #111112;
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(
+    --font-mono,
+    'JetBrains Mono',
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace
+  );
   font-size: 13.5px;
   line-height: 1.6;
   overflow-x: auto;
@@ -1025,7 +981,8 @@ onMounted(async () => {
   margin: 0;
   color: #e2e4e9;
   white-space: pre;
-  font-family: 'Consolas', 'SFMono-Regular', 'Liberation Mono', Menlo, Monaco, 'Courier New', monospace !important;
+  font-family:
+    'Consolas', 'SFMono-Regular', 'Liberation Mono', Menlo, Monaco, 'Courier New', monospace !important;
   font-size: 13.5px;
   line-height: 1.6;
   tab-size: 4;
@@ -1071,7 +1028,7 @@ onMounted(async () => {
 }
 
 .code-view :deep(.token.comment) {
-  color: #7f848e;
+  color: #a1a7b3;
   font-style: italic;
 }
 
@@ -1080,7 +1037,7 @@ onMounted(async () => {
 }
 
 .code-view :deep(.token.punctuation) {
-  color: #abb2bf;
+  color: #cbd5e1;
 }
 
 .code-view :deep(.token.property) {
@@ -1088,7 +1045,7 @@ onMounted(async () => {
 }
 
 .code-view :deep(.token.namespace) {
-  color: #abb2bf;
+  color: #cbd5e1;
 }
 
 .terminal-hud {
@@ -1101,12 +1058,13 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 14px;
 }
 
 .verdict-tag {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 12px;
   font-weight: 700;
   padding: 3px 12px;
@@ -1114,20 +1072,20 @@ onMounted(async () => {
 }
 
 .verdict-tag.status-ac {
-  background: rgba(47, 158, 68, 0.16);
-  color: #40c057;
-  border: 1px solid rgba(47, 158, 68, 0.35);
+  background: rgba(47, 158, 68, 0.18);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.4);
 }
 
 .verdict-tag.status-exam {
-  background: rgba(34, 139, 230, 0.16);
-  color: #4dabf7;
-  border: 1px solid rgba(34, 139, 230, 0.35);
+  background: rgba(45, 212, 191, 0.16);
+  color: #2dd4bf;
+  border: 1px solid rgba(45, 212, 191, 0.4);
 }
 
 .verdict-detail {
   font-size: 12px;
-  color: #8c8f98;
+  color: #cbd5e1;
 }
 
 .hud-metric-row {
@@ -1145,72 +1103,19 @@ onMounted(async () => {
 
 .metric-title {
   font-size: 11px;
-  color: #72747d;
+  color: #a1a7b3;
   margin-bottom: 2px;
 }
 
 .metric-data {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 13px;
   font-weight: 600;
   color: #ffffff;
 }
 
 /* =========================================
-   4. 底部 CTA 行动区（对齐项目浅色直角卡片风格）
-   ========================================= */
-.cta-section {
-  padding-top: 8px;
-}
-
-.cta-card {
-  background: var(--surface);
-  border-radius: 0;
-  border: 1px solid var(--line);
-  padding: 40px 44px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 32px;
-  box-shadow: var(--shadow-sm);
-}
-
-.cta-eyebrow {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  color: var(--ink-tertiary);
-  margin-bottom: 8px;
-}
-
-.cta-title {
-  font-size: 25px;
-  font-weight: 700;
-  color: var(--ink);
-  margin: 0 0 8px;
-  letter-spacing: -0.4px;
-}
-
-.cta-desc {
-  font-size: 14.5px;
-  color: var(--ink-secondary);
-  margin: 0;
-  max-width: 520px;
-  line-height: 1.6;
-}
-
-.cta-right {
-  display: flex;
-  gap: 14px;
-  flex-shrink: 0;
-}
-
-.cta-card .btn-ghost {
-  background: #ffffff;
-}
-
-/* =========================================
-   5. 响应式适配
+   4. 响应式与减弱动效适配
    ========================================= */
 @media (max-width: 860px) {
   .hero {
@@ -1232,18 +1137,6 @@ onMounted(async () => {
   .hero-spec-strip {
     justify-content: center;
   }
-  .cta-card {
-    flex-direction: column;
-    text-align: center;
-    padding: 32px 24px;
-  }
-  .cta-right {
-    width: 100%;
-    flex-direction: column;
-  }
-  .cta-right .btn {
-    width: 100%;
-  }
 }
 
 @media (max-width: 640px) {
@@ -1253,8 +1146,27 @@ onMounted(async () => {
   .hud-metric-row {
     grid-template-columns: 1fr;
   }
-  .terminal-tabs {
-    display: none;
+  .terminal-tab {
+    padding: 4px 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-cta,
+  .hero-cta:hover,
+  .spec-pill,
+  .terminal-tab {
+    transition: none;
+    transform: none;
+  }
+
+  .terminal-cursor,
+  .badge-running-pill,
+  .pulse-spin,
+  .verdict-tag.just-arrived,
+  .metric-skeleton {
+    animation: none;
+    opacity: 1;
   }
 }
 </style>

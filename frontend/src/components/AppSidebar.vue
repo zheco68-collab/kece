@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 
@@ -24,26 +24,149 @@ function getInitialCollapsed(): boolean {
 // 侧边栏折叠状态：读取 localStorage 记忆或默认为展开 (false)
 const isCollapsed = ref(getInitialCollapsed())
 
-// 题库手风琴折叠状态（展开模式下可用，默认初始收起）
-const isQuestionsAccordionOpen = ref(false)
+const questionsGroupRef = ref<HTMLElement | null>(null)
+const questionsTriggerRef = ref<HTMLButtonElement | null>(null)
+const problemSetsGroupRef = ref<HTMLElement | null>(null)
+const problemSetsTriggerRef = ref<HTMLButtonElement | null>(null)
 
-// 悬浮气泡防抖与状态（折叠模式下题库子菜单）
-const isFlyoutVisible = ref(false)
-let flyoutTimer: ReturnType<typeof setTimeout> | null = null
+function createAccordionFlyout(
+  groupRef: Ref<HTMLElement | null>,
+  triggerRef: Ref<HTMLButtonElement | null>
+) {
+  const isAccordionOpen = ref(false)
+  const isFlyoutVisible = ref(false)
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let suppressFocusOpen = false
 
-// 题集手风琴折叠状态（展开模式下可用，默认初始收起）
-const isProblemSetsAccordionOpen = ref(false)
+  function clearTimer() {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+  }
 
-// 悬浮气泡防抖与状态（折叠模式下题集子菜单）
-const isPsFlyoutVisible = ref(false)
-let psFlyoutTimer: ReturnType<typeof setTimeout> | null = null
+  function closeFlyout() {
+    clearTimer()
+    isFlyoutVisible.value = false
+  }
+
+  function openFlyout(closeOther: () => void) {
+    if (!isCollapsed.value) return
+    clearTimer()
+    closeOther()
+    isFlyoutVisible.value = true
+  }
+
+  function onMouseLeave() {
+    if (!isCollapsed.value) return
+    clearTimer()
+    timer = setTimeout(() => {
+      const activeEl = document.activeElement
+      if (activeEl && groupRef.value?.contains(activeEl)) {
+        return
+      }
+      isFlyoutVisible.value = false
+    }, 120)
+  }
+
+  function onFocusIn(closeOther: () => void) {
+    if (!isCollapsed.value) return
+    if (suppressFocusOpen) {
+      suppressFocusOpen = false
+      return
+    }
+    openFlyout(closeOther)
+  }
+
+  function onFocusOut(event: FocusEvent) {
+    if (!isCollapsed.value) return
+    const nextTarget = event.relatedTarget as Node | null
+    if (nextTarget && groupRef.value?.contains(nextTarget)) {
+      return
+    }
+    closeFlyout()
+  }
+
+  function handleTriggerClick(expandAndOpen: () => void) {
+    clearTimer()
+    isFlyoutVisible.value = false
+    if (isCollapsed.value) {
+      expandAndOpen()
+      isAccordionOpen.value = true
+    } else {
+      isAccordionOpen.value = !isAccordionOpen.value
+    }
+  }
+
+  function closeOnEscape() {
+    clearTimer()
+    const wasOpen = isAccordionOpen.value || isFlyoutVisible.value
+    isAccordionOpen.value = false
+    isFlyoutVisible.value = false
+    if (wasOpen && triggerRef.value && document.activeElement !== triggerRef.value) {
+      suppressFocusOpen = true
+      triggerRef.value.focus()
+      suppressFocusOpen = false
+    }
+  }
+
+  async function openAndFocusFirst(event: KeyboardEvent, closeOther: () => void) {
+    if (!isCollapsed.value) return
+    event.preventDefault()
+    openFlyout(closeOther)
+    await nextTick()
+    const firstLink = groupRef.value?.querySelector<HTMLElement>('.flyout-item')
+    firstLink?.focus()
+  }
+
+  return {
+    isAccordionOpen,
+    isFlyoutVisible,
+    closeFlyout,
+    openFlyout,
+    onMouseLeave,
+    onFocusIn,
+    onFocusOut,
+    handleTriggerClick,
+    closeOnEscape,
+    openAndFocusFirst,
+  }
+}
+
+const questionsMenu = createAccordionFlyout(questionsGroupRef, questionsTriggerRef)
+const problemSetsMenu = createAccordionFlyout(problemSetsGroupRef, problemSetsTriggerRef)
+
+const isQuestionsAccordionOpen = questionsMenu.isAccordionOpen
+const isFlyoutVisible = questionsMenu.isFlyoutVisible
+
+const isProblemSetsAccordionOpen = problemSetsMenu.isAccordionOpen
+const isPsFlyoutVisible = problemSetsMenu.isFlyoutVisible
 
 onMounted(() => {
   emit('collapse-change', isCollapsed.value)
 })
 
+onBeforeUnmount(() => {
+  questionsMenu.closeFlyout()
+  problemSetsMenu.closeFlyout()
+})
+
+function expandSidebar() {
+  isCollapsed.value = false
+  questionsMenu.closeFlyout()
+  problemSetsMenu.closeFlyout()
+  try {
+    localStorage.setItem(STORAGE_KEY, 'false')
+  } catch {
+    // 忽略异常
+  }
+  emit('collapse-change', false)
+}
+
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value
+  questionsMenu.closeFlyout()
+  problemSetsMenu.closeFlyout()
   try {
     localStorage.setItem(STORAGE_KEY, String(isCollapsed.value))
   } catch {
@@ -70,13 +193,14 @@ function isQuestionsActive(): boolean {
   )
 }
 
-// 路由监听：若路由属于题库或题集任一模块，自动展开手风琴
 // 路由激活监听：根据当前路由自动展开激活模块的手风琴；非激活模块默认保持收起
 watch(
   () => [route.path, route.query.practiceCode, route.query.setId],
   () => {
     isQuestionsAccordionOpen.value = isQuestionsActive() && !isCollapsed.value
     isProblemSetsAccordionOpen.value = isProblemSetsActive() && !isCollapsed.value
+    questionsMenu.closeFlyout()
+    problemSetsMenu.closeFlyout()
   },
   { immediate: true }
 )
@@ -128,70 +252,60 @@ function isPsSubActive(cat: string): boolean {
 }
 
 function onQuestionsHeaderClick() {
-  if (isCollapsed.value) {
-    // 68px 折叠模式下点击题库：展开侧边栏并打开手风琴
-    isCollapsed.value = false
-    try {
-      localStorage.setItem(STORAGE_KEY, 'false')
-    } catch {
-      // 忽略存储异常
-    }
-    emit('collapse-change', false)
-    isQuestionsAccordionOpen.value = true
-  } else {
-    // 展开模式下：点击题库整行纯粹作为手风琴折叠/展开开关，绝对不触发路由跳转
-    isQuestionsAccordionOpen.value = !isQuestionsAccordionOpen.value
-  }
+  questionsMenu.handleTriggerClick(expandSidebar)
 }
 
 function onProblemSetsHeaderClick() {
-  if (isCollapsed.value) {
-    // 68px 折叠模式下点击题集：展开侧边栏并打开手风琴
-    isCollapsed.value = false
-    try {
-      localStorage.setItem(STORAGE_KEY, 'false')
-    } catch {
-      // 忽略存储异常
-    }
-    emit('collapse-change', false)
-    isProblemSetsAccordionOpen.value = true
-  } else {
-    // 展开模式下：点击题集父项整行纯粹作为手风琴折叠/展开开关，绝对不触发路由跳转
-    isProblemSetsAccordionOpen.value = !isProblemSetsAccordionOpen.value
-  }
+  problemSetsMenu.handleTriggerClick(expandSidebar)
 }
 
-// 折叠态 68px 悬浮气泡进入与移出控制
+// 折叠态 68px 悬浮气泡鼠标与键盘控制
 function onFlyoutMouseEnter() {
-  if (!isCollapsed.value) return
-  if (flyoutTimer) {
-    clearTimeout(flyoutTimer)
-    flyoutTimer = null
-  }
-  isFlyoutVisible.value = true
+  questionsMenu.openFlyout(problemSetsMenu.closeFlyout)
 }
 
 function onFlyoutMouseLeave() {
-  if (!isCollapsed.value) return
-  flyoutTimer = setTimeout(() => {
-    isFlyoutVisible.value = false
-  }, 120)
+  questionsMenu.onMouseLeave()
+}
+
+function onQuestionsFocusIn() {
+  questionsMenu.onFocusIn(problemSetsMenu.closeFlyout)
+}
+
+function onQuestionsFocusOut(event: FocusEvent) {
+  questionsMenu.onFocusOut(event)
+}
+
+function closeQuestionsOnEscape() {
+  questionsMenu.closeOnEscape()
+}
+
+function onQuestionsArrowDown(event: KeyboardEvent) {
+  questionsMenu.openAndFocusFirst(event, problemSetsMenu.closeFlyout)
 }
 
 function onPsFlyoutMouseEnter() {
-  if (!isCollapsed.value) return
-  if (psFlyoutTimer) {
-    clearTimeout(psFlyoutTimer)
-    psFlyoutTimer = null
-  }
-  isPsFlyoutVisible.value = true
+  problemSetsMenu.openFlyout(questionsMenu.closeFlyout)
 }
 
 function onPsFlyoutMouseLeave() {
-  if (!isCollapsed.value) return
-  psFlyoutTimer = setTimeout(() => {
-    isPsFlyoutVisible.value = false
-  }, 120)
+  problemSetsMenu.onMouseLeave()
+}
+
+function onProblemSetsFocusIn() {
+  problemSetsMenu.onFocusIn(questionsMenu.closeFlyout)
+}
+
+function onProblemSetsFocusOut(event: FocusEvent) {
+  problemSetsMenu.onFocusOut(event)
+}
+
+function closeProblemSetsOnEscape() {
+  problemSetsMenu.closeOnEscape()
+}
+
+function onProblemSetsArrowDown(event: KeyboardEvent) {
+  problemSetsMenu.openAndFocusFirst(event, questionsMenu.closeFlyout)
 }
 
 // 身份标签计算
@@ -234,8 +348,10 @@ defineExpose({
         />
       </RouterLink>
       <button
+        type="button"
         class="collapse-toggle-btn"
         :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'"
+        :aria-expanded="!isCollapsed"
         aria-label="折叠或展开侧边栏"
         @click="toggleCollapse"
       >
@@ -246,6 +362,7 @@ defineExpose({
           fill="none"
           stroke="currentColor"
           stroke-width="1.8"
+          aria-hidden="true"
         >
           <polyline points="11 17 6 12 11 7" />
           <polyline points="18 17 13 12 18 7" />
@@ -257,6 +374,7 @@ defineExpose({
           fill="none"
           stroke="currentColor"
           stroke-width="1.8"
+          aria-hidden="true"
         >
           <polyline points="13 17 18 12 13 7" />
           <polyline points="6 17 11 12 6 7" />
@@ -265,7 +383,7 @@ defineExpose({
     </div>
 
     <!-- 中部 8 大导航项列表 -->
-    <nav class="sidebar-nav">
+    <nav class="sidebar-nav" aria-label="主导航">
       <!-- 1. 首页 (精准匹配 /) -->
       <RouterLink
         to="/"
@@ -273,41 +391,45 @@ defineExpose({
         :class="{ active: isHomeActive() }"
         :title="isCollapsed ? '首页' : undefined"
       >
-        <div class="nav-icon-wrap">
+        <span class="nav-icon-wrap" aria-hidden="true">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z" />
             <polyline points="9 21 9 12 15 12 15 21" />
           </svg>
-        </div>
+        </span>
         <span v-if="!isCollapsed" class="nav-label">首页</span>
       </RouterLink>
 
       <!-- 2. 题库 (垂直手风琴子菜单 / 68px 悬浮气泡) -->
       <div
+        ref="questionsGroupRef"
         class="nav-accordion-group"
         :class="{ 'has-flyout': isCollapsed }"
         @mouseenter="onFlyoutMouseEnter"
         @mouseleave="onFlyoutMouseLeave"
+        @focusin="onQuestionsFocusIn"
+        @focusout="onQuestionsFocusOut"
+        @keydown.esc.stop="closeQuestionsOnEscape"
       >
-        <div
+        <button
+          ref="questionsTriggerRef"
+          type="button"
           class="nav-item nav-accordion-trigger"
           :class="{ active: isQuestionsActive(), 'is-open': isQuestionsAccordionOpen && !isCollapsed }"
           :title="isCollapsed ? '题库' : undefined"
-          role="button"
-          tabindex="0"
-          :aria-expanded="isQuestionsAccordionOpen"
+          :aria-expanded="isCollapsed ? isFlyoutVisible : isQuestionsAccordionOpen"
+          :aria-controls="isCollapsed ? 'sidebar-questions-flyout' : 'sidebar-questions-panel'"
           @click="onQuestionsHeaderClick"
-          @keydown.enter="onQuestionsHeaderClick"
-          @keydown.space.prevent="onQuestionsHeaderClick"
+          @keydown.down="onQuestionsArrowDown"
         >
-          <div class="nav-icon-wrap">
+          <span class="nav-icon-wrap" aria-hidden="true">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
               <polyline points="16 18 22 12 16 6" />
               <polyline points="8 6 2 12 8 18" />
             </svg>
-          </div>
+          </span>
           <span v-if="!isCollapsed" class="nav-label">题库</span>
-          <div
+          <span
             v-if="!isCollapsed"
             class="accordion-toggle-indicator"
             :title="isQuestionsAccordionOpen ? '收起子菜单' : '展开子菜单'"
@@ -323,12 +445,13 @@ defineExpose({
             >
               <path d="M1 1l4 4 4-4" />
             </svg>
-          </div>
-        </div>
+          </span>
+        </button>
 
         <!-- 展开模式：垂直手风琴折叠子菜单 -->
         <div
           v-if="!isCollapsed && isQuestionsAccordionOpen"
+          id="sidebar-questions-panel"
           class="accordion-content"
         >
           <RouterLink
@@ -360,6 +483,7 @@ defineExpose({
         <!-- 折叠模式：68px 悬浮直角气泡菜单 (Flyout Popover) -->
         <div
           v-if="isCollapsed && isFlyoutVisible"
+          id="sidebar-questions-flyout"
           class="flyout-popover"
         >
           <div class="flyout-header mono">// 题库分类</div>
@@ -367,7 +491,7 @@ defineExpose({
             to="/questions"
             class="flyout-item"
             :class="{ active: isSubQuestionActive('/questions') }"
-            @click="isFlyoutVisible = false"
+            @click="questionsMenu.closeFlyout"
           >
             <span class="sub-code mono">ALGO</span>
             <span class="flyout-label">算法编程</span>
@@ -376,7 +500,7 @@ defineExpose({
             to="/database"
             class="flyout-item"
             :class="{ active: isSubQuestionActive('/database') }"
-            @click="isFlyoutVisible = false"
+            @click="questionsMenu.closeFlyout"
           >
             <span class="sub-code mono">SQL</span>
             <span class="flyout-label">数据库题</span>
@@ -385,7 +509,7 @@ defineExpose({
             to="/objective"
             class="flyout-item"
             :class="{ active: isSubQuestionActive('/objective') }"
-            @click="isFlyoutVisible = false"
+            @click="questionsMenu.closeFlyout"
           >
             <span class="sub-code mono">QUIZ</span>
             <span class="flyout-label">客观题库</span>
@@ -395,30 +519,34 @@ defineExpose({
 
       <!-- 3. 题集 (垂直手风琴子菜单 / 68px 悬浮气泡) -->
       <div
+        ref="problemSetsGroupRef"
         class="nav-accordion-group"
         :class="{ 'has-flyout': isCollapsed }"
         @mouseenter="onPsFlyoutMouseEnter"
         @mouseleave="onPsFlyoutMouseLeave"
+        @focusin="onProblemSetsFocusIn"
+        @focusout="onProblemSetsFocusOut"
+        @keydown.esc.stop="closeProblemSetsOnEscape"
       >
-        <div
+        <button
+          ref="problemSetsTriggerRef"
+          type="button"
           class="nav-item nav-accordion-trigger"
           :class="{ active: isProblemSetsActive(), 'is-open': isProblemSetsAccordionOpen && !isCollapsed }"
           :title="isCollapsed ? '题集' : undefined"
-          role="button"
-          tabindex="0"
-          :aria-expanded="isProblemSetsAccordionOpen"
+          :aria-expanded="isCollapsed ? isPsFlyoutVisible : isProblemSetsAccordionOpen"
+          :aria-controls="isCollapsed ? 'sidebar-problem-sets-flyout' : 'sidebar-problem-sets-panel'"
           @click="onProblemSetsHeaderClick"
-          @keydown.enter="onProblemSetsHeaderClick"
-          @keydown.space.prevent="onProblemSetsHeaderClick"
+          @keydown.down="onProblemSetsArrowDown"
         >
-          <div class="nav-icon-wrap">
+          <span class="nav-icon-wrap" aria-hidden="true">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
               <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
             </svg>
-          </div>
+          </span>
           <span v-if="!isCollapsed" class="nav-label">题集</span>
-          <div
+          <span
             v-if="!isCollapsed"
             class="accordion-toggle-indicator"
             :title="isProblemSetsAccordionOpen ? '收起子菜单' : '展开子菜单'"
@@ -434,12 +562,13 @@ defineExpose({
             >
               <path d="M1 1l4 4 4-4" />
             </svg>
-          </div>
-        </div>
+          </span>
+        </button>
 
         <!-- 展开模式：垂直手风琴折叠子菜单 -->
         <div
           v-if="!isCollapsed && isProblemSetsAccordionOpen"
+          id="sidebar-problem-sets-panel"
           class="accordion-content"
         >
           <RouterLink
@@ -471,6 +600,7 @@ defineExpose({
         <!-- 折叠模式：68px 悬浮直角气泡菜单 (Flyout Popover) -->
         <div
           v-if="isCollapsed && isPsFlyoutVisible"
+          id="sidebar-problem-sets-flyout"
           class="flyout-popover"
         >
           <div class="flyout-header mono">// PROBLEM SETS</div>
@@ -478,7 +608,7 @@ defineExpose({
             :to="{ path: '/problem-sets', query: { category: 'ALGO' } }"
             class="flyout-item"
             :class="{ active: isPsSubActive('ALGO') }"
-            @click="isPsFlyoutVisible = false"
+            @click="problemSetsMenu.closeFlyout"
           >
             <span class="sub-code mono">ALGO</span>
             <span class="flyout-label">算法题集</span>
@@ -487,7 +617,7 @@ defineExpose({
             :to="{ path: '/problem-sets', query: { category: 'DB' } }"
             class="flyout-item"
             :class="{ active: isPsSubActive('DB') }"
-            @click="isPsFlyoutVisible = false"
+            @click="problemSetsMenu.closeFlyout"
           >
             <span class="sub-code mono">SQL</span>
             <span class="flyout-label">数据库题集</span>
@@ -496,7 +626,7 @@ defineExpose({
             :to="{ path: '/problem-sets', query: { category: 'OBJECTIVE' } }"
             class="flyout-item"
             :class="{ active: isPsSubActive('OBJECTIVE') }"
-            @click="isPsFlyoutVisible = false"
+            @click="problemSetsMenu.closeFlyout"
           >
             <span class="sub-code mono">QUIZ</span>
             <span class="flyout-label">客观题集</span>
@@ -511,13 +641,13 @@ defineExpose({
         :class="{ active: isPracticeActive() }"
         :title="isCollapsed ? '课练' : undefined"
       >
-        <div class="nav-icon-wrap">
+        <span class="nav-icon-wrap" aria-hidden="true">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <path d="M2 3h20" />
             <path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3" />
             <path d="m7 21 5-5 5 5" />
           </svg>
-        </div>
+        </span>
         <span v-if="!isCollapsed" class="nav-label">课练</span>
       </RouterLink>
 
@@ -528,13 +658,13 @@ defineExpose({
         :class="{ active: isExamsActive() }"
         :title="isCollapsed ? '考试' : undefined"
       >
-        <div class="nav-icon-wrap">
+        <span class="nav-icon-wrap" aria-hidden="true">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <circle cx="12" cy="12" r="9" />
             <polyline points="12 6 12 12 15 15" />
             <line x1="12" y1="1" x2="12" y2="3" />
           </svg>
-        </div>
+        </span>
         <span v-if="!isCollapsed" class="nav-label">考试</span>
       </RouterLink>
 
@@ -545,14 +675,14 @@ defineExpose({
         :class="{ active: isRankingsActive() }"
         :title="isCollapsed ? '排名' : undefined"
       >
-        <div class="nav-icon-wrap">
+        <span class="nav-icon-wrap" aria-hidden="true">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <line x1="18" y1="20" x2="18" y2="10" />
             <line x1="12" y1="20" x2="12" y2="4" />
             <line x1="6" y1="20" x2="6" y2="14" />
             <line x1="2" y1="20" x2="22" y2="20" />
           </svg>
-        </div>
+        </span>
         <span v-if="!isCollapsed" class="nav-label">排名</span>
       </RouterLink>
 
@@ -563,12 +693,12 @@ defineExpose({
         :class="{ active: isAnnouncementsActive() }"
         :title="isCollapsed ? '公告栏' : undefined"
       >
-        <div class="nav-icon-wrap">
+        <span class="nav-icon-wrap" aria-hidden="true">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
             <path d="M13.73 21a2 2 0 0 1-3.46 0" />
           </svg>
-        </div>
+        </span>
         <span v-if="!isCollapsed" class="nav-label">公告栏</span>
       </RouterLink>
 
@@ -579,12 +709,12 @@ defineExpose({
         :class="{ active: isProfileActive() }"
         :title="isCollapsed ? '个人主页' : undefined"
       >
-        <div class="nav-icon-wrap">
+        <span class="nav-icon-wrap" aria-hidden="true">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
             <circle cx="12" cy="7" r="4" />
           </svg>
-        </div>
+        </span>
         <span v-if="!isCollapsed" class="nav-label">个人主页</span>
       </RouterLink>
 
@@ -604,7 +734,7 @@ defineExpose({
           :class="{ active: isAdminActive() }"
           :title="isCollapsed ? '管理控制台' : undefined"
         >
-          <div class="nav-icon-wrap">
+          <span class="nav-icon-wrap" aria-hidden="true">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
               <rect x="2" y="3" width="20" height="14" />
               <line x1="8" y1="21" x2="16" y2="21" />
@@ -612,7 +742,7 @@ defineExpose({
               <path d="m7 8 3 3-3 3" />
               <path d="M12 14h5" />
             </svg>
-          </div>
+          </span>
           <span v-if="!isCollapsed" class="nav-label">管理控制台</span>
           <svg
             v-if="!isCollapsed"
@@ -621,6 +751,7 @@ defineExpose({
             fill="none"
             stroke="currentColor"
             stroke-width="1.8"
+            aria-hidden="true"
           >
             <path d="M2 6h8M6 2l4 4-4 4" />
           </svg>
@@ -665,6 +796,7 @@ defineExpose({
 
           <button
             v-if="!isCollapsed"
+            type="button"
             class="logout-btn mono"
             title="退出登录"
             @click="handleLogout"
@@ -675,12 +807,13 @@ defineExpose({
           <!-- 折叠态：紧凑退出小图标 -->
           <button
             v-else
+            type="button"
             class="logout-icon-btn"
             title="退出登录"
             aria-label="退出登录"
             @click="handleLogout"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
               <polyline points="16 17 21 12 16 7" />
               <line x1="21" y1="12" x2="9" y2="12" />
@@ -705,7 +838,7 @@ defineExpose({
           title="登录 / 注册"
           aria-label="登录 / 注册"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
             <polyline points="10 17 15 12 10 7" />
             <line x1="15" y1="12" x2="3" y2="12" />
@@ -721,7 +854,7 @@ defineExpose({
    KECE 工业风极简侧边栏全局变量与基础容器
    ========================================================================== */
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
 }
 
 .app-sidebar {
@@ -850,7 +983,7 @@ defineExpose({
   align-items: center;
   padding: 0 16px;
   gap: 12px;
-  color: #555555;
+  color: var(--ink-secondary, #555555);
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
@@ -869,6 +1002,13 @@ defineExpose({
 .nav-item:hover {
   background: #f8f9fa;
   color: #111111;
+}
+
+.nav-item:focus-visible,
+.sub-nav-item:focus-visible,
+.flyout-item:focus-visible {
+  outline: 2px solid var(--kece-accent, #137969);
+  outline-offset: -2px;
 }
 
 /* 高亮激活规范：左侧 3px 纯黑高亮条，浅灰背景 */
@@ -911,6 +1051,13 @@ defineExpose({
 }
 
 .nav-accordion-trigger {
+  width: 100%;
+  background: transparent;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  font-family: inherit;
+  text-align: left;
   cursor: pointer;
   user-select: none;
 }
@@ -922,7 +1069,7 @@ defineExpose({
   width: 20px;
   height: 20px;
   padding: 0;
-  color: #8a8a8a;
+  color: var(--ink-tertiary, #5c6370);
   pointer-events: none;
   transition: color 0.15s ease;
 }
@@ -960,7 +1107,7 @@ defineExpose({
   text-decoration: none;
   font-size: 13px;
   font-weight: 500;
-  color: #555555;
+  color: var(--ink-secondary, #555555);
   border-left: 3px solid transparent;
   border-radius: 0;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
@@ -979,10 +1126,10 @@ defineExpose({
 }
 
 .sub-code {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1;
-  padding: 2px 4px;
+  padding: 2px 5px;
   background: #ffffff;
   border: 1px solid var(--line, #ced4da);
   color: #111111;
@@ -1028,7 +1175,7 @@ defineExpose({
   padding: 6px 14px 4px 14px;
   font-size: 11px;
   font-weight: 600;
-  color: #8a8a8a;
+  color: var(--ink-tertiary, #5c6370);
   border-bottom: 1px solid #f1f3f5;
   letter-spacing: 0.5px;
 }
@@ -1089,7 +1236,7 @@ defineExpose({
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  color: #8a8a8a;
+  color: var(--ink-tertiary, #5c6370);
   white-space: nowrap;
 }
 
@@ -1107,7 +1254,7 @@ defineExpose({
   width: 12px;
   height: 12px;
   margin-left: auto;
-  color: #8a8a8a;
+  color: var(--ink-tertiary, #5c6370);
   transition: transform 0.15s ease, color 0.15s ease;
 }
 
@@ -1215,26 +1362,26 @@ defineExpose({
 
 .role-tag {
   align-self: flex-start;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1;
-  padding: 2px 5px;
+  padding: 2px 6px;
   border-radius: 0;
   letter-spacing: 0.3px;
 }
 
 .role-tag.role-admin,
 .role-admin {
-  background: #7048e8;
+  background: #3730a3;
   color: #ffffff;
-  border: 1px solid #5f3dc4;
+  border: 1px solid #312e81;
 }
 
 .role-tag.role-teacher,
 .role-teacher {
-  background: #2b8a3e;
+  background: var(--kece-accent-ink, #0f5f53);
   color: #ffffff;
-  border: 1px solid #237032;
+  border: 1px solid #0b4a40;
 }
 
 .role-tag.role-student,
@@ -1332,5 +1479,24 @@ defineExpose({
 .auth-icon-btn svg {
   width: 16px;
   height: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar,
+  .collapse-toggle-btn,
+  .nav-item,
+  .accordion-toggle-indicator,
+  .accordion-arrow,
+  .sub-nav-item,
+  .flyout-item,
+  .admin-arrow-icon,
+  .user-avatar-link,
+  .user-name,
+  .logout-btn,
+  .logout-icon-btn,
+  .auth-action-btn,
+  .auth-icon-btn {
+    transition: none;
+  }
 }
 </style>

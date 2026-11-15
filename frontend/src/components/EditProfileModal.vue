@@ -1,175 +1,212 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { profileApi } from '@/api/profile'
-import { useUserStore } from '@/stores/user'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { profileApi } from '@/api/profile';
+import { useUserStore } from '@/stores/user';
 
 const props = defineProps<{
-  visible: boolean
-  initialBio: string | null
-  initialGithubUrl: string | null
-  initialAvatarUrl: string | null
-  username: string
-}>()
+  visible: boolean;
+  initialBio: string | null;
+  initialGithubUrl: string | null;
+  initialAvatarUrl: string | null;
+  username: string;
+}>();
 
 const emit = defineEmits<{
-  (e: 'close'): void
-  (
-    e: 'updated',
-    data: { bio: string; githubUrl: string; avatarUrl: string | null },
-  ): void
-}>()
+  (e: 'close'): void;
+  (e: 'updated', data: { bio: string; githubUrl: string; avatarUrl: string | null }): void;
+}>();
 
-const userStore = useUserStore()
+const userStore = useUserStore();
 
-const bio = ref('')
-const githubUrl = ref('')
-const currentAvatarUrl = ref<string | null>(null)
-const previewAvatarUrl = ref<string | null>(null)
-const selectedFile = ref<File | null>(null)
-const fileInput = ref<HTMLInputElement | null>(null)
+const bio = ref('');
+const githubUrl = ref('');
+const currentAvatarUrl = ref<string | null>(null);
+const previewAvatarUrl = ref<string | null>(null);
+const selectedFile = ref<File | null>(null);
+const fileInput = ref<HTMLInputElement | null>(null);
+const closeBtnRef = ref<HTMLButtonElement | null>(null);
+let returnFocusEl: HTMLElement | null = null;
 
-const saving = ref(false)
-const uploadingAvatar = ref(false)
-const errorMessage = ref('')
-const successNotice = ref('')
+const saving = ref(false);
+const uploadingAvatar = ref(false);
+const errorMessage = ref('');
+const successNotice = ref('');
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && props.visible) {
+    e.preventDefault();
+    handleClose();
+  }
+}
 
 watch(
   () => props.visible,
-  (val) => {
+  (val, prev) => {
     if (val) {
-      bio.value = props.initialBio || ''
-      githubUrl.value = props.initialGithubUrl || ''
-      currentAvatarUrl.value = props.initialAvatarUrl || null
-      previewAvatarUrl.value = null
-      selectedFile.value = null
-      errorMessage.value = ''
-      successNotice.value = ''
+      returnFocusEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      bio.value = props.initialBio || '';
+      githubUrl.value = props.initialGithubUrl || '';
+      currentAvatarUrl.value = props.initialAvatarUrl || null;
+      previewAvatarUrl.value = null;
+      selectedFile.value = null;
+      errorMessage.value = '';
+      successNotice.value = '';
+      window.addEventListener('keydown', handleKeydown);
+      nextTick(() => {
+        closeBtnRef.value?.focus();
+      });
+    } else if (prev) {
+      window.removeEventListener('keydown', handleKeydown);
+      const target = returnFocusEl;
+      returnFocusEl = null;
+      nextTick(() => {
+        target?.focus();
+      });
     }
   },
   { immediate: true },
-)
+);
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeydown);
+});
 
 function triggerFileInput() {
-  fileInput.value?.click()
+  fileInput.value?.click();
 }
 
 function onFileChange(e: Event) {
-  errorMessage.value = ''
-  successNotice.value = ''
-  const target = e.target as HTMLInputElement
-  if (!target.files || target.files.length === 0) return
+  errorMessage.value = '';
+  successNotice.value = '';
+  const target = e.target as HTMLInputElement;
+  if (!target.files || target.files.length === 0) return;
 
-  const file = target.files[0]
+  const file = target.files[0];
   // 校验大小：5MB
   if (file.size > 5 * 1024 * 1024) {
-    errorMessage.value = '图片大小不能超过 5MB'
-    target.value = ''
-    return
+    errorMessage.value = '图片大小不能超过 5MB';
+    target.value = '';
+    return;
   }
 
   // 校验格式
-  const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+  const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
   if (!validTypes.includes(file.type)) {
-    errorMessage.value = '仅支持 JPG、PNG、WEBP、GIF 格式的图片'
-    target.value = ''
-    return
+    errorMessage.value = '仅支持 JPG、PNG、WEBP、GIF 格式的图片';
+    target.value = '';
+    return;
   }
 
-  selectedFile.value = file
-  previewAvatarUrl.value = URL.createObjectURL(file)
+  selectedFile.value = file;
+  previewAvatarUrl.value = URL.createObjectURL(file);
 }
 
 async function handleUploadAvatar() {
-  if (!selectedFile.value) return
-  uploadingAvatar.value = true
-  errorMessage.value = ''
-  successNotice.value = ''
+  if (!selectedFile.value) return;
+  uploadingAvatar.value = true;
+  errorMessage.value = '';
+  successNotice.value = '';
 
   try {
-    const res = await profileApi.uploadAvatar(selectedFile.value)
-    currentAvatarUrl.value = res.avatarUrl
-    previewAvatarUrl.value = null
-    selectedFile.value = null
-    userStore.updateUserInfo({ avatarUrl: res.avatarUrl })
-    successNotice.value = '头像上传成功'
+    const res = await profileApi.uploadAvatar(selectedFile.value);
+    currentAvatarUrl.value = res.avatarUrl;
+    previewAvatarUrl.value = null;
+    selectedFile.value = null;
+    userStore.updateUserInfo({ avatarUrl: res.avatarUrl });
+    successNotice.value = '头像上传成功';
   } catch (err: unknown) {
-    errorMessage.value = err instanceof Error ? err.message : '头像上传失败'
+    errorMessage.value = err instanceof Error ? err.message : '头像上传失败';
   } finally {
-    uploadingAvatar.value = false
+    uploadingAvatar.value = false;
   }
 }
 
 async function handleSave() {
-  errorMessage.value = ''
-  successNotice.value = ''
+  errorMessage.value = '';
+  successNotice.value = '';
 
   // 若选择了新头像但尚未单独点击上传，则先上传头像
   if (selectedFile.value) {
     try {
-      uploadingAvatar.value = true
-      const avatarRes = await profileApi.uploadAvatar(selectedFile.value)
-      currentAvatarUrl.value = avatarRes.avatarUrl
-      previewAvatarUrl.value = null
-      selectedFile.value = null
-      userStore.updateUserInfo({ avatarUrl: avatarRes.avatarUrl })
+      uploadingAvatar.value = true;
+      const avatarRes = await profileApi.uploadAvatar(selectedFile.value);
+      currentAvatarUrl.value = avatarRes.avatarUrl;
+      previewAvatarUrl.value = null;
+      selectedFile.value = null;
+      userStore.updateUserInfo({ avatarUrl: avatarRes.avatarUrl });
     } catch (err: unknown) {
-      errorMessage.value = err instanceof Error ? err.message : '头像上传失败'
-      uploadingAvatar.value = false
-      return
+      errorMessage.value = err instanceof Error ? err.message : '头像上传失败';
+      uploadingAvatar.value = false;
+      return;
     } finally {
-      uploadingAvatar.value = false
+      uploadingAvatar.value = false;
     }
   }
 
-  saving.value = true
+  saving.value = true;
   try {
     const updated = await profileApi.updateProfile({
       bio: bio.value.trim(),
       githubUrl: githubUrl.value.trim(),
-    })
+    });
     userStore.updateUserInfo({
       bio: updated.bio,
       githubUrl: updated.githubUrl,
-    })
+    });
     emit('updated', {
       bio: updated.bio || '',
       githubUrl: updated.githubUrl || '',
       avatarUrl: currentAvatarUrl.value,
-    })
-    emit('close')
+    });
+    emit('close');
   } catch (err: unknown) {
-    errorMessage.value = err instanceof Error ? err.message : '保存个人资料失败'
+    errorMessage.value = err instanceof Error ? err.message : '保存个人资料失败';
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 
 function handleClose() {
-  if (saving.value || uploadingAvatar.value) return
-  emit('close')
+  if (saving.value || uploadingAvatar.value) return;
+  emit('close');
 }
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="visible" class="modal-overlay" @click.self="handleClose">
-      <div class="modal-card" role="dialog" aria-modal="true">
+      <div
+        class="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-profile-modal-title"
+      >
         <div class="modal-header">
-          <h3 class="modal-title">编辑个人资料</h3>
-          <button class="modal-close-btn" type="button" @click="handleClose">✕</button>
+          <h2 id="edit-profile-modal-title" class="modal-title">编辑个人资料</h2>
+          <button
+            ref="closeBtnRef"
+            class="modal-close-btn"
+            type="button"
+            aria-label="关闭"
+            @click="handleClose"
+          >
+            <span aria-hidden="true">✕</span>
+          </button>
         </div>
 
         <div class="modal-body">
-          <div v-if="errorMessage" class="submit-error">
+          <div v-if="errorMessage" class="submit-error" role="alert">
             {{ errorMessage }}
           </div>
-          <div v-if="successNotice" class="submit-success">
+          <div v-if="successNotice" class="submit-success" role="status">
             {{ successNotice }}
           </div>
 
           <!-- 头像设置 -->
           <div class="form-group">
-            <label class="form-label">个人头像 (支持 5MB 以内图片)</label>
+            <label for="edit-profile-avatar-input" class="form-label"
+              >个人头像 (支持 5MB 以内图片)</label
+            >
             <div class="avatar-edit-box">
               <div class="avatar-preview-wrap">
                 <img
@@ -185,6 +222,7 @@ function handleClose() {
 
               <div class="avatar-actions">
                 <input
+                  id="edit-profile-avatar-input"
                   ref="fileInput"
                   type="file"
                   class="hidden-file-input"
@@ -218,10 +256,11 @@ function handleClose() {
           <!-- 个性签名 / Bio -->
           <div class="form-group">
             <div class="label-with-count">
-              <label class="form-label">个人简介 / Slogan</label>
+              <label for="edit-profile-bio" class="form-label">个人简介 / Slogan</label>
               <span class="char-count mono">{{ bio.length }} / 200</span>
             </div>
             <textarea
+              id="edit-profile-bio"
               v-model="bio"
               class="textarea"
               maxlength="200"
@@ -232,8 +271,9 @@ function handleClose() {
 
           <!-- GitHub 主页 -->
           <div class="form-group">
-            <label class="form-label">GitHub 主页链接</label>
+            <label for="edit-profile-github" class="form-label">GitHub 主页链接</label>
             <input
+              id="edit-profile-github"
               v-model="githubUrl"
               type="url"
               class="input"
@@ -413,13 +453,18 @@ function handleClose() {
   font-family: inherit;
   font-size: 14px;
   color: var(--ink);
-  outline: none;
   resize: vertical;
   transition: border-color 0.15s ease;
 }
 
 .textarea:focus {
   border-color: var(--ink);
+}
+
+.textarea:focus-visible {
+  border-color: var(--kece-accent);
+  outline: 2px solid var(--kece-accent);
+  outline-offset: 2px;
 }
 
 .textarea::placeholder {
@@ -434,5 +479,10 @@ function handleClose() {
   border-top: 1px solid var(--line);
   background: var(--bg);
 }
-</style>
 
+@media (prefers-reduced-motion: reduce) {
+  .textarea {
+    transition: none;
+  }
+}
+</style>

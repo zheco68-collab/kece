@@ -1,96 +1,135 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { profileApi } from '@/api/profile'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { profileApi } from '@/api/profile';
 
 const props = defineProps<{
-  visible: boolean
-}>()
+  visible: boolean;
+}>();
 
 const emit = defineEmits<{
-  (e: 'close'): void
-  (e: 'success'): void
-}>()
+  (e: 'close'): void;
+  (e: 'success'): void;
+}>();
 
-const oldPassword = ref('')
-const newPassword = ref('')
-const confirmPassword = ref('')
-const loading = ref(false)
-const errorMessage = ref('')
+const oldPassword = ref('');
+const newPassword = ref('');
+const confirmPassword = ref('');
+const loading = ref(false);
+const errorMessage = ref('');
+const closeBtnRef = ref<HTMLButtonElement | null>(null);
+let returnFocusEl: HTMLElement | null = null;
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && props.visible) {
+    e.preventDefault();
+    handleClose();
+  }
+}
 
 watch(
   () => props.visible,
-  (val) => {
+  (val, prev) => {
     if (val) {
-      oldPassword.value = ''
-      newPassword.value = ''
-      confirmPassword.value = ''
-      errorMessage.value = ''
+      returnFocusEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      oldPassword.value = '';
+      newPassword.value = '';
+      confirmPassword.value = '';
+      errorMessage.value = '';
+      window.addEventListener('keydown', handleKeydown);
+      nextTick(() => {
+        closeBtnRef.value?.focus();
+      });
+    } else if (prev) {
+      window.removeEventListener('keydown', handleKeydown);
+      const target = returnFocusEl;
+      returnFocusEl = null;
+      nextTick(() => {
+        target?.focus();
+      });
     }
   },
-)
+);
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeydown);
+});
 
 async function handleSubmit() {
-  errorMessage.value = ''
+  errorMessage.value = '';
 
   if (!oldPassword.value) {
-    errorMessage.value = '请输入原密码'
-    return
+    errorMessage.value = '请输入原密码';
+    return;
   }
   if (!newPassword.value) {
-    errorMessage.value = '请输入新密码'
-    return
+    errorMessage.value = '请输入新密码';
+    return;
   }
   if (newPassword.value.length < 6) {
-    errorMessage.value = '新密码长度至少需要 6 位'
-    return
+    errorMessage.value = '新密码长度至少需要 6 位';
+    return;
   }
   if (newPassword.value === oldPassword.value) {
-    errorMessage.value = '新密码不能与原密码相同'
-    return
+    errorMessage.value = '新密码不能与原密码相同';
+    return;
   }
   if (newPassword.value !== confirmPassword.value) {
-    errorMessage.value = '两次输入的新密码不一致'
-    return
+    errorMessage.value = '两次输入的新密码不一致';
+    return;
   }
 
-  loading.value = true
+  loading.value = true;
   try {
     await profileApi.changePassword({
       oldPassword: oldPassword.value,
       newPassword: newPassword.value,
-    })
-    emit('success')
-    emit('close')
+    });
+    emit('success');
+    emit('close');
   } catch (err: unknown) {
-    errorMessage.value = err instanceof Error ? err.message : '修改密码失败'
+    errorMessage.value = err instanceof Error ? err.message : '修改密码失败';
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 function handleClose() {
-  if (loading.value) return
-  emit('close')
+  if (loading.value) return;
+  emit('close');
 }
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="visible" class="modal-overlay" @click.self="handleClose">
-      <div class="modal-card" role="dialog" aria-modal="true">
+      <div
+        class="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="change-pwd-modal-title"
+      >
         <div class="modal-header">
-          <h3 class="modal-title">修改密码</h3>
-          <button class="modal-close-btn" type="button" @click="handleClose">✕</button>
+          <h2 id="change-pwd-modal-title" class="modal-title">修改密码</h2>
+          <button
+            ref="closeBtnRef"
+            class="modal-close-btn"
+            type="button"
+            aria-label="关闭"
+            @click="handleClose"
+          >
+            <span aria-hidden="true">✕</span>
+          </button>
         </div>
 
         <form class="modal-body" @submit.prevent="handleSubmit">
-          <div v-if="errorMessage" class="submit-error">
+          <div v-if="errorMessage" class="submit-error" role="alert">
             {{ errorMessage }}
           </div>
 
           <div class="form-group">
-            <label class="form-label">原密码</label>
+            <label for="cp-old-pwd" class="form-label">原密码</label>
             <input
+              id="cp-old-pwd"
               v-model="oldPassword"
               type="password"
               class="input"
@@ -100,8 +139,9 @@ function handleClose() {
           </div>
 
           <div class="form-group">
-            <label class="form-label">新密码</label>
+            <label for="cp-new-pwd" class="form-label">新密码</label>
             <input
+              id="cp-new-pwd"
               v-model="newPassword"
               type="password"
               class="input"
@@ -111,8 +151,9 @@ function handleClose() {
           </div>
 
           <div class="form-group">
-            <label class="form-label">确认新密码</label>
+            <label for="cp-confirm-pwd" class="form-label">确认新密码</label>
             <input
+              id="cp-confirm-pwd"
               v-model="confirmPassword"
               type="password"
               class="input"
@@ -130,11 +171,7 @@ function handleClose() {
             >
               取消
             </button>
-            <button
-              class="btn btn-primary btn-sm"
-              type="submit"
-              :disabled="loading"
-            >
+            <button class="btn btn-primary btn-sm" type="submit" :disabled="loading">
               {{ loading ? '提交中…' : '确认修改' }}
             </button>
           </div>
@@ -222,4 +259,3 @@ function handleClose() {
   border-top: 1px solid var(--line);
 }
 </style>
-

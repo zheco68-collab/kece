@@ -1,0 +1,741 @@
+/* =========================================================
+   KECE 三题库共享 Precision Lab HUD 列表样式
+   覆盖：算法编程 (/questions)、数据库实践 (/database)、客观题 (/objective)
+   ========================================================= */
+
+.questions {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px 60px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 顶部标题与 HUD 进度卡 */
+.questions .page-head {
+  padding-top: 36px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.questions .page-head-left {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.questions .page-title {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+}
+
+.questions .head-sub {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-secondary);
+}
+
+.questions .head-progress-card {
+  padding: 12px 16px;
+  border: 1px solid var(--kece-border);
+  border-top: 2px solid var(--kece-accent);
+  background: var(--surface-white);
+  border-radius: var(--kece-card-radius, 0px);
+  box-shadow: var(--shadow-sm);
+  min-width: 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.questions .progress-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.questions .progress-title {
+  color: var(--ink-secondary);
+  font-weight: 600;
+}
+
+.questions .progress-fraction {
+  font-size: 13px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.questions .progress-fraction strong {
+  color: var(--kece-accent-ink);
+}
+
+.questions .progress-bar-track {
+  width: 100%;
+  height: 6px;
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
+  overflow: hidden;
+  border-radius: 0px;
+}
+
+.questions .progress-bar-fill {
+  height: 100%;
+  background: var(--kece-accent);
+  transition: width 0.25s ease;
+}
+
+.questions .progress-percent {
+  font-size: 12px;
+  color: var(--ink-tertiary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* #f8fafc 工具栏包裹 #ffffff 搜索框（清晰双层边界） */
+.questions .toolbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  border-radius: var(--kece-card-radius, 0px);
+  border: 1px solid var(--kece-border);
+  background: var(--kece-surface-muted);
+  box-shadow: none;
+  flex-wrap: wrap;
+}
+
+.questions .toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px 12px;
+  flex-wrap: wrap;
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.questions .toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px 12px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.questions .search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 248px;
+  max-width: 100%;
+}
+
+.questions .search-icon {
+  position: absolute;
+  left: 11px;
+  width: 14px;
+  height: 14px;
+  color: var(--ink-secondary);
+  pointer-events: none;
+}
+
+.questions .search-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px 0 34px;
+  font-size: 13.5px;
+  border-radius: 0px;
+  border: 1px solid var(--line);
+  background: var(--surface-white);
+  color: var(--ink);
+}
+
+.questions .search-input::placeholder {
+  color: var(--ink-tertiary);
+}
+
+.questions .search-input:focus {
+  border-color: var(--kece-accent);
+}
+
+.questions .difficulty-tabs,
+.questions .type-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.questions .tab-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 0px;
+  border: 1px solid var(--kece-border);
+  background: var(--surface-white);
+  color: var(--ink-secondary);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.questions .tab-btn:hover {
+  border-color: var(--kece-accent);
+  color: var(--kece-accent-ink);
+  background: var(--kece-accent-soft);
+}
+
+.questions .tab-btn.active {
+  background: var(--kece-accent);
+  border-color: var(--kece-accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.questions .status-tabs {
+  display: inline-flex;
+  border: 1px solid var(--kece-border);
+  background: var(--surface-white);
+  padding: 2px;
+  gap: 2px;
+}
+
+.questions .status-tab {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: 0px;
+  background: transparent;
+  color: var(--ink-secondary);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.questions .status-tab:hover {
+  color: var(--kece-accent-ink);
+  background: var(--kece-accent-soft);
+}
+
+.questions .status-tab.active {
+  background: var(--kece-accent-soft);
+  border-color: var(--kece-accent);
+  color: var(--kece-accent-ink);
+  font-weight: 600;
+}
+
+.questions .random-btn {
+  min-height: 36px;
+  padding: 0 13px;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 0px;
+  border: 1px solid var(--kece-accent);
+  background: var(--kece-accent);
+  color: #ffffff;
+}
+
+.questions .random-btn:hover:not(:disabled) {
+  opacity: 1;
+  background: var(--kece-accent-hover);
+  border-color: var(--kece-accent-hover);
+}
+
+.questions .random-btn:disabled {
+  opacity: 1;
+  background: var(--kece-surface-muted);
+  color: #5c6370;
+  border-color: var(--kece-border);
+  cursor: not-allowed;
+}
+
+.questions .reset-filters-btn {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 0px;
+  border: 1px solid var(--kece-border);
+  background: var(--surface-white);
+  color: var(--ink-secondary);
+}
+
+.questions .reset-filters-btn:hover:not(:disabled) {
+  border-color: var(--kece-accent);
+  color: var(--kece-accent-ink);
+  background: var(--kece-accent-soft);
+}
+
+/* 标签抽屉 */
+.questions .tag-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+  border-radius: 0px;
+}
+
+.questions .tag-toggle-btn.has-selected {
+  background: var(--kece-accent-soft);
+  border-color: var(--kece-accent);
+  color: var(--kece-accent-ink);
+  font-weight: 600;
+}
+
+.questions .tag-toggle-btn.active.has-selected {
+  background: var(--kece-accent);
+  border-color: var(--kece-accent);
+  color: #ffffff;
+}
+
+.questions .tag-badge-indicator {
+  font-size: 12px;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 0px;
+}
+
+.questions .toggle-arrow {
+  width: 10px;
+  height: 10px;
+  transition: transform 0.18s ease;
+  margin-left: 1px;
+}
+
+.questions .toggle-arrow.is-open {
+  transform: rotate(180deg);
+}
+
+.questions .tag-filter-bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -10px;
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
+  border-radius: 0px;
+}
+
+.questions .tag-filter-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.questions .tag-filter-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-tertiary);
+  margin-right: 4px;
+  letter-spacing: 0.04em;
+}
+
+.questions .tag-filter-chip {
+  min-height: 30px;
+  font-size: 12.5px;
+  padding: 4px 10px;
+  border: 1px solid var(--kece-border);
+  background: var(--surface-white);
+  color: var(--ink-secondary);
+  cursor: pointer;
+  border-radius: 0px;
+  font-weight: 500;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.questions .tag-filter-chip:hover {
+  background: var(--kece-accent-soft);
+  border-color: var(--kece-accent);
+  color: var(--kece-accent-ink);
+}
+
+.questions .tag-filter-chip.active {
+  background: var(--kece-accent);
+  border-color: var(--kece-accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.questions .btn-collapse-tags {
+  min-height: 30px;
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+  background: var(--surface-white);
+  border: 1px solid var(--kece-border);
+  border-radius: 0px;
+  cursor: pointer;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.questions .btn-collapse-tags:hover {
+  border-color: var(--kece-accent);
+  color: var(--kece-accent-ink);
+}
+
+/* 题目卡片列表（入场从工具栏下方按序掉落，animationend 移除 is-dropping 清理 will-change） */
+.questions .question-list {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.questions .question-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--kece-border);
+  background: var(--surface-white);
+  border-radius: var(--kece-card-radius, 0px);
+  box-shadow: none;
+  text-decoration: none;
+  color: inherit;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.questions .question-item:hover {
+  background: var(--kece-accent-soft);
+  border-color: var(--kece-accent);
+  box-shadow: inset 3px 0 0 var(--kece-accent);
+}
+
+.questions .question-item.is-dropping {
+  animation: kece-card-drop-in 0.44s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(min(var(--drop-index, 0), 11) * 45ms);
+  will-change: transform, opacity;
+}
+
+.questions .q-main-layout {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex: 1;
+}
+
+.questions .q-status-wrap {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.questions .status-icon.solved {
+  color: var(--kece-accent);
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+}
+
+.questions .status-icon.unsolved {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.questions .unsolved-ring {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #94a3b8;
+  border-radius: 50%;
+}
+
+.questions .q-number {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink-secondary);
+  min-width: 48px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.questions .q-content {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 16px h2 列表标题，杜绝 h1 -> h3 跳级 */
+.questions .q-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* stretched-link 模式支持卡片内部独立交互按钮（如 .question-tag） */
+.questions .q-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.questions .q-title-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.questions .q-tags-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.questions .meta-tag {
+  font-size: 12px;
+  padding: 2px 8px;
+  line-height: 1.4;
+  border-radius: 0px;
+}
+
+.questions .meta-tag.limits,
+.questions .meta-tag.order-mode,
+.questions .meta-tag.cases {
+  background: var(--surface-white);
+  border: 1px solid var(--kece-border);
+  color: var(--ink-secondary);
+}
+
+.questions .meta-tag.lang,
+.questions .meta-tag.dialect,
+.questions .meta-tag.type {
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
+  color: #334155;
+  font-weight: 600;
+}
+
+/* TECE 青绿态算法标签按钮 */
+.questions .meta-tag.question-tag,
+.questions .question-tag {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  background: var(--kece-accent-soft);
+  border: 1px solid rgba(19, 121, 105, 0.35);
+  color: var(--kece-accent-ink);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.questions .meta-tag.question-tag:hover,
+.questions .question-tag:hover {
+  background: var(--kece-accent);
+  border-color: var(--kece-accent);
+  color: #ffffff;
+}
+
+.questions .meta-tag.question-tag.tag-active,
+.questions .meta-tag.question-tag[aria-pressed='true'],
+.questions .question-tag.tag-active,
+.questions .question-tag[aria-pressed='true'] {
+  background: var(--kece-accent);
+  border-color: var(--kece-accent-hover);
+  color: #ffffff;
+  box-shadow: inset 2px 0 0 #094239;
+}
+
+.questions .q-right-layout {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+/* .hud-pill 及 .tone-* 语义徽章已收敛至全局 style.css */
+
+.questions .action-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  transition: color 0.15s ease;
+}
+
+.questions .cta-arrow {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.16s ease;
+}
+
+.questions .question-item:hover .action-cta {
+  color: var(--kece-accent-ink);
+}
+
+.questions .question-item:hover .cta-arrow {
+  transform: translateX(3px);
+}
+
+/* 加载、错误与空状态 */
+.questions .loading-box,
+.questions .empty-box {
+  padding: 48px 24px;
+  text-align: center;
+  border-radius: var(--kece-card-radius, 0px);
+  border: 1px solid var(--kece-border);
+  background: var(--surface-white);
+  box-shadow: none;
+}
+
+.questions .empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 6px;
+}
+
+.questions .empty-desc {
+  font-size: 13px;
+  color: var(--ink-tertiary);
+  margin: 0;
+}
+
+.questions .submit-error {
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .questions {
+    padding: 0 16px 48px;
+  }
+
+  .questions .page-head {
+    flex-direction: column;
+    align-items: stretch;
+    padding-top: 24px;
+  }
+
+  .questions .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .questions .toolbar-left,
+  .questions .toolbar-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .questions .search-wrap {
+    width: 100%;
+  }
+
+  .questions .action-cta {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .questions .question-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+
+  .questions .q-main-layout {
+    align-items: flex-start;
+  }
+
+  .questions .q-title {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .questions .q-right-layout {
+    justify-content: flex-end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .questions .question-item,
+  .questions .question-item.is-dropping,
+  .questions .tag-filter-bar {
+    animation: none !important;
+    transition: none !important;
+    will-change: auto !important;
+  }
+
+  .questions .progress-bar-fill,
+  .questions .toggle-arrow,
+  .questions .cta-arrow,
+  .questions .action-cta,
+  .questions .tab-btn,
+  .questions .status-tab,
+  .questions .random-btn,
+  .questions .reset-filters-btn,
+  .questions .tag-toggle-btn,
+  .questions .tag-filter-chip,
+  .questions .meta-tag.question-tag,
+  .questions .question-tag {
+    transition: none !important;
+  }
+}

@@ -7,7 +7,7 @@ import { sampleBatchFromPagedPool } from '@/shared/lib/randomSample'
 import { useUserStore } from '@/stores/user'
 import type { Question } from '@/types'
 
-const ROW_DROP_DURATION_MS = 460
+const ROW_DROP_DURATION_MS = 240
 const ROW_DROP_STAGGER_MS = 60
 const ROW_DROP_BUFFER_MS = 180
 const RANDOM_BATCH_SIZE = 5
@@ -548,10 +548,6 @@ function difficultyTone(value: string) {
   min-width: 0;
   overflow: hidden;
   background-color: var(--surface-white, #ffffff);
-  background-image:
-    linear-gradient(to right, rgba(17, 17, 17, 0.025) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(17, 17, 17, 0.025) 1px, transparent 1px);
-  background-size: 20px 20px;
   border: 1px solid var(--line, #e2e8f0);
   border-top: 2px solid var(--hud-accent);
   box-shadow:
@@ -565,7 +561,7 @@ function difficultyTone(value: string) {
   justify-content: space-between;
   gap: 24px;
   padding: 24px var(--board-gutter);
-  background: linear-gradient(180deg, #f8fafc 0%, rgba(255, 255, 255, 0.94) 100%);
+  background: #f8fafc;
   border-bottom: 1px solid var(--line, #e2e8f0);
 }
 
@@ -619,7 +615,7 @@ function difficultyTone(value: string) {
   background: #ffffff;
   color: var(--ink-secondary, #64748b);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   white-space: nowrap;
@@ -705,8 +701,11 @@ function difficultyTone(value: string) {
 }
 
 .btn-random-5:disabled {
-  opacity: 0.6;
-  cursor: default;
+  opacity: 1;
+  background: #475569;
+  color: #f8fafc;
+  border-color: #475569;
+  cursor: not-allowed;
 }
 
 .all-questions {
@@ -897,7 +896,7 @@ function difficultyTone(value: string) {
   min-height: 56px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--line, #e2e8f0);
-  background: rgba(255, 255, 255, 0.88);
+  background: #ffffff;
   text-decoration: none;
   color: var(--ink, #111111);
   transition:
@@ -916,8 +915,7 @@ function difficultyTone(value: string) {
 }
 
 .question-row.is-dropping {
-  will-change: transform, opacity;
-  animation: practice-row-drop 460ms var(--row-delay, 0ms) linear both;
+  animation: practice-row-drop 240ms var(--row-delay, 0ms) cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .question-number {
@@ -1120,8 +1118,11 @@ function difficultyTone(value: string) {
 
 .btn-back-browse:disabled,
 .page-actions button:disabled {
-  opacity: 0.45;
-  cursor: default;
+  opacity: 1;
+  background: var(--kece-surface-muted, #f8fafc);
+  color: #5c6370;
+  border-color: var(--kece-border, #e4e7ec);
+  cursor: not-allowed;
 }
 
 .btn-back-browse:not(:disabled):hover,
@@ -1149,31 +1150,13 @@ button:focus-visible {
 }
 
 @keyframes practice-row-drop {
-  0% {
+  from {
     opacity: 0;
-    transform: translate3d(0, -22px, 0);
-    animation-timing-function: cubic-bezier(0.55, 0.05, 0.92, 0.56);
+    transform: translateY(-10px);
   }
-  45% {
+  to {
     opacity: 1;
-    transform: translate3d(0, 0, 0);
-    animation-timing-function: cubic-bezier(0.2, 0.68, 0.35, 1);
-  }
-  66% {
-    transform: translate3d(0, -4.5px, 0);
-    animation-timing-function: cubic-bezier(0.58, 0.05, 0.9, 0.55);
-  }
-  82% {
-    transform: translate3d(0, 0, 0);
-    animation-timing-function: cubic-bezier(0.22, 0.66, 0.38, 1);
-  }
-  91% {
-    transform: translate3d(0, -1.5px, 0);
-    animation-timing-function: ease-in;
-  }
-  100% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
+    transform: translateY(0);
   }
 }
 
@@ -1243,9 +1226,18 @@ button:focus-visible {
   .hud-dot.ready::after,
   .question-row.is-dropping {
     animation: none !important;
-    will-change: auto;
     opacity: 1;
     transform: none;
+  }
+
+  .btn-random-5,
+  .all-questions,
+  .btn-back-browse,
+  .page-actions button,
+  .list-state button,
+  .question-row,
+  .row-arrow {
+    transition: none !important;
   }
 }
 </style>

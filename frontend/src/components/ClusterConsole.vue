@@ -91,7 +91,11 @@ let dropRestartTimerId: ReturnType<typeof setTimeout> | null = null;
 let dropFallbackTimerId: ReturnType<typeof setTimeout> | null = null;
 
 function clearDropTimers() {
-  if (dropRafId !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+  if (
+    dropRafId !== null &&
+    typeof window !== 'undefined' &&
+    typeof window.cancelAnimationFrame === 'function'
+  ) {
     window.cancelAnimationFrame(dropRafId);
   }
   dropRafId = null;
@@ -391,10 +395,6 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   background-color: var(--surface-white, #ffffff);
-  background-image:
-    linear-gradient(to right, rgba(17, 17, 17, 0.03) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(17, 17, 17, 0.03) 1px, transparent 1px);
-  background-size: 20px 20px;
   border: 1px solid var(--line, #e2e8f0);
   border-top: 2px solid var(--hud-accent);
   box-shadow:
@@ -404,7 +404,6 @@ onBeforeUnmount(() => {
   transition:
     transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 0.22s ease;
-  will-change: transform;
 }
 
 .cluster-console:hover {
@@ -490,7 +489,7 @@ onBeforeUnmount(() => {
   background: #f8fafc;
   color: var(--ink-secondary, #64748b);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   line-height: 1.2;
@@ -668,8 +667,7 @@ onBeforeUnmount(() => {
 }
 
 .pool-row.is-dropping {
-  will-change: transform, opacity;
-  animation: pool-row-drop 480ms var(--row-delay, 0ms) linear both;
+  animation: pool-row-drop 260ms var(--row-delay, 0ms) cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .pool-table tbody tr:not(.skeleton-row):not(.empty-row):hover {
@@ -830,25 +828,7 @@ onBeforeUnmount(() => {
 @keyframes pool-row-drop {
   0% {
     opacity: 0;
-    transform: translate3d(0, -24px, 0);
-    animation-timing-function: cubic-bezier(0.55, 0.05, 0.92, 0.56);
-  }
-  45% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-    animation-timing-function: cubic-bezier(0.2, 0.68, 0.35, 1);
-  }
-  66% {
-    transform: translate3d(0, -5px, 0);
-    animation-timing-function: cubic-bezier(0.58, 0.05, 0.9, 0.55);
-  }
-  82% {
-    transform: translate3d(0, 0, 0);
-    animation-timing-function: cubic-bezier(0.22, 0.66, 0.38, 1);
-  }
-  91% {
-    transform: translate3d(0, -1.5px, 0);
-    animation-timing-function: ease-in;
+    transform: translate3d(0, -10px, 0);
   }
   100% {
     opacity: 1;

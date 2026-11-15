@@ -1,128 +1,185 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { examApi, type SessionEnter, type ExamStudentInfo } from '@/api/exam'
-import { useToast } from '@/composables/useToast'
-import { useConfirm } from '@/composables/useConfirm'
-import { useCountdown } from '@/shared/composables/useCountdown'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { examApi, type SessionEnter, type ExamStudentInfo } from '@/api/exam';
+import { useToast } from '@/composables/useToast';
+import { useConfirm } from '@/composables/useConfirm';
+import { useCountdown } from '@/shared/composables/useCountdown';
 
-const route = useRoute()
-const router = useRouter()
-const { success, info, error: toastError } = useToast()
-const { confirm } = useConfirm()
+const route = useRoute();
+const router = useRouter();
+const { success, info, error: toastError } = useToast();
+const { confirm } = useConfirm();
 
-const examId = computed(() => Number(route.params.id))
-const enter = ref<SessionEnter | null>(null)
-const loading = ref(true)
-const submittingExam = ref(false)
+const examId = computed(() => Number(route.params.id));
+const enter = ref<SessionEnter | null>(null);
+const loading = ref(true);
+const submittingExam = ref(false);
 
-const showStudentModal = ref(false)
-const savingStudentInfo = ref(false)
+const showStudentModal = ref(false);
+const savingStudentInfo = ref(false);
+const studentModalRef = ref<HTMLElement | null>(null);
+const realNameInputRef = ref<HTMLInputElement | null>(null);
+let previousStudentFocus: HTMLElement | null = null;
+
 const studentForm = ref<ExamStudentInfo>({
   realName: '',
   studentNo: '',
   college: '',
   major: '',
   className: '',
-})
+});
 
-const { remainingSec, isUrgent, start: startCountdown } = useCountdown({
+function openStudentModal() {
+  previousStudentFocus = document.activeElement as HTMLElement | null;
+  showStudentModal.value = true;
+  document.body.style.overflow = 'hidden';
+  nextTick(() => {
+    realNameInputRef.value?.focus();
+  });
+}
+
+function closeStudentModal() {
+  if (!showStudentModal.value) return;
+  showStudentModal.value = false;
+  document.body.style.overflow = '';
+  const target = previousStudentFocus;
+  previousStudentFocus = null;
+  nextTick(() => {
+    target?.focus();
+  });
+}
+
+function onWindowKeydown(e: KeyboardEvent) {
+  if (!showStudentModal.value) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeStudentModal();
+    return;
+  }
+  if (e.key === 'Tab' && studentModalRef.value) {
+    const focusable = Array.from(
+      studentModalRef.value.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey) {
+      if (!active || active === first || !studentModalRef.value.contains(active)) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else if (!active || active === last || !studentModalRef.value.contains(active)) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+}
+
+const {
+  remainingSec,
+  isUrgent,
+  start: startCountdown,
+} = useCountdown({
   onExpire: () => {
     if (enter.value && enter.value.status !== 'ENDED') {
-      enter.value.status = 'ENDED'
-      info('考试时间已截止')
+      enter.value.status = 'ENDED';
+      info('考试时间已截止');
     }
   },
-})
+});
 
 const objectiveQuestions = computed(() => {
-  if (!enter.value) return []
-  return enter.value.questions.filter((q) => q.questionType === 'OBJECTIVE')
-})
+  if (!enter.value) return [];
+  return enter.value.questions.filter((q) => q.questionType === 'OBJECTIVE');
+});
 
 const practicalQuestions = computed(() => {
-  if (!enter.value) return []
-  return enter.value.questions.filter((q) => q.questionType !== 'OBJECTIVE')
-})
+  if (!enter.value) return [];
+  return enter.value.questions.filter((q) => q.questionType !== 'OBJECTIVE');
+});
 
 const objectiveFullScore = computed(() => {
-  return objectiveQuestions.value.reduce((sum, q) => sum + (q.score || 0), 0)
-})
+  return objectiveQuestions.value.reduce((sum, q) => sum + (q.score || 0), 0);
+});
 
 const totalFullScore = computed(() => {
-  return enter.value?.questions.reduce((sum, q) => sum + (q.score || 0), 0) ?? 0
-})
+  return enter.value?.questions.reduce((sum, q) => sum + (q.score || 0), 0) ?? 0;
+});
 
 const objectiveAnsweredCount = computed(() => {
-  if (!enter.value?.myAnswers) return 0
+  if (!enter.value?.myAnswers) return 0;
   return objectiveQuestions.value.filter((q) => {
-    const a = enter.value!.myAnswers?.[q.id]
-    return a && a.answerContent && a.answerContent.trim().length > 0
-  }).length
-})
+    const a = enter.value!.myAnswers?.[q.id];
+    return a && a.answerContent && a.answerContent.trim().length > 0;
+  }).length;
+});
 
 function getSavedAnswer(qId: number) {
-  const ans = enter.value?.myAnswers?.[qId]
-  if (!ans) return null
-  const q = enter.value?.questions.find((item) => item.id === qId)
-  if (!q) return ans
+  const ans = enter.value?.myAnswers?.[qId];
+  if (!ans) return null;
+  const q = enter.value?.questions.find((item) => item.id === qId);
+  if (!q) return ans;
 
-  let score = ans.score
+  let score = ans.score;
   if (score != null) {
     if (ans.status === 'ACCEPTED') {
-      score = q.score
+      score = q.score;
     } else if (score > q.score) {
       // 防御：若沙箱或历史脏数据传递了原始百分制(0~100)，折算为快照分
-      score = Math.min(q.score, Math.round((score * q.score) / 100))
+      score = Math.min(q.score, Math.round((score * q.score) / 100));
     }
   }
 
   return {
     ...ans,
     score,
-  }
+  };
 }
 
 const acSolvedCount = computed(() => {
-  if (!enter.value?.questions) return 0
+  if (!enter.value?.questions) return 0;
   return practicalQuestions.value.filter((q) => {
-    const a = getSavedAnswer(q.id)
-    return a && a.status === 'ACCEPTED'
-  }).length
-})
+    const a = getSavedAnswer(q.id);
+    return a && a.status === 'ACCEPTED';
+  }).length;
+});
 
 const myTotalScore = computed(() => {
-  if (!enter.value?.questions) return 0
-  let total = 0
+  if (!enter.value?.questions) return 0;
+  let total = 0;
   for (const q of enter.value.questions) {
-    const a = getSavedAnswer(q.id)
+    const a = getSavedAnswer(q.id);
     if (a && a.score != null) {
-      total += a.score
+      total += a.score;
     }
   }
-  return total
-})
+  return total;
+});
 
 const formattedRemaining = computed(() => {
   if (enter.value?.status === 'ENDED' || (remainingSec.value !== null && remainingSec.value <= 0)) {
-    return '00:00 (已截止)'
+    return '00:00 (已截止)';
   }
-  if (remainingSec.value === null) return '--:--'
-  const h = Math.floor(remainingSec.value / 3600)
-  const m = Math.floor((remainingSec.value % 3600) / 60)
-  const s = remainingSec.value % 60
+  if (remainingSec.value === null) return '--:--';
+  const h = Math.floor(remainingSec.value / 3600);
+  const m = Math.floor((remainingSec.value % 3600) / 60);
+  const s = remainingSec.value % 60;
   if (h > 0) {
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-})
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+});
 
 async function fetchEnter() {
-  loading.value = true
+  loading.value = true;
   try {
-    const res = await examApi.enter(examId.value)
-    enter.value = res
-    startCountdown(res.status === 'ENDED' ? null : res.remainingSeconds)
+    const res = await examApi.enter(examId.value);
+    enter.value = res;
+    startCountdown(res.status === 'ENDED' ? null : res.remainingSeconds);
     if (res.studentInfo) {
       studentForm.value = {
         realName: res.studentInfo.realName || '',
@@ -130,46 +187,46 @@ async function fetchEnter() {
         college: res.studentInfo.college || '',
         major: res.studentInfo.major || '',
         className: res.studentInfo.className || '',
-      }
+      };
     }
     if (res.requireStudentInfo && !res.hasFilledStudentInfo) {
-      showStudentModal.value = true
+      openStudentModal();
     }
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : '加载考试失败'
+    const msg = e instanceof Error ? e.message : '加载考试失败';
     if (msg.includes('已交卷')) {
-      info('您已交卷，正在前往成绩战报…')
-      router.replace(`/exams/${examId.value}/result`)
-      return
+      info('您已交卷，正在前往成绩战报…');
+      router.replace(`/exams/${examId.value}/result`);
+      return;
     }
-    toastError(msg)
+    toastError(msg);
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 async function saveStudentInfoAction() {
   if (!studentForm.value.realName || !studentForm.value.realName.trim()) {
-    toastError('请填写您的真实姓名')
-    return
+    toastError('请填写您的真实姓名');
+    return;
   }
   if (!studentForm.value.studentNo || !studentForm.value.studentNo.trim()) {
-    toastError('请填写您的学号')
-    return
+    toastError('请填写您的学号');
+    return;
   }
-  savingStudentInfo.value = true
+  savingStudentInfo.value = true;
   try {
-    const res = await examApi.saveStudentInfo(examId.value, studentForm.value)
+    const res = await examApi.saveStudentInfo(examId.value, studentForm.value);
     if (enter.value) {
-      enter.value.studentInfo = res
-      enter.value.hasFilledStudentInfo = true
+      enter.value.studentInfo = res;
+      enter.value.hasFilledStudentInfo = true;
     }
-    showStudentModal.value = false
-    success('考生信息核验成功，祝您考试取得优异成绩！')
+    closeStudentModal();
+    success('考生信息核验成功，祝您考试取得优异成绩！');
   } catch (e) {
-    toastError(e instanceof Error ? e.message : '保存考生信息失败')
+    toastError(e instanceof Error ? e.message : '保存考生信息失败');
   } finally {
-    savingStudentInfo.value = false
+    savingStudentInfo.value = false;
   }
 }
 
@@ -179,24 +236,30 @@ async function handleSubmitExam() {
     message: '交卷后本次考试的所有作答将被锁定并归档评测，确定现在交卷吗？',
     confirmText: '确认交卷',
     cancelText: '继续作答',
-  })
-  if (!ok) return
+  });
+  if (!ok) return;
 
-  submittingExam.value = true
+  submittingExam.value = true;
   try {
-    await examApi.submit(examId.value)
-    success('交卷成功！正在为您生成成绩战报…')
-    router.push(`/exams/${examId.value}/result`)
+    await examApi.submit(examId.value);
+    success('交卷成功！正在为您生成成绩战报…');
+    router.push(`/exams/${examId.value}/result`);
   } catch (e) {
-    toastError(e instanceof Error ? e.message : '交卷失败')
+    toastError(e instanceof Error ? e.message : '交卷失败');
   } finally {
-    submittingExam.value = false
+    submittingExam.value = false;
   }
 }
 
 onMounted(async () => {
-  await fetchEnter()
-})
+  window.addEventListener('keydown', onWindowKeydown);
+  await fetchEnter();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onWindowKeydown);
+  document.body.style.overflow = '';
+});
 </script>
 
 <template>
@@ -211,14 +274,16 @@ onMounted(async () => {
       <!-- 顶部信息栏 -->
       <header class="detail-header card">
         <div class="header-top">
-          <button class="btn-back" @click="router.push('/exams')">
+          <button type="button" class="btn-back" @click="router.push('/exams')">
             ← 返回考试大厅
           </button>
           <div class="header-actions">
             <span class="status-pill" :class="enter.status.toLowerCase()">
               {{ enter.status === 'ACTIVE' || enter.status === 'ONGOING' ? '● 进行中' : '已结束' }}
             </span>
-            <span class="code-pill">赛制: <strong>{{ enter.mode }}</strong></span>
+            <span class="code-pill mono"
+              >赛制: <strong>{{ enter.mode }}</strong></span
+            >
           </div>
         </div>
 
@@ -229,13 +294,13 @@ onMounted(async () => {
             class="countdown-badge"
             :class="{
               urgent: isUrgent && enter.status !== 'ENDED',
-              ended: enter.status === 'ENDED'
+              ended: enter.status === 'ENDED',
             }"
           >
             <span class="cd-label">
               {{ enter.status === 'ENDED' ? '作答状态' : '剩余作答时间' }}
             </span>
-            <span class="cd-time">
+            <span class="cd-time mono tabular-nums">
               {{ enter.status === 'ENDED' ? '已截止收卷' : formattedRemaining }}
             </span>
           </div>
@@ -244,31 +309,40 @@ onMounted(async () => {
         <!-- 考生信息归档密封条 -->
         <div v-if="enter.studentInfo" class="student-seal-bar">
           <div class="seal-pill">
-            <span class="seal-icon">🪪</span>
+            <span class="seal-icon" aria-hidden="true">🪪</span>
             <span class="seal-title">考生归档信息（已加盖密封线）</span>
           </div>
           <div class="seal-info-items">
             <span class="s-field"><strong>姓名:</strong> {{ enter.studentInfo.realName }}</span>
-            <span class="s-field"><strong>学号:</strong> {{ enter.studentInfo.studentNo }}</span>
-            <span v-if="enter.studentInfo.college" class="s-field"><strong>院系:</strong> {{ enter.studentInfo.college }}</span>
-            <span v-if="enter.studentInfo.major" class="s-field"><strong>专业:</strong> {{ enter.studentInfo.major }}</span>
-            <span v-if="enter.studentInfo.className" class="s-field"><strong>班级:</strong> {{ enter.studentInfo.className }}</span>
+            <span class="s-field tabular-nums"
+              ><strong>学号:</strong> {{ enter.studentInfo.studentNo }}</span
+            >
+            <span v-if="enter.studentInfo.college" class="s-field"
+              ><strong>院系:</strong> {{ enter.studentInfo.college }}</span
+            >
+            <span v-if="enter.studentInfo.major" class="s-field"
+              ><strong>专业:</strong> {{ enter.studentInfo.major }}</span
+            >
+            <span v-if="enter.studentInfo.className" class="s-field"
+              ><strong>班级:</strong> {{ enter.studentInfo.className }}</span
+            >
           </div>
           <button
             v-if="enter.status !== 'ENDED'"
+            type="button"
             class="btn-edit-student"
-            @click="showStudentModal = true"
+            @click="openStudentModal"
           >
             修改信息
           </button>
         </div>
         <div v-else-if="enter.requireStudentInfo" class="student-seal-bar unverified">
           <div class="seal-pill warn">
-            <span class="seal-icon">⚠️</span>
+            <span class="seal-icon" aria-hidden="true">⚠️</span>
             <span class="seal-title">尚未登记考生信息</span>
           </div>
           <span class="warn-msg">本场考试要求实名归档，请在作答前填报核验</span>
-          <button class="btn-edit-student primary" @click="showStudentModal = true">
+          <button type="button" class="btn-edit-student primary" @click="openStudentModal">
             立即登记考生信息 →
           </button>
         </div>
@@ -281,18 +355,19 @@ onMounted(async () => {
           </div>
           <div class="bento-item">
             <span class="b-label">试卷总分值</span>
-            <span class="b-value">{{ totalFullScore }} 分</span>
+            <span class="b-value tabular-nums">{{ totalFullScore }} 分</span>
           </div>
           <div class="bento-item">
             <span class="b-label">我的当前得分</span>
-            <span class="b-value highlight">{{ myTotalScore }} 分</span>
+            <span class="b-value highlight tabular-nums">{{ myTotalScore }} 分</span>
           </div>
           <div class="bento-item">
             <span class="b-label">实战 AC 通过</span>
-            <span class="b-value success-text">{{ acSolvedCount }} 题</span>
+            <span class="b-value success-text tabular-nums">{{ acSolvedCount }} 题</span>
           </div>
           <div class="bento-item action-item">
             <button
+              type="button"
               class="btn btn-submit-practice"
               :disabled="submittingExam || enter.status === 'ENDED'"
               @click="handleSubmitExam"
@@ -306,13 +381,15 @@ onMounted(async () => {
       <!-- 板块 1: 客观题集中答卷入口 -->
       <section v-if="objectiveQuestions.length > 0" class="objective-section card">
         <div class="obj-card-left">
-          <div class="obj-icon-square">OBJ</div>
+          <div class="obj-icon-square mono">OBJ</div>
           <div class="obj-text-wrap">
             <div class="obj-badge-row">
               <span class="obj-tag">客观题综合卷</span>
-              <span class="obj-score-tag">总分值: {{ objectiveFullScore }} 分</span>
+              <span class="obj-score-tag tabular-nums">总分值: {{ objectiveFullScore }} 分</span>
             </div>
-            <h2 class="obj-title">客观题集中答题区（共 {{ objectiveQuestions.length }} 道）</h2>
+            <h2 class="obj-title tabular-nums">
+              客观题集中答题区（共 {{ objectiveQuestions.length }} 道）
+            </h2>
             <p class="obj-desc">
               本场所有单选、多选与判断/填空题已汇聚在同一答卷中，支持即刻集中作答与自动保存。
             </p>
@@ -320,9 +397,12 @@ onMounted(async () => {
         </div>
         <div class="obj-card-right">
           <div class="obj-progress-info">
-            <span class="progress-txt">完成进度: {{ objectiveAnsweredCount }} / {{ objectiveQuestions.length }} 题</span>
+            <span class="progress-txt tabular-nums"
+              >完成进度: {{ objectiveAnsweredCount }} / {{ objectiveQuestions.length }} 题</span
+            >
           </div>
           <button
+            type="button"
             class="btn btn-enter-obj"
             :class="{ 'btn-view-mode': enter.status === 'ENDED' }"
             @click="router.push(`/exams/${examId}/objective`)"
@@ -343,7 +423,7 @@ onMounted(async () => {
         <div class="section-header">
           <div class="sec-left">
             <h2 class="section-title">上机实操试题清单</h2>
-            <span class="sec-count">共 {{ practicalQuestions.length }} 题</span>
+            <span class="sec-count tabular-nums">共 {{ practicalQuestions.length }} 题</span>
           </div>
           <span class="sec-hint">点击题目即可进入标准做题与评测工作台</span>
         </div>
@@ -355,44 +435,71 @@ onMounted(async () => {
             class="practical-item card"
             :class="{
               solved: getSavedAnswer(q.id)?.status === 'ACCEPTED',
-              partial: (getSavedAnswer(q.id)?.score ?? 0) > 0 && getSavedAnswer(q.id)?.status !== 'ACCEPTED'
+              partial:
+                (getSavedAnswer(q.id)?.score ?? 0) > 0 &&
+                getSavedAnswer(q.id)?.status !== 'ACCEPTED',
             }"
           >
             <div class="status-col">
-              <div v-if="getSavedAnswer(q.id)?.status === 'ACCEPTED'" class="status-circle solved" title="已满分通过">✓</div>
-              <div v-else-if="(getSavedAnswer(q.id)?.score ?? 0) > 0" class="status-circle partial" title="获得部分分">◐</div>
-              <div v-else-if="getSavedAnswer(q.id)?.status === 'WRONG_ANSWER'" class="status-circle failed" title="未完全通过">✕</div>
-              <div v-else class="status-circle unsolved" title="未解答">○</div>
+              <div
+                v-if="getSavedAnswer(q.id)?.status === 'ACCEPTED'"
+                class="status-circle practical-status solved"
+                title="已满分通过"
+              >
+                ✓
+              </div>
+              <div
+                v-else-if="(getSavedAnswer(q.id)?.score ?? 0) > 0"
+                class="status-circle practical-status partial"
+                title="获得部分分"
+              >
+                ◐
+              </div>
+              <div
+                v-else-if="getSavedAnswer(q.id)?.status === 'WRONG_ANSWER'"
+                class="status-circle practical-status failed"
+                title="未完全通过"
+              >
+                ✕
+              </div>
+              <div v-else class="status-circle practical-status unsolved" title="未解答">○</div>
             </div>
 
             <!-- 题号与标题 -->
             <div class="info-col">
               <div class="title-top">
-                <span class="q-number">#{{ idx + 1 }}</span>
+                <span class="q-number mono tabular-nums">#{{ idx + 1 }}</span>
                 <span class="q-type-badge" :class="q.questionType.toLowerCase()">
                   {{ q.questionType === 'ALGO' ? '算法编程' : '数据库 SQL' }}
                 </span>
-                <span class="q-score-badge">{{ q.score }} 分</span>
+                <span class="q-score-badge tabular-nums">{{ q.score }} 分</span>
               </div>
-              <h3
-                class="q-title"
-                @click="
-                  q.questionType === 'ALGO'
-                    ? router.push(`/exams/${examId}/question/${q.id}`)
-                    : router.push(`/exams/${examId}/db-question/${q.id}`)
-                "
-              >
-                {{ q.title }}
+              <h3 class="q-title">
+                <button
+                  type="button"
+                  class="q-title-btn"
+                  @click="
+                    q.questionType === 'ALGO'
+                      ? router.push(`/exams/${examId}/question/${q.id}`)
+                      : router.push(`/exams/${examId}/db-question/${q.id}`)
+                  "
+                >
+                  {{ q.title }}
+                </button>
               </h3>
               <div class="q-meta">
-                <span v-if="q.questionType === 'ALGO'" class="meta-spec">
+                <span v-if="q.questionType === 'ALGO'" class="meta-spec mono tabular-nums">
                   规格: {{ q.timeLimitMs || 1000 }}ms / {{ q.memoryLimitMb || 256 }}MB
                 </span>
-                <span v-else class="meta-spec">
-                  引擎: MySQL 8.0 标准环境
-                </span>
-                <span v-if="(getSavedAnswer(q.id)?.score ?? 0) > 0" class="meta-user-score" :class="{ 'is-partial': getSavedAnswer(q.id)?.status !== 'ACCEPTED' }">
-                  本题得分: {{ getSavedAnswer(q.id)?.score }} / {{ q.score }} 分 ({{ getSavedAnswer(q.id)?.status === 'ACCEPTED' ? '已满分' : '已得部分分' }})
+                <span v-else class="meta-spec mono"> 引擎: MySQL 8.0 标准环境 </span>
+                <span
+                  v-if="(getSavedAnswer(q.id)?.score ?? 0) > 0"
+                  class="meta-user-score tabular-nums"
+                  :class="{ 'is-partial': getSavedAnswer(q.id)?.status !== 'ACCEPTED' }"
+                >
+                  本题得分: {{ getSavedAnswer(q.id)?.score }} / {{ q.score }} 分 ({{
+                    getSavedAnswer(q.id)?.status === 'ACCEPTED' ? '已满分' : '已得部分分'
+                  }})
                 </span>
               </div>
             </div>
@@ -400,10 +507,13 @@ onMounted(async () => {
             <!-- CTA 按钮 -->
             <div class="action-col">
               <button
-                class="btn btn-start"
+                type="button"
+                class="btn btn-start btn-go-practice"
                 :class="{
                   'btn-view-mode': enter.status === 'ENDED',
-                  'btn-partial': (getSavedAnswer(q.id)?.score ?? 0) > 0 && getSavedAnswer(q.id)?.status !== 'ACCEPTED'
+                  'btn-partial retry':
+                    (getSavedAnswer(q.id)?.score ?? 0) > 0 &&
+                    getSavedAnswer(q.id)?.status !== 'ACCEPTED',
                 }"
                 @click="
                   q.questionType === 'ALGO'
@@ -413,8 +523,16 @@ onMounted(async () => {
               >
                 {{
                   enter.status === 'ENDED'
-                    ? (getSavedAnswer(q.id)?.status === 'ACCEPTED' ? '查看测评结果 →' : ((getSavedAnswer(q.id)?.score ?? 0) > 0 ? '查看部分分结果 →' : '查看题目 →'))
-                    : (getSavedAnswer(q.id)?.status === 'ACCEPTED' ? '重新作答 →' : ((getSavedAnswer(q.id)?.score ?? 0) > 0 ? '继续冲满分 →' : '开始做题 →'))
+                    ? getSavedAnswer(q.id)?.status === 'ACCEPTED'
+                      ? '查看测评结果 →'
+                      : (getSavedAnswer(q.id)?.score ?? 0) > 0
+                        ? '查看部分分结果 →'
+                        : '查看题目 →'
+                    : getSavedAnswer(q.id)?.status === 'ACCEPTED'
+                      ? '重新作答 →'
+                      : (getSavedAnswer(q.id)?.score ?? 0) > 0
+                        ? '继续冲满分 →'
+                        : '开始做题 →'
                 }}
               </button>
             </div>
@@ -424,37 +542,47 @@ onMounted(async () => {
     </template>
 
     <!-- 考生信息登记核验弹窗（根据教师设置要求填写） -->
-    <div v-if="showStudentModal" class="modal-backdrop">
-      <div class="modal-box card">
+    <div v-if="showStudentModal" class="modal-backdrop" @click.self="closeStudentModal">
+      <div
+        ref="studentModalRef"
+        class="modal-box card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="student-modal-title"
+      >
         <div class="modal-header">
           <div class="modal-title-wrap">
             <span class="modal-tag">考生身份核验</span>
-            <h3 class="modal-title">期末标准化考试考生档案登记</h3>
+            <h2 id="student-modal-title" class="modal-title">期末标准化考试考生档案登记</h2>
           </div>
         </div>
         <p class="modal-desc">
-          本场考试已开启标准化实名阅卷规范。作答前请填写真实身份信息，该信息将直接加盖于期末考试 A 卷密封线内与成绩归档档案中。
+          本场考试已开启标准化实名阅卷规范。作答前请填写真实身份信息，该信息将直接加盖于期末考试 A
+          卷密封线内与成绩归档档案中。
         </p>
 
         <form class="modal-form" @submit.prevent="saveStudentInfoAction">
           <div class="form-row">
             <div class="form-group required">
-              <label>真实姓名 <span class="req">*</span></label>
+              <label for="student-real-name">真实姓名 <span class="req">*</span></label>
               <input
+                id="student-real-name"
+                ref="realNameInputRef"
                 v-model="studentForm.realName"
                 type="text"
-                class="form-input"
+                class="form-input form-control"
                 placeholder="例如：张三"
                 maxlength="50"
                 required
               />
             </div>
             <div class="form-group required">
-              <label>学号 / 考号 <span class="req">*</span></label>
+              <label for="student-no">学号 / 考号 <span class="req">*</span></label>
               <input
+                id="student-no"
                 v-model="studentForm.studentNo"
                 type="text"
-                class="form-input"
+                class="form-input form-control"
                 placeholder="例如：2022030101"
                 maxlength="50"
                 required
@@ -464,21 +592,23 @@ onMounted(async () => {
 
           <div class="form-row">
             <div class="form-group">
-              <label>所在学院 / 系部</label>
+              <label for="student-college">所在学院 / 系部</label>
               <input
+                id="student-college"
                 v-model="studentForm.college"
                 type="text"
-                class="form-input"
+                class="form-input form-control"
                 placeholder="例如：电子信息工程学院"
                 maxlength="100"
               />
             </div>
             <div class="form-group">
-              <label>所学专业</label>
+              <label for="student-major">所学专业</label>
               <input
+                id="student-major"
                 v-model="studentForm.major"
                 type="text"
-                class="form-input"
+                class="form-input form-control"
                 placeholder="例如：软件工程"
                 maxlength="100"
               />
@@ -486,11 +616,12 @@ onMounted(async () => {
           </div>
 
           <div class="form-group">
-            <label>行政班级</label>
+            <label for="student-class-name">行政班级</label>
             <input
+              id="student-class-name"
               v-model="studentForm.className"
               type="text"
-              class="form-input"
+              class="form-input form-control"
               placeholder="例如：2022软工1班"
               maxlength="100"
             />
@@ -501,23 +632,14 @@ onMounted(async () => {
               v-if="enter?.hasFilledStudentInfo"
               type="button"
               class="btn btn-secondary"
-              @click="showStudentModal = false"
+              @click="closeStudentModal"
             >
               取消修改
             </button>
-            <button
-              v-else
-              type="button"
-              class="btn btn-secondary"
-              @click="router.push('/exams')"
-            >
+            <button v-else type="button" class="btn btn-secondary" @click="router.push('/exams')">
               暂不作答，退出考试
             </button>
-            <button
-              type="submit"
-              class="btn btn-primary"
-              :disabled="savingStudentInfo"
-            >
+            <button type="submit" class="btn btn-primary" :disabled="savingStudentInfo">
               {{ savingStudentInfo ? '保存核验中…' : '确认考生档案并开始作答 →' }}
             </button>
           </div>
@@ -536,8 +658,8 @@ onMounted(async () => {
 }
 
 .detail-header {
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--surface-white);
+  border: 1px solid var(--kece-border);
   border-radius: 0;
   padding: 24px;
   margin-bottom: 24px;
@@ -556,13 +678,13 @@ onMounted(async () => {
   border: none;
   font-size: 13px;
   font-weight: 700;
-  color: #495057;
+  color: var(--ink-secondary);
   cursor: pointer;
   padding: 0;
 }
 
 .btn-back:hover {
-  color: #1e1e1e;
+  color: var(--ink);
 }
 
 .header-actions {
@@ -575,24 +697,24 @@ onMounted(async () => {
   font-size: 11px;
   font-weight: 700;
   padding: 3px 8px;
-  color: #fff;
+  color: var(--surface-white);
 }
 
 .status-pill.active,
 .status-pill.ongoing {
-  background: #2b8a3e;
+  background: var(--kece-success);
 }
 
 .status-pill.ended {
-  background: #495057;
+  background: var(--ink-secondary);
 }
 
 .code-pill {
-  background: #f1f3f5;
-  border: 1px solid var(--line);
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
   padding: 3px 8px;
   font-size: 12px;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .title-row {
@@ -613,22 +735,22 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
   color: var(--ink);
   padding: 6px 14px;
   border-radius: 0;
 }
 
 .countdown-badge.urgent {
-  background: var(--danger-bg);
-  border-color: var(--danger);
-  color: var(--danger);
+  background: var(--kece-danger-soft);
+  border-color: var(--kece-danger);
+  color: var(--kece-danger);
 }
 
 .countdown-badge.ended {
-  background: var(--bg);
-  border-color: var(--line);
+  background: var(--surface-white);
+  border-color: var(--kece-border);
   color: var(--ink-secondary);
 }
 
@@ -641,7 +763,8 @@ onMounted(async () => {
 .cd-time {
   font-size: 18px;
   font-weight: 800;
-  font-family: monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .countdown-badge.ended .cd-time {
@@ -650,13 +773,13 @@ onMounted(async () => {
 }
 
 .btn-view-mode {
-  background: var(--surface) !important;
+  background: var(--kece-surface-muted) !important;
   color: var(--ink) !important;
-  border: 1px solid var(--line) !important;
+  border: 1px solid var(--kece-border) !important;
 }
 
 .btn-view-mode:hover {
-  background: var(--bg) !important;
+  background: var(--surface-white) !important;
   border-color: var(--ink) !important;
 }
 
@@ -664,8 +787,8 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 12px;
-  background: #f8f9fa;
-  border: 1px solid #e9ecef;
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
   padding: 12px 16px;
 }
 
@@ -676,22 +799,23 @@ onMounted(async () => {
 
 .b-label {
   font-size: 11px;
-  color: #868e96;
+  color: var(--ink-tertiary);
   margin-bottom: 4px;
 }
 
 .b-value {
   font-size: 15px;
   font-weight: 800;
-  color: #212529;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .b-value.highlight {
-  color: #1971c2;
+  color: var(--kece-accent-ink);
 }
 
 .b-value.success-text {
-  color: #2b8a3e;
+  color: var(--kece-success);
 }
 
 .action-item {
@@ -699,9 +823,9 @@ onMounted(async () => {
 }
 
 .btn-submit-practice {
-  background: #1e1e1e;
-  color: #fff;
-  border: 1px solid #1e1e1e;
+  background: var(--line-strong);
+  color: var(--surface-white);
+  border: 1px solid var(--line-strong);
   padding: 6px 14px;
   font-size: 12px;
   font-weight: 700;
@@ -709,12 +833,15 @@ onMounted(async () => {
 }
 
 .btn-submit-practice:hover:not(:disabled) {
-  background: #343a40;
+  background: var(--kece-accent);
+  border-color: var(--kece-accent);
 }
 
 .btn-submit-practice:disabled {
-  background: #adb5bd;
-  border-color: #adb5bd;
+  opacity: 1;
+  background: #475569;
+  border-color: #475569;
+  color: #f8fafc;
   cursor: not-allowed;
 }
 
@@ -722,9 +849,9 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--surface);
-  border: 1px solid #1e1e1e;
-  border-left: 5px solid #7048e8;
+  background: var(--surface-white);
+  border: 1px solid var(--kece-accent);
+  box-shadow: inset 0 2px 0 var(--kece-accent);
   padding: 20px 24px;
   margin-bottom: 24px;
 }
@@ -738,11 +865,11 @@ onMounted(async () => {
 .obj-icon-square {
   width: 50px;
   height: 50px;
-  background: #7048e8;
-  color: #fff;
+  background: var(--kece-accent);
+  color: var(--surface-white);
   font-weight: 900;
   font-size: 16px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -755,31 +882,34 @@ onMounted(async () => {
 }
 
 .obj-tag {
-  background: #7048e8;
-  color: #fff;
+  background: var(--kece-accent-soft);
+  color: var(--kece-accent-ink);
+  border: 1px solid rgba(19, 121, 105, 0.35);
   font-size: 10px;
   font-weight: 700;
   padding: 1px 6px;
 }
 
 .obj-score-tag {
-  background: #f1f3f5;
-  border: 1px solid #ced4da;
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
   font-size: 11px;
   font-weight: 700;
   padding: 1px 6px;
+  font-variant-numeric: tabular-nums;
 }
 
 .obj-title {
   font-size: 17px;
   font-weight: 800;
-  color: #1e1e1e;
+  color: var(--ink);
   margin: 0 0 4px 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .obj-desc {
   font-size: 13px;
-  color: #868e96;
+  color: var(--ink-tertiary);
   margin: 0;
 }
 
@@ -795,18 +925,24 @@ onMounted(async () => {
   flex-direction: column;
   align-items: flex-end;
   font-size: 12px;
-  color: #495057;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .btn-enter-obj {
-  background: #7048e8;
-  color: #fff;
-  border: 1px solid #5f3dc4;
+  background: var(--kece-accent);
+  color: var(--surface-white);
+  border: 1px solid var(--kece-accent);
   padding: 8px 20px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   border-radius: 0;
+}
+
+.btn-enter-obj:hover:not(:disabled) {
+  background: var(--kece-accent-hover);
+  border-color: var(--kece-accent-hover);
 }
 
 .practical-section {
@@ -829,19 +965,20 @@ onMounted(async () => {
 .section-title {
   font-size: 20px;
   font-weight: 800;
-  color: #1e1e1e;
+  color: var(--ink);
   margin: 0;
 }
 
 .sec-count {
   font-size: 13px;
   font-weight: 700;
-  color: #868e96;
+  color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .sec-hint {
   font-size: 12px;
-  color: #868e96;
+  color: var(--ink-tertiary);
 }
 
 .practical-list {
@@ -855,24 +992,29 @@ onMounted(async () => {
   align-items: center;
   gap: 16px;
   padding: 16px 20px;
-  background: var(--surface);
-  border: 1px solid #ced4da;
+  background: var(--surface-white);
+  border: 1px solid var(--kece-border);
   border-radius: 0;
-  transition: all 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .practical-item:hover {
-  background: #ebeef2;
-  border-color: #1e1e1e;
-  box-shadow: 2px 2px 0 #1e1e1e;
+  background: var(--kece-surface-muted);
+  border-color: var(--line-strong);
+  box-shadow: 2px 2px 0 var(--line-strong);
 }
 
 .practical-item.solved {
-  border-left: 4px solid #2b8a3e;
+  border-color: var(--kece-success);
+  background: var(--kece-success-soft);
 }
 
 .practical-item.partial {
-  border-left: 4px solid #f59f00;
+  border-color: var(--kece-warning);
+  background: var(--kece-warning-soft);
 }
 
 .status-col {
@@ -890,24 +1032,30 @@ onMounted(async () => {
   font-weight: 900;
 }
 
-.status-circle.solved {
-  background: #2b8a3e;
-  color: #fff;
+.status-circle.solved,
+.practical-status.solved {
+  background: var(--kece-success);
+  color: var(--surface-white);
 }
 
-.status-circle.partial {
-  background: #f59f00;
-  color: #fff;
+.status-circle.partial,
+.practical-status.partial {
+  background: var(--kece-warning-soft);
+  border: 1px solid var(--kece-warning);
+  color: var(--kece-warning);
 }
 
-.status-circle.failed {
-  background: #c92a2a;
-  color: #fff;
+.status-circle.failed,
+.practical-status.failed {
+  background: var(--kece-danger);
+  color: var(--surface-white);
 }
 
-.status-circle.unsolved {
-  border: 1px solid #ced4da;
-  color: #adb5bd;
+.status-circle.unsolved,
+.practical-status.unsolved {
+  border: 1px solid var(--kece-border);
+  background: var(--surface-white);
+  color: var(--ink-tertiary);
 }
 
 .info-col {
@@ -925,70 +1073,83 @@ onMounted(async () => {
 .q-number {
   font-size: 12px;
   font-weight: 800;
-  font-family: monospace;
-  color: #495057;
+  font-family: var(--font-mono);
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .q-type-badge {
   font-size: 10px;
   font-weight: 700;
   padding: 1px 6px;
-  color: #fff;
+  color: var(--surface-white);
 }
 
 .q-type-badge.algo {
-  background: #2b8a3e;
+  background: var(--kece-success);
 }
 
 .q-type-badge.db,
 .q-type-badge.database {
-  background: #1e1e1e;
+  background: var(--line-strong);
 }
 
 .q-score-badge {
-  background: #f8f9fa;
-  border: 1px solid #ced4da;
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
   font-size: 10px;
   font-weight: 700;
   padding: 1px 5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .q-title {
   font-size: 15px;
   font-weight: 700;
-  color: #1e1e1e;
+  color: var(--ink);
   margin: 0 0 6px 0;
+}
+
+.q-title-btn {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.q-title:hover {
-  color: #1971c2;
+.q-title-btn:hover {
+  color: var(--kece-accent-ink);
 }
 
 .q-meta {
   display: flex;
   gap: 12px;
   font-size: 11px;
-  color: #868e96;
+  color: var(--ink-tertiary);
 }
 
 .meta-spec {
-  font-family: monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .meta-user-score {
-  color: #2b8a3e;
+  color: var(--kece-success);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .meta-user-score.is-partial {
-  color: #e67700;
+  color: var(--kece-warning);
 }
 
 .btn-start {
-  background: #1e1e1e;
-  color: #fff;
-  border: 1px solid #1e1e1e;
+  background: var(--line-strong);
+  color: var(--surface-white);
+  border: 1px solid var(--line-strong);
   padding: 8px 18px;
   font-size: 13px;
   font-weight: 700;
@@ -997,17 +1158,22 @@ onMounted(async () => {
 }
 
 .btn-start:hover {
-  background: #343a40;
+  background: var(--kece-accent);
+  border-color: var(--kece-accent);
 }
 
-.btn-start.btn-partial {
-  background: #f59f00;
-  border-color: #f59f00;
-  color: #fff;
+.btn-start.btn-partial,
+.btn-go-practice.retry {
+  background: var(--kece-warning-soft);
+  border-color: var(--kece-warning);
+  color: var(--kece-warning);
 }
 
-.btn-start.btn-partial:hover {
-  background: #e67700;
+.btn-start.btn-partial:hover,
+.btn-go-practice.retry:hover {
+  background: var(--surface-white);
+  border-color: var(--kece-warning);
+  color: var(--kece-warning);
 }
 
 .state-card {
@@ -1022,53 +1188,55 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 12px;
   padding: 10px 14px;
-  background: #f8f9fa;
-  border: 1px dashed #ced4da;
+  background: var(--kece-surface-muted);
+  border: 1px dashed var(--kece-border);
   margin-bottom: 20px;
   font-size: 13px;
 }
 
 .student-seal-bar.unverified {
-  background: #fff9db;
-  border-color: #f59f00;
+  background: var(--kece-warning-soft);
+  border-color: var(--kece-warning);
 }
 
 .seal-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #1e1e1e;
-  color: #fff;
+  background: var(--line-strong);
+  color: var(--surface-white);
   padding: 4px 8px;
   font-size: 11px;
   font-weight: 700;
 }
 
 .seal-pill.warn {
-  background: #e67700;
+  background: var(--kece-warning-soft);
+  border: 1px solid var(--kece-warning);
+  color: var(--kece-warning);
 }
 
 .seal-info-items {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
-  color: #495057;
+  color: var(--ink-secondary);
 }
 
 .s-field strong {
-  color: #1e1e1e;
+  color: var(--ink);
   margin-right: 4px;
 }
 
 .warn-msg {
-  color: #d9480f;
+  color: var(--kece-warning);
   font-weight: 600;
 }
 
 .btn-edit-student {
   margin-left: auto;
-  background: #fff;
-  border: 1px solid #1e1e1e;
+  background: var(--surface-white);
+  border: 1px solid var(--line-strong);
   padding: 4px 10px;
   font-size: 12px;
   font-weight: 700;
@@ -1076,17 +1244,18 @@ onMounted(async () => {
 }
 
 .btn-edit-student:hover {
-  background: #1e1e1e;
-  color: #fff;
+  background: var(--line-strong);
+  color: var(--surface-white);
 }
 
 .btn-edit-student.primary {
-  background: #1e1e1e;
-  color: #fff;
+  background: var(--line-strong);
+  color: var(--surface-white);
 }
 
 .btn-edit-student.primary:hover {
-  background: #343a40;
+  background: var(--kece-accent);
+  border-color: var(--kece-accent);
 }
 
 /* 弹窗样式 (KECE 极简硬朗风格) */
@@ -1096,7 +1265,7 @@ onMounted(async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.65);
+  background: rgba(15, 23, 42, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1107,10 +1276,10 @@ onMounted(async () => {
 .modal-box {
   width: 100%;
   max-width: 580px;
-  background: #fff;
-  border: 2px solid #1e1e1e;
+  background: var(--surface-white);
+  border: 2px solid var(--line-strong);
   padding: 28px;
-  box-shadow: 8px 8px 0px rgba(0, 0, 0, 0.9);
+  box-shadow: var(--shadow-md);
 }
 
 .modal-header {
@@ -1119,8 +1288,8 @@ onMounted(async () => {
 
 .modal-tag {
   display: inline-block;
-  background: #1e1e1e;
-  color: #fff;
+  background: var(--line-strong);
+  color: var(--surface-white);
   font-size: 11px;
   font-weight: 700;
   padding: 2px 8px;
@@ -1131,16 +1300,16 @@ onMounted(async () => {
   font-size: 20px;
   font-weight: 800;
   margin: 0;
-  color: #1e1e1e;
+  color: var(--ink);
 }
 
 .modal-desc {
   font-size: 13px;
-  color: #495057;
+  color: var(--ink-secondary);
   line-height: 1.6;
   margin: 0 0 20px 0;
   padding-bottom: 16px;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--kece-border);
 }
 
 .modal-form {
@@ -1164,25 +1333,26 @@ onMounted(async () => {
 .form-group label {
   font-size: 12px;
   font-weight: 700;
-  color: #212529;
+  color: var(--ink);
 }
 
 .form-group label .req {
-  color: #fa5252;
+  color: var(--kece-danger);
 }
 
 .form-input {
-  border: 1px solid #1e1e1e;
+  border: 1px solid var(--line-strong);
   padding: 8px 12px;
   font-size: 14px;
   border-radius: 0;
-  outline: none;
-  background: #fff;
+  background: var(--surface-white);
+  color: var(--ink);
 }
 
-.form-input:focus {
-  border-color: #228be6;
-  box-shadow: 0 0 0 2px rgba(34, 139, 230, 0.2);
+.form-input:focus-visible {
+  border-color: var(--kece-accent);
+  outline: 2px solid var(--kece-accent);
+  outline-offset: 2px;
 }
 
 .modal-actions {
@@ -1191,7 +1361,7 @@ onMounted(async () => {
   gap: 12px;
   margin-top: 12px;
   padding-top: 16px;
-  border-top: 1px solid #e9ecef;
+  border-top: 1px solid var(--kece-border);
 }
 
 .modal-actions .btn {
@@ -1203,28 +1373,38 @@ onMounted(async () => {
 }
 
 .modal-actions .btn-secondary {
-  background: #f1f3f5;
-  border: 1px solid #ced4da;
-  color: #495057;
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
+  color: var(--ink-secondary);
 }
 
 .modal-actions .btn-secondary:hover {
-  background: #e9ecef;
-  color: #212529;
+  background: var(--surface-hover);
+  color: var(--ink);
 }
 
 .modal-actions .btn-primary {
-  background: #1e1e1e;
-  border: 1px solid #1e1e1e;
-  color: #fff;
+  background: var(--line-strong);
+  border: 1px solid var(--line-strong);
+  color: var(--surface-white);
 }
 
 .modal-actions .btn-primary:hover:not(:disabled) {
-  background: #343a40;
+  background: var(--kece-accent);
+  border-color: var(--kece-accent);
 }
 
 .modal-actions .btn-primary:disabled {
-  opacity: 0.6;
+  opacity: 1;
+  background: #475569;
+  border-color: #475569;
+  color: #f8fafc;
   cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .practical-item {
+    transition: none;
+  }
 }
 </style>

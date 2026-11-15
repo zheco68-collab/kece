@@ -1,132 +1,164 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { getAnnouncements, type AnnouncementItem } from '@/api/announcement'
-import { ApiError } from '@/api/request'
-import Pagination from '@/components/Pagination.vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { RouterLink } from 'vue-router';
+import { getAnnouncements, type AnnouncementItem } from '@/api/announcement';
+import { ApiError } from '@/api/request';
+import Pagination from '@/components/Pagination.vue';
+import { stripMarkdown } from '@/utils/plainText';
 
-const router = useRouter()
+const loading = ref(false);
+const loadError = ref('');
+const announcements = ref<AnnouncementItem[]>([]);
+const total = ref(0);
+const page = ref(1);
+const size = 10;
 
-const loading = ref(false)
-const loadError = ref('')
-const announcements = ref<AnnouncementItem[]>([])
-const total = ref(0)
-const page = ref(1)
-const size = 10
+let requestId = 0;
+let isUnmounted = false;
 
 function formatDate(str?: string): string {
-  if (!str) return '-'
-  const d = new Date(str)
-  if (isNaN(d.getTime())) return str
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  if (!str) return '-';
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function getSummary(item: AnnouncementItem): string {
   if (item.summary && item.summary.trim()) {
-    return item.summary.trim()
+    return stripMarkdown(item.summary, 160);
   }
   if (item.content) {
-    // 移除 markdown 符号生成简短摘要
-    return item.content
-      .replace(/[#*`~>[\]()!-]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 160)
+    const stripped = stripMarkdown(item.content, 160);
+    if (stripped) return stripped;
   }
-  return '暂无摘要'
+  return '暂无摘要';
 }
 
 function isPinned(item: AnnouncementItem): boolean {
+  return item.isPinned === 1 || item.isPinned === true || item.isTop === 1 || item.isTop === true;
+}
+
+function prefersReducedMotion(): boolean {
   return (
-    item.isPinned === 1 ||
-    item.isPinned === true ||
-    item.isTop === 1 ||
-    item.isTop === true
-  )
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
 }
 
 async function loadData() {
-  loading.value = true
-  loadError.value = ''
+  const reqId = ++requestId;
+  loading.value = true;
+  loadError.value = '';
   try {
     const res = await getAnnouncements({
       page: page.value,
       size,
-    })
-    announcements.value = res.list || []
-    total.value = res.total || 0
+    });
+    if (isUnmounted || reqId !== requestId) return;
+    announcements.value = res.list || [];
+    total.value = res.total || 0;
   } catch (err) {
-    loadError.value = err instanceof ApiError ? err.message : '加载公告列表失败，请稍后重试'
+    if (!isUnmounted && reqId === requestId) {
+      loadError.value = err instanceof ApiError ? err.message : '加载公告列表失败，请稍后重试';
+    }
   } finally {
-    loading.value = false
+    if (!isUnmounted && reqId === requestId) {
+      loading.value = false;
+    }
   }
 }
 
-function navigateToDetail(id: number) {
-  router.push(`/announcements/${id}`)
+function resetToFirstPage() {
+  if (page.value !== 1) {
+    page.value = 1;
+  } else {
+    void loadData();
+  }
 }
 
 watch(page, () => {
-  loadData()
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-})
+  void loadData();
+  if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+    window.scrollTo({
+      top: 0,
+      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+    });
+  }
+});
 
-onMounted(loadData)
+onMounted(() => {
+  void loadData();
+});
+
+onBeforeUnmount(() => {
+  isUnmounted = true;
+  requestId++;
+});
 </script>
 
 <template>
-  <div class="announcements-board container">
-    <!-- 标头区域：平台公告栏 // BULLETIN BOARD，显示总篇数 -->
+  <div class="announcements-board container tabular-nums">
+    <!-- 标头区域：简洁主标题与总篇数 -->
     <header class="board-header">
       <div class="header-main">
-        <h1 class="page-title">
-          平台公告栏 <span class="sub-slash">// BULLETIN BOARD</span>
-        </h1>
-        <div class="meta-tag mono">TOTAL: {{ total }}</div>
+        <div class="header-title-group">
+          <h1 class="page-title">平台公告栏</h1>
+          <p class="muted head-sub">系统通知、竞赛日程与题库更新公告</p>
+        </div>
+        <div class="meta-tag mono tabular-nums">TOTAL: {{ total }}</div>
       </div>
       <div class="header-divider"></div>
     </header>
 
     <!-- 错误横幅 -->
-    <p v-if="loadError" class="submit-error">{{ loadError }}</p>
+    <div v-if="loadError" class="state-banner is-error" role="alert">
+      <span>{{ loadError }}</span>
+      <button type="button" class="btn-inline-retry" @click="loadData">重试</button>
+    </div>
 
     <!-- 加载状态 -->
-    <div v-if="loading" class="state-card card">
-      <div class="loading-spin"></div>
+    <div v-if="loading" class="state-card card" role="status">
+      <div class="loading-spin" aria-hidden="true"></div>
       <p class="muted">正在加载公告列表…</p>
     </div>
 
     <!-- 空数据提示 -->
-    <div v-else-if="announcements.length === 0" class="empty card">
-      暂无平台公告
+    <div v-else-if="announcements.length === 0 && !loadError" class="empty card">
+      <p class="empty-title">暂无平台公告</p>
+      <button
+        v-if="page > 1"
+        type="button"
+        class="btn-inline-retry empty-reset-btn"
+        @click="resetToFirstPage"
+      >
+        返回第一页
+      </button>
     </div>
 
-    <!-- 公告列表卡片集：纯直角、厚度舒适、三层结构，挂载 :key 与 --drop-index 级联物理掉落 -->
-    <div v-else :key="page" class="announcement-list">
+    <!-- 公告列表卡片集：stretched-link 原生语义链接，零嵌套交互 -->
+    <div v-else-if="announcements.length > 0" :key="page" class="announcement-list">
       <article
         v-for="(item, index) in announcements"
         :key="item.id"
         class="announcement-card card"
-        :style="{ '--drop-index': index }"
-        @click="navigateToDetail(item.id)"
+        :style="{ '--drop-index': Math.min(index, 9) }"
       >
-        <!-- 顶层：置顶微标 + 标题 + 查看详情操作按钮 -->
+        <!-- 顶层：置顶微标 + 标题 + 查看详情视觉指示 -->
         <div class="card-top">
           <div class="title-wrap">
-            <span v-if="isPinned(item)" class="pin-badge">置顶</span>
+            <span v-if="isPinned(item)" class="hud-pill tone-teal pin-badge">置顶</span>
             <h2 class="announcement-title" :title="item.title">
-              {{ item.title }}
+              <RouterLink :to="`/announcements/${item.id}`" class="ann-link">
+                {{ item.title }}
+              </RouterLink>
             </h2>
           </div>
-          <button
-            type="button"
-            class="view-btn"
-            @click.stop="navigateToDetail(item.id)"
-          >
+          <span class="view-indicator" aria-hidden="true">
             <span>查看详情</span>
             <span class="btn-arrow">→</span>
-          </button>
+          </span>
         </div>
 
         <!-- 中层：1~2 行简明导读摘要 -->
@@ -140,15 +172,15 @@ onMounted(loadData)
             <span class="meta-label">发布管理员:</span>
             <span class="meta-value">{{ item.authorName || 'admin' }}</span>
           </span>
-          <span class="meta-dot">·</span>
+          <span class="meta-dot" aria-hidden="true">·</span>
           <span class="meta-item">
             <span class="meta-label">发布时间:</span>
-            <span class="meta-value mono">{{ formatDate(item.createdAt) }}</span>
+            <span class="meta-value mono tabular-nums">{{ formatDate(item.createdAt) }}</span>
           </span>
-          <span class="meta-dot">·</span>
+          <span class="meta-dot" aria-hidden="true">·</span>
           <span class="meta-item">
             <span class="meta-label">阅读量:</span>
-            <span class="meta-value mono">{{ item.viewCount ?? 0 }}</span>
+            <span class="meta-value mono tabular-nums">{{ item.viewCount ?? 0 }}</span>
           </span>
         </div>
       </article>
@@ -156,7 +188,7 @@ onMounted(loadData)
 
     <!-- 底部分页 -->
     <div v-if="total > size" class="pagination-wrap">
-      <Pagination v-model:page="page" :size="size" :total="total" />
+      <Pagination v-model:page="page" :size="size" :total="total" :disabled="loading" />
     </div>
   </div>
 </template>
@@ -174,44 +206,46 @@ onMounted(loadData)
 
 .header-main {
   display: flex;
-  align-items: baseline;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
 }
 
+.header-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .page-title {
   margin: 0;
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.3px;
   color: var(--ink);
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
 }
 
-.sub-slash {
+.head-sub {
+  margin: 0;
   font-size: 14px;
-  font-weight: 500;
-  color: var(--ink-tertiary);
-  letter-spacing: 1px;
+  color: var(--ink-secondary);
 }
 
 .meta-tag {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-secondary);
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
   padding: 4px 10px;
   border-radius: 0;
 }
 
 .header-divider {
-  margin-top: 14px;
+  margin-top: 16px;
   height: 2px;
-  background: var(--ink);
+  background: var(--kece-accent);
 }
 
 /* 列表卡片集 */
@@ -221,64 +255,33 @@ onMounted(loadData)
   gap: 16px;
 }
 
-/* 单张公告卡片：舒适厚度（~100px），直角工业基底，接入级联物理掉落动效 */
 .announcement-card {
+  position: relative;
   padding: 20px 24px 16px;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--surface-white);
+  border: 1px solid var(--kece-border);
   border-radius: 0;
   box-shadow: none;
-  cursor: pointer;
-  position: relative;
   transition:
     border-color 0.15s ease,
-    background-color 0.15s ease,
-    transform 0.15s ease;
-  animation: cardDropIn 0.44s cubic-bezier(0.25, 1.15, 0.5, 1) backwards;
-  animation-delay: calc(var(--drop-index, 0) * 45ms);
-  will-change: transform, opacity;
+    background-color 0.15s ease;
+  animation: kece-card-drop-in 0.44s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(min(var(--drop-index, 0), 11) * 45ms);
 }
 
 .announcement-card:hover {
-  border-color: var(--line-strong);
-  background: #ffffff;
-  transform: translateY(-2px) !important;
-}
-
-/* 掉落动画核心关键帧（与题集完全一致） */
-@keyframes cardDropIn {
-  0% {
-    opacity: 0;
-    transform: translateY(-38px) scale(0.985);
-  }
-  60% {
-    opacity: 1;
-    transform: translateY(3px) scale(1.002);
-  }
-  82% {
-    opacity: 1;
-    transform: translateY(-1.5px) scale(0.999);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .announcement-card {
-    animation: none !important;
-  }
+  border-color: var(--kece-accent);
+  background: var(--kece-accent-soft);
 }
 
 .announcement-card:hover .announcement-title {
-  color: #1677ff;
+  color: var(--kece-accent-ink);
 }
 
-.announcement-card:hover .view-btn {
-  border-color: #1677ff;
-  color: #1677ff;
-  background: #f0f7ff;
+.announcement-card:hover .view-indicator {
+  border-color: var(--kece-accent);
+  color: var(--kece-accent-ink);
+  background: var(--surface-white);
 }
 
 /* 顶层 */
@@ -299,18 +302,6 @@ onMounted(loadData)
 }
 
 .pin-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 22px;
-  padding: 0 6px;
-  background: var(--ink);
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 700;
-  border-radius: 0;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
   flex-shrink: 0;
   user-select: none;
 }
@@ -327,7 +318,19 @@ onMounted(loadData)
   transition: color 0.15s ease;
 }
 
-.view-btn {
+.ann-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ann-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.view-indicator {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -335,8 +338,8 @@ onMounted(loadData)
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-secondary);
-  background: var(--surface-white);
-  border: 1px solid var(--line);
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
   border-radius: 0;
   white-space: nowrap;
   transition:
@@ -375,7 +378,7 @@ onMounted(loadData)
 
 /* 底层：细线分隔栏 */
 .card-bottom {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--kece-border);
   padding-top: 10px;
   display: flex;
   align-items: center;
@@ -404,8 +407,36 @@ onMounted(loadData)
   color: var(--line);
 }
 
+.empty-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.empty-reset-btn {
+  margin-top: 12px;
+}
+
 .pagination-wrap {
   margin-top: 28px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .announcement-card {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .announcement-title,
+  .view-indicator,
+  .btn-arrow {
+    transition: none !important;
+  }
+
+  .announcement-card:hover .btn-arrow {
+    transform: none;
+  }
 }
 
 @media (max-width: 640px) {
@@ -414,7 +445,8 @@ onMounted(loadData)
     align-items: flex-start;
     gap: 8px;
   }
-  .view-btn {
+
+  .view-indicator {
     align-self: flex-start;
   }
 }

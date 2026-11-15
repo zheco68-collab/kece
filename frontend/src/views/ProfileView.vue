@@ -1,97 +1,107 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { RouterLink, useRoute } from 'vue-router';
+import { profileApi, type HeatmapData, type UserExamRecord, type UserProfile } from '@/api/profile';
+import { submissionApi } from '@/api/submission';
+import { databaseApi } from '@/api/database';
+import { objectiveApi } from '@/api/objective';
+import HeatmapCalendar from '@/components/HeatmapCalendar.vue';
+import EditProfileModal from '@/components/EditProfileModal.vue';
+import ChangePasswordModal from '@/components/ChangePasswordModal.vue';
+import Pagination from '@/components/Pagination.vue';
+import { useToast } from '@/composables/useToast';
+import { useUserStore } from '@/stores/user';
+import { renderMarkdown } from '@/utils/markdown';
+import { copyToClipboard } from '@/utils/clipboard';
+import { stripMarkdown } from '@/utils/plainText';
 import {
-  profileApi,
-  type HeatmapData,
-  type UserExamRecord,
-  type UserProfile,
-} from '@/api/profile'
-import { submissionApi } from '@/api/submission'
-import { databaseApi } from '@/api/database'
-import { objectiveApi } from '@/api/objective'
-import HeatmapCalendar from '@/components/HeatmapCalendar.vue'
-import EditProfileModal from '@/components/EditProfileModal.vue'
-import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
-import { useUserStore } from '@/stores/user'
-import { renderMarkdown } from '@/utils/markdown'
-import { copyToClipboard } from '@/utils/clipboard'
+  formatLanguageLabel,
+  OBJECTIVE_TYPE_LABELS,
+  OBJECTIVE_TYPE_TONE_MAP,
+} from '@/utils/questionMeta';
 import type {
   DbSubmissionRecord,
   ObjectiveSubmissionRecord,
-  ObjectiveType,
   SubmissionRecord,
   SubmissionStatus,
-} from '@/types'
-import { LANGUAGE_LABELS, STATUS_ABBR, statusTone } from '@/utils/submission'
-import { solutionApi, type SolutionListItem } from '@/api/solution'
+} from '@/types';
+import { STATUS_ABBR, statusTone } from '@/utils/submission';
+import { solutionApi, type SolutionListItem } from '@/api/solution';
 
-const route = useRoute()
-const userStore = useUserStore()
+const route = useRoute();
+const userStore = useUserStore();
+const toast = useToast();
 
 // 目标用户 ID 解析：若路由传了 /profile/:id 则为该用户的 id，否则为本人
 const targetUserId = computed<number | undefined>(() => {
-  const p = route.params.id
+  const p = route.params.id;
   if (p && !Array.isArray(p) && !Number.isNaN(Number(p))) {
-    return Number(p)
+    return Number(p);
   }
-  return undefined
-})
+  return undefined;
+});
 
 const isSelf = computed(() => {
-  if (!targetUserId.value) return true
-  return targetUserId.value === userStore.userInfo?.id
-})
+  if (!targetUserId.value) return true;
+  return targetUserId.value === userStore.userInfo?.id;
+});
 
 const isAdminOrTeacher = computed(() => {
-  const roles = userStore.userInfo?.roles || []
-  return roles.includes('ADMIN') || roles.includes('TEACHER')
-})
+  const roles = userStore.userInfo?.roles || [];
+  return roles.includes('ADMIN') || roles.includes('TEACHER');
+});
 
 // ---- 个人基础信息 ----
-const profile = ref<UserProfile | null>(null)
-const profileLoading = ref(true)
-const profileError = ref('')
+const profile = ref<UserProfile | null>(null);
+const profileLoading = ref(true);
+const profileError = ref('');
 
 // ---- 打卡热力图与考试战报 ----
-const heatmapData = ref<HeatmapData | null>(null)
-const heatmapLoading = ref(true)
-const exams = ref<UserExamRecord[]>([])
-const examsLoading = ref(true)
+const heatmapData = ref<HeatmapData | null>(null);
+const heatmapLoading = ref(true);
+const heatmapError = ref('');
+const exams = ref<UserExamRecord[]>([]);
+const examsLoading = ref(true);
+const examsError = ref('');
 
 // ---- 提交记录整合模块 ----
-type TabKey = 'code' | 'database' | 'objective' | 'solutions'
-const activeTab = ref<TabKey>('code')
-const pageSize = 10
+type TabKey = 'code' | 'database' | 'objective' | 'solutions';
+const activeTab = ref<TabKey>('code');
+const tabsRef = ref<HTMLElement | null>(null);
+const pageSize = 10;
 
 // 编程题提交
-const codeStatus = ref<SubmissionStatus | ''>('')
-const codePage = ref(1)
-const codeList = ref<SubmissionRecord[]>([])
-const codeTotal = ref(0)
-const codeLoading = ref(false)
-const codeSelected = ref<SubmissionRecord | null>(null)
+const codeStatus = ref<SubmissionStatus | ''>('');
+const codePage = ref(1);
+const codeList = ref<SubmissionRecord[]>([]);
+const codeTotal = ref(0);
+const codeLoading = ref(false);
+const codeError = ref('');
+const codeSelected = ref<SubmissionRecord | null>(null);
 
 // 数据库题提交
-const dbStatus = ref<SubmissionStatus | ''>('')
-const dbPage = ref(1)
-const dbList = ref<DbSubmissionRecord[]>([])
-const dbTotal = ref(0)
-const dbLoading = ref(false)
-const dbSelected = ref<DbSubmissionRecord | null>(null)
+const dbStatus = ref<SubmissionStatus | ''>('');
+const dbPage = ref(1);
+const dbList = ref<DbSubmissionRecord[]>([]);
+const dbTotal = ref(0);
+const dbLoading = ref(false);
+const dbError = ref('');
+const dbSelected = ref<DbSubmissionRecord | null>(null);
 
 // 客观题作答
-const objStatus = ref<SubmissionStatus | ''>('')
-const objPage = ref(1)
-const objList = ref<ObjectiveSubmissionRecord[]>([])
-const objTotal = ref(0)
-const objLoading = ref(false)
-const objSelected = ref<ObjectiveSubmissionRecord | null>(null)
+const objStatus = ref<SubmissionStatus | ''>('');
+const objPage = ref(1);
+const objList = ref<ObjectiveSubmissionRecord[]>([]);
+const objTotal = ref(0);
+const objLoading = ref(false);
+const objError = ref('');
+const objSelected = ref<ObjectiveSubmissionRecord | null>(null);
 
-const solutionPage = ref(1)
-const solutionList = ref<SolutionListItem[]>([])
-const solutionTotal = ref(0)
-const solutionLoading = ref(false)
+const solutionPage = ref(1);
+const solutionList = ref<SolutionListItem[]>([]);
+const solutionTotal = ref(0);
+const solutionLoading = ref(false);
+const solutionError = ref('');
 
 // 状态筛选选项
 const codeStatusFilters: Array<{ value: SubmissionStatus | ''; label: string }> = [
@@ -103,7 +113,7 @@ const codeStatusFilters: Array<{ value: SubmissionStatus | ''; label: string }> 
   { value: 'RUNTIME_ERROR', label: 'RE (运行错误)' },
   { value: 'COMPILE_ERROR', label: 'CE (编译错误)' },
   { value: 'SYSTEM_ERROR', label: 'SE (系统错误)' },
-]
+];
 
 const dbStatusFilters: Array<{ value: SubmissionStatus | ''; label: string }> = [
   { value: '', label: '全部状态' },
@@ -111,364 +121,447 @@ const dbStatusFilters: Array<{ value: SubmissionStatus | ''; label: string }> = 
   { value: 'WRONG_ANSWER', label: 'WA (答案错误)' },
   { value: 'TIME_LIMIT_EXCEEDED', label: 'TLE (运行超时)' },
   { value: 'SYSTEM_ERROR', label: 'SE (系统错误)' },
-]
+];
 
 const objStatusFilters: Array<{ value: SubmissionStatus | ''; label: string }> = [
   { value: '', label: '全部结果' },
   { value: 'ACCEPTED', label: '答对' },
   { value: 'WRONG_ANSWER', label: '答错' },
-]
+];
 
-const OBJECTIVE_TYPE_LABELS: Record<ObjectiveType, string> = {
-  SINGLE: '单选题',
-  MULTIPLE: '多选题',
-  JUDGE: '判断题',
-  FILL: '填空题',
-}
-
-// 弹窗与 Toast
-const editModalVisible = ref(false)
-const passwordModalVisible = ref(false)
-const toastMessage = ref('')
-const copyTip = ref(false)
-
-function showToast(msg: string) {
-  toastMessage.value = msg
-  setTimeout(() => {
-    if (toastMessage.value === msg) {
-      toastMessage.value = ''
-    }
-  }, 3500)
-}
+// 弹窗与反馈
+const editModalVisible = ref(false);
+const passwordModalVisible = ref(false);
+const copyTip = ref(false);
+const codeCloseBtn = ref<HTMLButtonElement | null>(null);
+const dbCloseBtn = ref<HTMLButtonElement | null>(null);
+const objCloseBtn = ref<HTMLButtonElement | null>(null);
+let lastFocusedEl: HTMLElement | null = null;
+let copyTipTimer: ReturnType<typeof setTimeout> | null = null;
+let scrollTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function copyCode(text: string) {
-  const ok = await copyToClipboard(text)
+  const ok = await copyToClipboard(text);
   if (ok) {
-    copyTip.value = true
-    setTimeout(() => {
-      copyTip.value = false
-    }, 1500)
+    copyTip.value = true;
+    if (copyTipTimer) clearTimeout(copyTipTimer);
+    copyTipTimer = setTimeout(() => {
+      copyTip.value = false;
+    }, 1500);
   }
 }
 
 function formatDate(iso: string | null): string {
-  if (!iso) return '-'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const date = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${date}`
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const date = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${date}`;
 }
 
 function formatTime(iso: string | null): string {
-  if (!iso) return '-'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const date = String(d.getDate()).padStart(2, '0')
-  const h = String(d.getHours()).padStart(2, '0')
-  const min = String(d.getMinutes()).padStart(2, '0')
-  return `${y}-${m}-${date} ${h}:${min}`
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const date = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${date} ${h}:${min}`;
 }
 
 function parseCode(codeContent: string): string {
-  if (!codeContent) return ''
+  if (!codeContent) return '';
   try {
-    const obj = JSON.parse(codeContent)
+    const obj = JSON.parse(codeContent);
     if (obj && typeof obj === 'object') {
-      const val = Object.values(obj).find((v) => typeof v === 'string' && v.length > 0)
-      if (typeof val === 'string') return val
+      const val = Object.values(obj).find((v) => typeof v === 'string' && v.length > 0);
+      if (typeof val === 'string') return val;
     }
   } catch {
-    return codeContent
+    return codeContent;
   }
-  return codeContent
+  return codeContent;
 }
 
-function stripMarkdown(md: string, max = 50): string {
-  if (!md) return ''
-  const plain = md
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/[#*_\-[\]()!]/g, '')
-    .trim()
-  return plain.length > max ? `${plain.slice(0, max)}…` : plain
-}
-
-// 身份标签配色规范：管理员(紫色) / 教师(绿色) / 学生(黑色)
+// 身份标签配色规范：管理员(墨黑) / 教师(青绿 Accent) / 学生(深石板灰)
 const primaryRoleInfo = computed(() => {
-  const roles = profile.value?.roles || []
+  const roles = profile.value?.roles || [];
   if (roles.includes('ADMIN')) {
-    return { label: '管理员', class: 'role-admin' }
+    return { label: '管理员', class: 'role-admin' };
   }
   if (roles.includes('TEACHER')) {
-    return { label: '教师', class: 'role-teacher' }
+    return { label: '教师', class: 'role-teacher' };
   }
-  return { label: '学生', class: 'role-student' }
-})
+  return { label: '学生', class: 'role-student' };
+});
 
 // 数据加载
 async function loadProfile() {
-  profileLoading.value = true
-  profileError.value = ''
+  profileLoading.value = true;
+  profileError.value = '';
   try {
-    profile.value = await profileApi.getProfile(targetUserId.value)
+    profile.value = await profileApi.getProfile(targetUserId.value);
   } catch (err: unknown) {
-    profileError.value = err instanceof Error ? err.message : '获取用户信息失败'
+    profileError.value = err instanceof Error ? err.message : '获取用户信息失败';
   } finally {
-    profileLoading.value = false
+    profileLoading.value = false;
   }
 }
 
 async function loadHeatmap() {
-  heatmapLoading.value = true
+  heatmapLoading.value = true;
+  heatmapError.value = '';
   try {
-    heatmapData.value = await profileApi.getHeatmap(targetUserId.value)
-  } catch {
-    heatmapData.value = null
+    heatmapData.value = await profileApi.getHeatmap(targetUserId.value);
+  } catch (err: unknown) {
+    heatmapData.value = null;
+    heatmapError.value = err instanceof Error ? err.message : '热力图数据加载失败';
   } finally {
-    heatmapLoading.value = false
+    heatmapLoading.value = false;
   }
 }
 
 async function loadExams() {
-  examsLoading.value = true
+  examsLoading.value = true;
+  examsError.value = '';
   try {
-    exams.value = await profileApi.getExams(targetUserId.value)
-  } catch {
-    exams.value = []
+    const res = await profileApi.getExams(targetUserId.value);
+    exams.value = Array.isArray(res) ? res : [];
+  } catch (err: unknown) {
+    exams.value = [];
+    examsError.value = err instanceof Error ? err.message : '考试实战记录加载失败';
   } finally {
-    examsLoading.value = false
+    examsLoading.value = false;
   }
 }
 
 async function loadCodeSubmissions() {
   if (!isSelf.value && !isAdminOrTeacher.value) {
-    codeList.value = []
-    codeTotal.value = 0
-    return
+    codeList.value = [];
+    codeTotal.value = 0;
+    return;
   }
-  codeLoading.value = true
+  codeLoading.value = true;
+  codeError.value = '';
   try {
     const res = await submissionApi.list({
       userId: targetUserId.value,
       status: codeStatus.value || undefined,
       page: codePage.value,
       size: pageSize,
-    })
-    codeList.value = res.list
-    codeTotal.value = res.total
-  } catch {
-    codeList.value = []
-    codeTotal.value = 0
+    });
+    codeList.value = Array.isArray(res?.list) ? res.list : [];
+    codeTotal.value = res?.total ?? 0;
+  } catch (err: unknown) {
+    codeList.value = [];
+    codeTotal.value = 0;
+    codeError.value = err instanceof Error ? err.message : '编程题提交记录加载失败';
   } finally {
-    codeLoading.value = false
+    codeLoading.value = false;
   }
 }
 
 async function loadDbSubmissions() {
   if (!isSelf.value && !isAdminOrTeacher.value) {
-    dbList.value = []
-    dbTotal.value = 0
-    return
+    dbList.value = [];
+    dbTotal.value = 0;
+    return;
   }
-  dbLoading.value = true
+  dbLoading.value = true;
+  dbError.value = '';
   try {
     const res = await databaseApi.listSubmissions({
       userId: targetUserId.value,
       status: dbStatus.value || undefined,
       page: dbPage.value,
       size: pageSize,
-    })
-    dbList.value = res.list
-    dbTotal.value = res.total
-  } catch {
-    dbList.value = []
-    dbTotal.value = 0
+    });
+    dbList.value = Array.isArray(res?.list) ? res.list : [];
+    dbTotal.value = res?.total ?? 0;
+  } catch (err: unknown) {
+    dbList.value = [];
+    dbTotal.value = 0;
+    dbError.value = err instanceof Error ? err.message : '数据库提交记录加载失败';
   } finally {
-    dbLoading.value = false
+    dbLoading.value = false;
   }
 }
 
 async function loadObjSubmissions() {
   if (!isSelf.value && !isAdminOrTeacher.value) {
-    objList.value = []
-    objTotal.value = 0
-    return
+    objList.value = [];
+    objTotal.value = 0;
+    return;
   }
-  objLoading.value = true
+  objLoading.value = true;
+  objError.value = '';
   try {
     const correct =
-      objStatus.value === 'ACCEPTED' ? 1 : objStatus.value === 'WRONG_ANSWER' ? 0 : undefined
+      objStatus.value === 'ACCEPTED' ? 1 : objStatus.value === 'WRONG_ANSWER' ? 0 : undefined;
     const res = await objectiveApi.listSubmissions({
       userId: targetUserId.value,
       correct: correct as 0 | 1 | undefined,
       page: objPage.value,
       size: pageSize,
-    })
-    objList.value = res.list
-    objTotal.value = res.total
-  } catch {
-    objList.value = []
-    objTotal.value = 0
+    });
+    objList.value = Array.isArray(res?.list) ? res.list : [];
+    objTotal.value = res?.total ?? 0;
+  } catch (err: unknown) {
+    objList.value = [];
+    objTotal.value = 0;
+    objError.value = err instanceof Error ? err.message : '客观题作答记录加载失败';
   } finally {
-    objLoading.value = false
+    objLoading.value = false;
   }
 }
 
 async function loadSolutions() {
-  if (!isSelf.value) return
-  solutionLoading.value = true
+  if (!isSelf.value) return;
+  solutionLoading.value = true;
+  solutionError.value = '';
   try {
-    const result = await solutionApi.listMine({ page: solutionPage.value, size: pageSize })
-    solutionList.value = result.list
-    solutionTotal.value = result.total
-  } catch {
-    solutionList.value = []
-    solutionTotal.value = 0
+    const result = await solutionApi.listMine({ page: solutionPage.value, size: pageSize });
+    solutionList.value = Array.isArray(result?.list) ? result.list : [];
+    solutionTotal.value = result?.total ?? 0;
+  } catch (err: unknown) {
+    solutionList.value = [];
+    solutionTotal.value = 0;
+    solutionError.value = err instanceof Error ? err.message : '我的题解加载失败';
   } finally {
-    solutionLoading.value = false
+    solutionLoading.value = false;
   }
 }
 
+const availableTabs = computed<TabKey[]>(() =>
+  isSelf.value ? ['code', 'solutions', 'database', 'objective'] : ['code', 'database', 'objective'],
+);
+
 function switchTab(t: TabKey) {
-  if (activeTab.value === t) return
-  activeTab.value = t
-  if (t === 'code' && codeList.value.length === 0 && !codeLoading.value) loadCodeSubmissions()
-  if (t === 'database' && dbList.value.length === 0 && !dbLoading.value) loadDbSubmissions()
-  if (t === 'objective' && objList.value.length === 0 && !objLoading.value) loadObjSubmissions()
-  if (t === 'solutions' && solutionList.value.length === 0 && !solutionLoading.value) loadSolutions()
+  if (activeTab.value === t) return;
+  activeTab.value = t;
+  if (t === 'code' && codeList.value.length === 0 && !codeLoading.value) loadCodeSubmissions();
+  if (t === 'database' && dbList.value.length === 0 && !dbLoading.value) loadDbSubmissions();
+  if (t === 'objective' && objList.value.length === 0 && !objLoading.value) loadObjSubmissions();
+  if (t === 'solutions' && solutionList.value.length === 0 && !solutionLoading.value)
+    loadSolutions();
+}
+
+function onTabKeydown(e: KeyboardEvent) {
+  const tabs = availableTabs.value;
+  const currentIdx = tabs.indexOf(activeTab.value);
+  if (currentIdx === -1) return;
+  let nextIdx = -1;
+  if (e.key === 'ArrowRight') nextIdx = (currentIdx + 1) % tabs.length;
+  else if (e.key === 'ArrowLeft') nextIdx = (currentIdx - 1 + tabs.length) % tabs.length;
+  else if (e.key === 'Home') nextIdx = 0;
+  else if (e.key === 'End') nextIdx = tabs.length - 1;
+  if (nextIdx === -1) return;
+  e.preventDefault();
+  const nextTab = tabs[nextIdx];
+  switchTab(nextTab);
+  nextTick(() => {
+    const btn = tabsRef.value?.querySelector<HTMLButtonElement>(`#profile-tab-${nextTab}`);
+    btn?.focus();
+  });
+}
+
+function onSolutionPageChange(page: number) {
+  solutionPage.value = page;
+  loadSolutions();
+}
+
+function onCodePageChange(page: number) {
+  codePage.value = page;
+  loadCodeSubmissions();
+}
+
+function onDbPageChange(page: number) {
+  dbPage.value = page;
+  loadDbSubmissions();
+}
+
+function onObjPageChange(page: number) {
+  objPage.value = page;
+  loadObjSubmissions();
 }
 
 function loadAllData() {
-  loadProfile()
-  loadHeatmap()
-  loadExams()
-  loadCodeSubmissions()
-  loadDbSubmissions()
-  loadObjSubmissions()
-  loadSolutions()
+  loadProfile();
+  loadHeatmap();
+  loadExams();
+  loadCodeSubmissions();
+  loadDbSubmissions();
+  loadObjSubmissions();
+  loadSolutions();
 }
 
 watch(
   () => targetUserId.value,
   () => {
-    codePage.value = 1
-    dbPage.value = 1
-    objPage.value = 1
-    solutionPage.value = 1
-    loadAllData()
+    codePage.value = 1;
+    dbPage.value = 1;
+    objPage.value = 1;
+    solutionPage.value = 1;
+    loadAllData();
   },
-)
+);
 
 watch(codeStatus, () => {
-  codePage.value = 1
-  loadCodeSubmissions()
-})
+  codePage.value = 1;
+  loadCodeSubmissions();
+});
 
 watch(dbStatus, () => {
-  dbPage.value = 1
-  loadDbSubmissions()
-})
+  dbPage.value = 1;
+  loadDbSubmissions();
+});
 
 watch(objStatus, () => {
-  objPage.value = 1
-  loadObjSubmissions()
-})
+  objPage.value = 1;
+  loadObjSubmissions();
+});
 
-function onProfileUpdated(data: {
-  bio: string
-  githubUrl: string
-  avatarUrl: string | null
-}) {
+function onProfileUpdated(data: { bio: string; githubUrl: string; avatarUrl: string | null }) {
   if (profile.value) {
-    profile.value.bio = data.bio
-    profile.value.githubUrl = data.githubUrl
+    profile.value.bio = data.bio;
+    profile.value.githubUrl = data.githubUrl;
     if (data.avatarUrl) {
-      profile.value.avatarUrl = data.avatarUrl
+      profile.value.avatarUrl = data.avatarUrl;
     }
   }
-  showToast('个人资料已成功更新')
+  toast.success('个人资料已成功更新');
 }
 
 function onPasswordChanged() {
-  showToast('密码修改成功，请妥善保管新密码')
+  toast.success('密码修改成功，请妥善保管新密码');
 }
 
 function applyTabFromRoute() {
-  const tab = route.query.tab
-  if (tab === 'database') activeTab.value = 'database'
-  else if (tab === 'objective') activeTab.value = 'objective'
-  else if (tab === 'solutions' && isSelf.value) activeTab.value = 'solutions'
-  else if (tab === 'code') activeTab.value = 'code'
+  const tab = route.query.tab;
+  if (tab === 'database') activeTab.value = 'database';
+  else if (tab === 'objective') activeTab.value = 'objective';
+  else if (tab === 'solutions' && isSelf.value) activeTab.value = 'solutions';
+  else if (tab === 'code') activeTab.value = 'code';
 
   if (tab) {
-    setTimeout(() => {
-      const el = document.getElementById('submissions-section')
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      const el = document.getElementById('submissions-section');
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth' })
+        const reduced =
+          typeof window !== 'undefined' &&
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' });
       }
-    }, 150)
+    }, 150);
   }
 }
+
+function handlePreviewKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return;
+  if (codeSelected.value) codeSelected.value = null;
+  else if (dbSelected.value) dbSelected.value = null;
+  else if (objSelected.value) objSelected.value = null;
+}
+
+watch([codeSelected, dbSelected, objSelected], async ([c, d, o], [pc, pd, po]) => {
+  const opening = Boolean((c && !pc) || (d && !pd) || (o && !po));
+  const closing = Boolean(!c && !d && !o && (pc || pd || po));
+  if (opening) {
+    lastFocusedEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    await nextTick();
+    if (c) codeCloseBtn.value?.focus();
+    else if (d) dbCloseBtn.value?.focus();
+    else if (o) objCloseBtn.value?.focus();
+  } else if (closing) {
+    await nextTick();
+    lastFocusedEl?.focus();
+    lastFocusedEl = null;
+  }
+});
 
 watch(
   () => route.query.tab,
   () => {
-    applyTabFromRoute()
+    applyTabFromRoute();
   },
-)
+);
 
 onMounted(() => {
-  applyTabFromRoute()
-  loadAllData()
-})
+  window.addEventListener('keydown', handlePreviewKeydown);
+  applyTabFromRoute();
+  loadAllData();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handlePreviewKeydown);
+  if (copyTipTimer) clearTimeout(copyTipTimer);
+  if (scrollTimer) clearTimeout(scrollTimer);
+});
 </script>
 
 <template>
   <div class="profile-page">
     <div class="container profile-container">
-      <!-- 顶部浮层 Toast 提示 -->
-      <transition name="toast-fade">
-        <div v-if="toastMessage" class="toast-bar">
-          <svg class="toast-icon" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05Z" />
-          </svg>
-          <span>{{ toastMessage }}</span>
-        </div>
-      </transition>
-
       <!-- 1. 个人名片 Hero Card -->
       <section v-if="profileError" class="card error-card">
-        <p class="submit-error">{{ profileError }}</p>
+        <div class="state-banner is-error" role="alert">
+          <span>{{ profileError }}</span>
+          <button type="button" class="btn btn-ghost btn-sm btn-inline-retry" @click="loadAllData">
+            重试
+          </button>
+        </div>
       </section>
 
       <section v-else class="card hero-profile-card">
         <div class="hero-main-layout">
-          <!-- 方形大头像：128px × 128px，直角，本人访问悬浮提示更换 -->
-          <div
-            class="hero-avatar-box"
-            :class="{ 'is-clickable': isSelf }"
-            :title="isSelf ? '点击修改头像与资料' : profile?.username"
-            @click="isSelf && (editModalVisible = true)"
+          <!-- 方形大头像：自适应正方形，直角边线分割；本人可点击编辑 -->
+          <button
+            v-if="isSelf"
+            type="button"
+            class="hero-avatar-box is-clickable"
+            title="点击修改头像与资料"
+            aria-label="更换头像与编辑个人资料"
+            @click="editModalVisible = true"
           >
             <img
               v-if="profile?.avatarUrl"
               :src="profile.avatarUrl"
               class="avatar-image"
-              alt="Avatar"
+              :alt="profile?.username ? `${profile.username} 的头像` : '用户头像'"
             />
-            <div v-else class="avatar-placeholder-large mono">
+            <div v-else class="avatar-placeholder-large mono" aria-hidden="true">
               {{ profile?.username?.charAt(0).toUpperCase() || 'U' }}
             </div>
-            <div v-if="isSelf" class="avatar-hover-mask">
-              <svg class="mask-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                <circle cx="12" cy="13" r="4"/>
+            <div class="avatar-hover-mask" aria-hidden="true">
+              <svg
+                class="mask-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"
+                />
+                <circle cx="12" cy="13" r="4" />
               </svg>
               <span>更换头像</span>
+            </div>
+          </button>
+          <div v-else class="hero-avatar-box" :title="profile?.username || ''">
+            <img
+              v-if="profile?.avatarUrl"
+              :src="profile.avatarUrl"
+              class="avatar-image"
+              :alt="profile?.username ? `${profile.username} 的头像` : '用户头像'"
+            />
+            <div v-else class="avatar-placeholder-large mono" aria-hidden="true">
+              {{ profile?.username?.charAt(0).toUpperCase() || 'U' }}
             </div>
           </div>
 
@@ -476,12 +569,11 @@ onMounted(() => {
           <div class="hero-info-column">
             <div class="user-primary-row">
               <div class="user-title-group">
-                <h1 class="user-display-name">{{ profile?.username }}</h1>
-                <!-- 身份徽章：管理员(紫色) / 教师(绿色) / 学生(黑色) -->
+                <h1 class="user-display-name">{{ profile?.username || '个人主页' }}</h1>
                 <span class="role-badge" :class="primaryRoleInfo.class">
                   {{ primaryRoleInfo.label }}
                 </span>
-                <span class="user-id-badge mono">UID: {{ profile?.id }}</span>
+                <span class="user-id-badge mono tabular-nums">UID: {{ profile?.id }}</span>
                 <span v-if="!isSelf" class="visitor-badge">访客视角</span>
               </div>
 
@@ -492,8 +584,10 @@ onMounted(() => {
                   type="button"
                   @click="editModalVisible = true"
                 >
-                  <svg class="btn-svg" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM9.75 4.81l-6.9 6.9-.64 2.241 2.242-.64 6.9-6.9-1.602-1.602Z"/>
+                  <svg class="btn-svg" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path
+                      d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM9.75 4.81l-6.9 6.9-.64 2.241 2.242-.64 6.9-6.9-1.602-1.602Z"
+                    />
                   </svg>
                   编辑资料
                 </button>
@@ -502,8 +596,10 @@ onMounted(() => {
                   type="button"
                   @click="passwordModalVisible = true"
                 >
-                  <svg class="btn-svg" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M4 4a4 4 0 0 1 8 0v2h.25c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-5.5C2 6.784 2.784 6 3.75 6H4V4Zm1.5 2h5V4a2.5 2.5 0 0 0-5 0v2ZM3.75 7.5a.25.25 0 0 0-.25.25v5.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-5.5a.25.25 0 0 0-.25-.25h-8.5Z"/>
+                  <svg class="btn-svg" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path
+                      d="M4 4a4 4 0 0 1 8 0v2h.25c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-5.5C2 6.784 2.784 6 3.75 6H4V4Zm1.5 2h5V4a2.5 2.5 0 0 0-5 0v2ZM3.75 7.5a.25.25 0 0 0-.25.25v5.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-5.5a.25.25 0 0 0-.25-.25h-8.5Z"
+                    />
                   </svg>
                   修改密码
                 </button>
@@ -513,14 +609,18 @@ onMounted(() => {
             <!-- 元信息标签栏 (Email, 加入时间, GitHub) -->
             <div class="user-meta-pills">
               <span v-if="profile?.email" class="meta-pill">
-                <svg class="pill-svg" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M1.75 2h12.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25v-8.5C0 2.784.784 2 1.75 2ZM1.5 4.31v7.94c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V4.31L8.38 8.64a.75.75 0 0 1-.76 0L1.5 4.31Zm12.63-1.06H1.87L8 7.42l6.13-4.17Z" />
+                <svg class="pill-svg" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M1.75 2h12.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25v-8.5C0 2.784.784 2 1.75 2ZM1.5 4.31v7.94c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V4.31L8.38 8.64a.75.75 0 0 1-.76 0L1.5 4.31Zm12.63-1.06H1.87L8 7.42l6.13-4.17Z"
+                  />
                 </svg>
                 {{ profile.email }}
               </span>
-              <span class="meta-pill">
-                <svg class="pill-svg" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M4.75 0a.75.75 0 0 1 .75.75V2h5V.75a.75.75 0 0 1 1.5 0V2h1.25c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 13.25 16H2.75A1.75 1.75 0 0 1 1 14.25V3.75C1 2.784 1.784 2 2.75 2H4V.75A.75.75 0 0 1 4.75 0ZM2.5 7.5v6.75c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V7.5H2.5Zm10.75-2.5V3.75a.25.25 0 0 0-.25-.25H2.75a.25.25 0 0 0-.25.25V5h10.5Z" />
+              <span class="meta-pill tabular-nums">
+                <svg class="pill-svg" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M4.75 0a.75.75 0 0 1 .75.75V2h5V.75a.75.75 0 0 1 1.5 0V2h1.25c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 13.25 16H2.75A1.75 1.75 0 0 1 1 14.25V3.75C1 2.784 1.784 2 2.75 2H4V.75A.75.75 0 0 1 4.75 0ZM2.5 7.5v6.75c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V7.5H2.5Zm10.75-2.5V3.75a.25.25 0 0 0-.25-.25H2.75a.25.25 0 0 0-.25.25V5h10.5Z"
+                  />
                 </svg>
                 加入于 {{ formatDate(profile?.createdAt || null) }}
               </span>
@@ -532,23 +632,32 @@ onMounted(() => {
                 class="meta-pill github-pill"
                 title="打开 GitHub 主页"
               >
-                <svg class="pill-svg" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+                <svg class="pill-svg" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+                  />
                 </svg>
                 <span>GitHub</span>
-                <svg class="ext-arrow" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8">
+                <svg
+                  class="ext-arrow"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  aria-hidden="true"
+                >
                   <path d="M3 1h8v8M11 1 5 7" />
                 </svg>
               </a>
             </div>
 
-            <!-- 个性签名 / Slogan 专属沉浸框 -->
+            <!-- 个性签名 / Slogan 卡片 -->
             <div class="user-slogan-box">
-              <span class="quote-sign">“</span>
+              <span class="quote-sign" aria-hidden="true">“</span>
               <p class="slogan-text">
                 {{ profile?.bio || '这位同学很低调，暂无个性签名~' }}
               </p>
-              <span class="quote-sign">”</span>
+              <span class="quote-sign" aria-hidden="true">”</span>
             </div>
           </div>
         </div>
@@ -556,7 +665,19 @@ onMounted(() => {
 
       <!-- 2. 52-周 AC 打卡热力图 -->
       <section class="profile-section-item">
-        <HeatmapCalendar :data="heatmapData" :loading="heatmapLoading" />
+        <div v-if="heatmapError" class="card profile-block-card">
+          <div class="state-banner is-error" role="alert">
+            <span>{{ heatmapError }}</span>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm btn-inline-retry"
+              @click="loadHeatmap"
+            >
+              重试
+            </button>
+          </div>
+        </div>
+        <HeatmapCalendar v-else :data="heatmapData" :loading="heatmapLoading" />
       </section>
 
       <!-- 3. 考试实战档案 -->
@@ -564,39 +685,50 @@ onMounted(() => {
         <div class="block-header">
           <div class="block-title-box">
             <div class="block-title-row">
-              <h3 class="block-title">
+              <h2 class="block-title">
                 {{ isSelf ? '我的考试实战' : (profile?.username || '用户') + ' 的考试实战' }}
-              </h3>
-              <span class="block-counter mono">{{ exams.length }} 场</span>
+              </h2>
+              <span class="block-counter mono tabular-nums">{{ exams.length }} 场</span>
             </div>
             <span class="block-sub">参与并完成提交的在线考试历史成绩与战报</span>
           </div>
         </div>
 
-        <div v-if="examsLoading" class="block-loading muted">
-          <div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载考试记录…</p>
+        <div v-if="examsLoading" class="block-loading muted" role="status">
+          <div class="loading-spinner" aria-hidden="true"></div>
+          <p class="muted loading-caption">正在加载考试记录…</p>
+        </div>
+
+        <div v-else-if="examsError" class="state-banner is-error" role="alert">
+          <span>{{ examsError }}</span>
+          <button type="button" class="btn btn-ghost btn-sm btn-inline-retry" @click="loadExams">
+            重试
+          </button>
         </div>
 
         <div v-else-if="exams.length === 0" class="empty-block">
-          <svg class="empty-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="16" y1="13" x2="8" y2="13"/>
-            <line x1="16" y1="17" x2="8" y2="17"/>
-            <polyline points="10 9 9 9 8 9"/>
+          <svg
+            class="empty-svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            aria-hidden="true"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+            <polyline points="10 9 9 9 8 9" />
           </svg>
           <span class="empty-text">暂无已完成的考试记录</span>
         </div>
 
         <div v-else class="exam-grid-container">
-          <div
-            v-for="item in exams"
-            :key="item.examId"
-            class="exam-battle-card"
-          >
+          <div v-for="item in exams" :key="item.examId" class="exam-battle-card">
             <div class="battle-card-header">
               <div class="battle-title-wrap">
-                <span class="battle-title">{{ item.title }}</span>
+                <h3 class="battle-title">{{ item.title }}</h3>
                 <span
                   class="badge exam-mode-pill"
                   :class="item.mode === 'ACM' ? 'mode-acm' : 'mode-oi'"
@@ -619,19 +751,23 @@ onMounted(() => {
             <div class="battle-metrics-row">
               <div class="metric-cell">
                 <span class="metric-k">得分</span>
-                <span class="metric-v score mono">{{ item.score ?? '-' }} 分</span>
+                <span class="metric-v score mono tabular-nums">{{ item.score ?? '-' }} 分</span>
               </div>
               <div class="metric-cell">
                 <span class="metric-k">排名</span>
-                <span class="metric-v mono">#{{ item.rank ?? '-' }} <small>/ {{ item.totalParticipants }}</small></span>
+                <span class="metric-v mono tabular-nums">
+                  #{{ item.rank ?? '-' }} <small>/ {{ item.totalParticipants }}</small>
+                </span>
               </div>
               <div class="metric-cell">
                 <span class="metric-k">时长</span>
-                <span class="metric-v mono">{{ item.durationMinutes }} min</span>
+                <span class="metric-v mono tabular-nums">{{ item.durationMinutes }} min</span>
               </div>
               <div class="metric-cell">
                 <span class="metric-k">交卷时间</span>
-                <span class="metric-v time mono">{{ formatTime(item.submittedAt) }}</span>
+                <span class="metric-v time mono tabular-nums">{{
+                  formatTime(item.submittedAt)
+                }}</span>
               </div>
             </div>
           </div>
@@ -639,15 +775,28 @@ onMounted(() => {
       </section>
 
       <!-- 4. 全量整合提交记录模块 (Submissions Module) -->
-      <section v-if="isSelf || isAdminOrTeacher" id="submissions-section" class="card profile-block-card">
+      <section
+        v-if="isSelf || isAdminOrTeacher"
+        id="submissions-section"
+        class="card profile-block-card"
+      >
         <div class="block-header">
           <div class="block-title-box">
             <div class="block-title-row">
-              <h3 class="block-title">
+              <h2 class="block-title">
                 {{ isSelf ? '我的提交记录' : (profile?.username || '用户') + ' 的提交记录' }}
-              </h3>
-              <span class="block-counter mono">
-                {{ activeTab === 'code' ? codeTotal : activeTab === 'database' ? dbTotal : activeTab === 'objective' ? objTotal : solutionTotal }} 条
+              </h2>
+              <span class="block-counter mono tabular-nums">
+                {{
+                  activeTab === 'code'
+                    ? codeTotal
+                    : activeTab === 'database'
+                      ? dbTotal
+                      : activeTab === 'objective'
+                        ? objTotal
+                        : solutionTotal
+                }}
+                条
               </span>
             </div>
             <span class="block-sub">算法题代码、数据库 SQL 与客观题作答的全量评测历史</span>
@@ -655,340 +804,469 @@ onMounted(() => {
 
           <!-- 右侧状态筛选下拉 -->
           <div class="submissions-filter-box">
-            <select
-              v-if="activeTab === 'code'"
-              v-model="codeStatus"
-              class="status-select mono"
-            >
-              <option v-for="f in codeStatusFilters" :key="f.value" :value="f.value">
-                {{ f.label }}
-              </option>
-            </select>
-            <select
-              v-else-if="activeTab === 'database'"
-              v-model="dbStatus"
-              class="status-select mono"
-            >
-              <option v-for="f in dbStatusFilters" :key="f.value" :value="f.value">
-                {{ f.label }}
-              </option>
-            </select>
-            <select
-              v-else-if="activeTab === 'objective'"
-              v-model="objStatus"
-              class="status-select mono"
-            >
-              <option v-for="f in objStatusFilters" :key="f.value" :value="f.value">
-                {{ f.label }}
-              </option>
-            </select>
+            <template v-if="activeTab === 'code'">
+              <label for="profile-code-status" class="sr-only">筛选编程题评测状态</label>
+              <select id="profile-code-status" v-model="codeStatus" class="status-select mono">
+                <option v-for="f in codeStatusFilters" :key="f.value" :value="f.value">
+                  {{ f.label }}
+                </option>
+              </select>
+            </template>
+            <template v-else-if="activeTab === 'database'">
+              <label for="profile-db-status" class="sr-only">筛选数据库评测状态</label>
+              <select id="profile-db-status" v-model="dbStatus" class="status-select mono">
+                <option v-for="f in dbStatusFilters" :key="f.value" :value="f.value">
+                  {{ f.label }}
+                </option>
+              </select>
+            </template>
+            <template v-else-if="activeTab === 'objective'">
+              <label for="profile-obj-status" class="sr-only">筛选客观题作答结果</label>
+              <select id="profile-obj-status" v-model="objStatus" class="status-select mono">
+                <option v-for="f in objStatusFilters" :key="f.value" :value="f.value">
+                  {{ f.label }}
+                </option>
+              </select>
+            </template>
           </div>
         </div>
 
-        <!-- 3 大题型切换标签 -->
-        <div class="submissions-tabs">
+        <!-- 切换标签 -->
+        <div
+          ref="tabsRef"
+          class="submissions-tabs"
+          role="tablist"
+          aria-label="提交与题解分类"
+          @keydown="onTabKeydown"
+        >
           <button
+            id="profile-tab-code"
             type="button"
+            role="tab"
+            :aria-selected="activeTab === 'code'"
+            :tabindex="activeTab === 'code' ? 0 : -1"
             class="tab-btn"
             :class="{ active: activeTab === 'code' }"
             @click="switchTab('code')"
           >
             <span>编程题提交</span>
-            <span class="tab-count mono">{{ codeTotal }}</span>
+            <span class="tab-count mono tabular-nums">{{ codeTotal }}</span>
           </button>
           <button
             v-if="isSelf"
+            id="profile-tab-solutions"
             type="button"
+            role="tab"
+            :aria-selected="activeTab === 'solutions'"
+            :tabindex="activeTab === 'solutions' ? 0 : -1"
             class="tab-btn"
             :class="{ active: activeTab === 'solutions' }"
             @click="switchTab('solutions')"
           >
             <span>我的题解</span>
-            <span class="tab-count mono">{{ solutionTotal }}</span>
+            <span class="tab-count mono tabular-nums">{{ solutionTotal }}</span>
           </button>
           <button
+            id="profile-tab-database"
             type="button"
+            role="tab"
+            :aria-selected="activeTab === 'database'"
+            :tabindex="activeTab === 'database' ? 0 : -1"
             class="tab-btn"
             :class="{ active: activeTab === 'database' }"
             @click="switchTab('database')"
           >
             <span>数据库提交</span>
-            <span class="tab-count mono">{{ dbTotal }}</span>
+            <span class="tab-count mono tabular-nums">{{ dbTotal }}</span>
           </button>
           <button
+            id="profile-tab-objective"
             type="button"
+            role="tab"
+            :aria-selected="activeTab === 'objective'"
+            :tabindex="activeTab === 'objective' ? 0 : -1"
             class="tab-btn"
             :class="{ active: activeTab === 'objective' }"
             @click="switchTab('objective')"
           >
             <span>客观题作答</span>
-            <span class="tab-count mono">{{ objTotal }}</span>
+            <span class="tab-count mono tabular-nums">{{ objTotal }}</span>
           </button>
         </div>
 
-        <!-- Tab 1: 编程题表格 -->
+        <!-- Tab 0: 我的题解 -->
         <template v-if="activeTab === 'solutions'">
-          <div v-if="solutionLoading" class="block-loading muted"><div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载我的题解…</p></div>
-          <div v-else-if="solutionList.length === 0" class="empty-block"><span class="empty-text">还没有发布题解</span></div>
-          <div v-else class="table-responsive">
-            <table class="timeline-table"><thead><tr><th>题解标题</th><th>关联题目</th><th>状态</th><th>最后更新</th><th>操作</th></tr></thead><tbody><tr v-for="item in solutionList" :key="item.id"><td class="q-title-col"><RouterLink :to="`/solutions/${item.id}`" class="q-link">{{ item.title }}</RouterLink></td><td>{{ item.questionType === 'DB' ? 'DB' : '算法' }} #{{ item.questionId }} · {{ item.questionTitle }}</td><td><span class="status-badge" :class="item.status === 'PUBLISHED' ? 'status-accepted' : 'status-pending'">{{ item.status === 'PUBLISHED' ? '公开' : '已隐藏' }}</span></td><td class="mono date-cell">{{ formatTime(item.updatedAt) }}</td><td><RouterLink :to="`/solutions/${item.id}/edit`" class="detail-action">编辑</RouterLink></td></tr></tbody></table>
-            <div v-if="solutionTotal > pageSize" class="pagination-bar"><button class="btn btn-ghost btn-sm" type="button" :disabled="solutionPage <= 1" @click="solutionPage--; loadSolutions()">上一页</button><span class="page-indicator mono">第 {{ solutionPage }} / {{ Math.ceil(solutionTotal / pageSize) }} 页</span><button class="btn btn-ghost btn-sm" type="button" :disabled="solutionPage >= Math.ceil(solutionTotal / pageSize)" @click="solutionPage++; loadSolutions()">下一页</button></div>
+          <div v-if="solutionLoading" class="block-loading muted" role="status">
+            <div class="loading-spinner" aria-hidden="true"></div>
+            <p class="muted loading-caption">正在加载我的题解…</p>
           </div>
+          <div v-else-if="solutionError" class="state-banner is-error" role="alert">
+            <span>{{ solutionError }}</span>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm btn-inline-retry"
+              @click="loadSolutions"
+            >
+              重试
+            </button>
+          </div>
+          <div v-else-if="solutionList.length === 0" class="empty-block">
+            <span class="empty-text">还没有发布题解</span>
+          </div>
+          <template v-else>
+            <div class="table-responsive">
+              <table class="timeline-table">
+                <thead>
+                  <tr>
+                    <th>题解标题</th>
+                    <th>关联题目</th>
+                    <th>状态</th>
+                    <th>最后更新</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in solutionList" :key="item.id">
+                    <td class="q-title-col">
+                      <RouterLink :to="`/solutions/${item.id}`" class="q-link">
+                        {{ item.title }}
+                      </RouterLink>
+                    </td>
+                    <td>
+                      {{ item.questionType === 'DB' ? 'DB' : '算法' }} #{{ item.questionId }} ·
+                      {{ item.questionTitle }}
+                    </td>
+                    <td>
+                      <span
+                        class="hud-pill"
+                        :class="item.status === 'PUBLISHED' ? 'tone-success' : 'tone-neutral'"
+                      >
+                        {{ item.status === 'PUBLISHED' ? '公开' : '已隐藏' }}
+                      </span>
+                    </td>
+                    <td class="mono tabular-nums date-cell">{{ formatTime(item.updatedAt) }}</td>
+                    <td>
+                      <RouterLink :to="`/solutions/${item.id}/edit`" class="detail-action">
+                        编辑
+                      </RouterLink>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <Pagination
+              v-if="solutionTotal > pageSize"
+              :total="solutionTotal"
+              :page="solutionPage"
+              :size="pageSize"
+              :compact="true"
+              :disabled="solutionLoading"
+              @update:page="onSolutionPageChange"
+            />
+          </template>
         </template>
+
+        <!-- Tab 1: 编程题表格 -->
         <template v-else-if="activeTab === 'code'">
-          <div v-if="codeLoading" class="block-loading muted">
-            <div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载编程题提交…</p>
+          <div v-if="codeLoading" class="block-loading muted" role="status">
+            <div class="loading-spinner" aria-hidden="true"></div>
+            <p class="muted loading-caption">正在加载编程题提交…</p>
+          </div>
+          <div v-else-if="codeError" class="state-banner is-error" role="alert">
+            <span>{{ codeError }}</span>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm btn-inline-retry"
+              @click="loadCodeSubmissions"
+            >
+              重试
+            </button>
           </div>
           <div v-else-if="codeList.length === 0" class="empty-block">
             <span class="empty-text">暂无编程题提交记录</span>
+            <button
+              v-if="codeStatus"
+              type="button"
+              class="btn btn-ghost btn-sm"
+              @click="codeStatus = ''"
+            >
+              清除筛选
+            </button>
           </div>
-          <div v-else class="table-responsive">
-            <table class="timeline-table">
-              <thead>
-                <tr>
-                  <th>提交号</th>
-                  <th>题目</th>
-                  <th>语言</th>
-                  <th>评测状态</th>
-                  <th>得分</th>
-                  <th>用时</th>
-                  <th>内存</th>
-                  <th>提交时间</th>
-                  <th v-if="isSelf">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="r in codeList" :key="r.submissionId">
-                  <td class="mono sub-id">#{{ r.submissionId }}</td>
-                  <td class="q-title-col">
-                    <RouterLink :to="`/questions/${r.questionId}`" class="q-link">
-                      {{ r.questionTitle || `题目 #${r.questionId}` }}
-                    </RouterLink>
-                  </td>
-                  <td class="mono lang-cell">
-                    {{ LANGUAGE_LABELS[r.language] ?? r.language }}
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      class="status-badge"
-                      :class="[statusTone(r.status), isSelf ? 'clickable' : '']"
-                      :title="isSelf ? '点击查看提交代码' : ''"
-                      @click="isSelf ? (codeSelected = r) : null"
-                    >
-                      {{ STATUS_ABBR[r.status] ?? r.status }}
-                    </button>
-                  </td>
-                  <td class="mono score-cell">{{ r.score ?? '-' }}</td>
-                  <td class="mono time-used">{{ r.timeUsedMs != null ? r.timeUsedMs + 'ms' : '-' }}</td>
-                  <td class="mono mem-used">{{ r.memoryUsedKb != null ? r.memoryUsedKb + 'KB' : '-' }}</td>
-                  <td class="mono date-cell">{{ formatTime(r.createdAt) }}</td>
-                  <td v-if="isSelf">
-                    <RouterLink
-                      :to="`/submissions/${r.submissionId}?questionId=${r.questionId}`"
-                      class="detail-action"
-                    >
-                      详情
-                    </RouterLink>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-
-            <!-- 分页 -->
-            <div v-if="codeTotal > pageSize" class="pagination-bar">
-              <button
-                class="btn btn-ghost btn-sm"
-                type="button"
-                :disabled="codePage <= 1"
-                @click="codePage--; loadCodeSubmissions()"
-              >
-                上一页
-              </button>
-              <span class="page-indicator mono">
-                第 {{ codePage }} / {{ Math.ceil(codeTotal / pageSize) }} 页 (共 {{ codeTotal }} 条)
-              </span>
-              <button
-                class="btn btn-ghost btn-sm"
-                type="button"
-                :disabled="codePage >= Math.ceil(codeTotal / pageSize)"
-                @click="codePage++; loadCodeSubmissions()"
-              >
-                下一页
-              </button>
+          <template v-else>
+            <div class="table-responsive">
+              <table class="timeline-table">
+                <thead>
+                  <tr>
+                    <th>提交号</th>
+                    <th>题目</th>
+                    <th>语言</th>
+                    <th>评测状态</th>
+                    <th>得分</th>
+                    <th>用时</th>
+                    <th>内存</th>
+                    <th>提交时间</th>
+                    <th v-if="isSelf">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in codeList" :key="r.submissionId">
+                    <td class="mono tabular-nums sub-id">#{{ r.submissionId }}</td>
+                    <td class="q-title-col">
+                      <RouterLink :to="`/questions/${r.questionId}`" class="q-link">
+                        {{ r.questionTitle || `题目 #${r.questionId}` }}
+                      </RouterLink>
+                    </td>
+                    <td class="mono lang-cell">
+                      {{ formatLanguageLabel(r.language) }}
+                    </td>
+                    <td>
+                      <button
+                        v-if="isSelf"
+                        type="button"
+                        class="status-badge clickable"
+                        :class="statusTone(r.status)"
+                        title="点击查看提交代码"
+                        @click="codeSelected = r"
+                      >
+                        {{ STATUS_ABBR[r.status] ?? r.status }}
+                      </button>
+                      <span v-else class="status-badge" :class="statusTone(r.status)">
+                        {{ STATUS_ABBR[r.status] ?? r.status }}
+                      </span>
+                    </td>
+                    <td class="mono tabular-nums score-cell">{{ r.score ?? '-' }}</td>
+                    <td class="mono tabular-nums time-used">
+                      {{ r.timeUsedMs != null ? r.timeUsedMs + 'ms' : '-' }}
+                    </td>
+                    <td class="mono tabular-nums mem-used">
+                      {{ r.memoryUsedKb != null ? r.memoryUsedKb + 'KB' : '-' }}
+                    </td>
+                    <td class="mono tabular-nums date-cell">{{ formatTime(r.createdAt) }}</td>
+                    <td v-if="isSelf">
+                      <RouterLink
+                        :to="`/submissions/${r.submissionId}?questionId=${r.questionId}`"
+                        class="detail-action"
+                      >
+                        详情
+                      </RouterLink>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </div>
+
+            <Pagination
+              v-if="codeTotal > pageSize"
+              :total="codeTotal"
+              :page="codePage"
+              :size="pageSize"
+              :compact="true"
+              :disabled="codeLoading"
+              @update:page="onCodePageChange"
+            />
+          </template>
         </template>
 
         <!-- Tab 2: 数据库题表格 -->
         <template v-else-if="activeTab === 'database'">
-          <div v-if="dbLoading" class="block-loading muted">
-            <div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载数据库提交…</p>
+          <div v-if="dbLoading" class="block-loading muted" role="status">
+            <div class="loading-spinner" aria-hidden="true"></div>
+            <p class="muted loading-caption">正在加载数据库提交…</p>
+          </div>
+          <div v-else-if="dbError" class="state-banner is-error" role="alert">
+            <span>{{ dbError }}</span>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm btn-inline-retry"
+              @click="loadDbSubmissions"
+            >
+              重试
+            </button>
           </div>
           <div v-else-if="dbList.length === 0" class="empty-block">
             <span class="empty-text">暂无数据库提交记录</span>
+            <button
+              v-if="dbStatus"
+              type="button"
+              class="btn btn-ghost btn-sm"
+              @click="dbStatus = ''"
+            >
+              清除筛选
+            </button>
           </div>
-          <div v-else class="table-responsive">
-            <table class="timeline-table">
-              <thead>
-                <tr>
-                  <th>提交号</th>
-                  <th>题目</th>
-                  <th>评测状态</th>
-                  <th>得分</th>
-                  <th>用时</th>
-                  <th>提交时间</th>
-                  <th v-if="isSelf">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="r in dbList" :key="r.submissionId">
-                  <td class="mono sub-id">#{{ r.submissionId }}</td>
-                  <td class="q-title-col">
-                    <RouterLink :to="`/database/${r.questionId}`" class="q-link">
-                      {{ r.questionTitle || `题目 #${r.questionId}` }}
-                    </RouterLink>
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      class="status-badge"
-                      :class="[statusTone(r.status), isSelf ? 'clickable' : '']"
-                      :title="isSelf ? '点击查看提交 SQL' : ''"
-                      @click="isSelf ? (dbSelected = r) : null"
-                    >
-                      {{ STATUS_ABBR[r.status] ?? r.status }}
-                    </button>
-                  </td>
-                  <td class="mono score-cell">{{ r.score ?? '-' }}</td>
-                  <td class="mono time-used">{{ r.timeUsedMs != null ? r.timeUsedMs + 'ms' : '-' }}</td>
-                  <td class="mono date-cell">{{ formatTime(r.createdAt) }}</td>
-                  <td v-if="isSelf">
-                    <RouterLink
-                      :to="`/database-submissions/${r.submissionId}`"
-                      class="detail-action"
-                    >
-                      详情
-                    </RouterLink>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-
-            <!-- 分页 -->
-            <div v-if="dbTotal > pageSize" class="pagination-bar">
-              <button
-                class="btn btn-ghost btn-sm"
-                type="button"
-                :disabled="dbPage <= 1"
-                @click="dbPage--; loadDbSubmissions()"
-              >
-                上一页
-              </button>
-              <span class="page-indicator mono">
-                第 {{ dbPage }} / {{ Math.ceil(dbTotal / pageSize) }} 页 (共 {{ dbTotal }} 条)
-              </span>
-              <button
-                class="btn btn-ghost btn-sm"
-                type="button"
-                :disabled="dbPage >= Math.ceil(dbTotal / pageSize)"
-                @click="dbPage++; loadDbSubmissions()"
-              >
-                下一页
-              </button>
+          <template v-else>
+            <div class="table-responsive">
+              <table class="timeline-table">
+                <thead>
+                  <tr>
+                    <th>提交号</th>
+                    <th>题目</th>
+                    <th>评测状态</th>
+                    <th>得分</th>
+                    <th>用时</th>
+                    <th>提交时间</th>
+                    <th v-if="isSelf">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in dbList" :key="r.submissionId">
+                    <td class="mono tabular-nums sub-id">#{{ r.submissionId }}</td>
+                    <td class="q-title-col">
+                      <RouterLink :to="`/database/${r.questionId}`" class="q-link">
+                        {{ r.questionTitle || `题目 #${r.questionId}` }}
+                      </RouterLink>
+                    </td>
+                    <td>
+                      <button
+                        v-if="isSelf"
+                        type="button"
+                        class="status-badge clickable"
+                        :class="statusTone(r.status)"
+                        title="点击查看提交 SQL"
+                        @click="dbSelected = r"
+                      >
+                        {{ STATUS_ABBR[r.status] ?? r.status }}
+                      </button>
+                      <span v-else class="status-badge" :class="statusTone(r.status)">
+                        {{ STATUS_ABBR[r.status] ?? r.status }}
+                      </span>
+                    </td>
+                    <td class="mono tabular-nums score-cell">{{ r.score ?? '-' }}</td>
+                    <td class="mono tabular-nums time-used">
+                      {{ r.timeUsedMs != null ? r.timeUsedMs + 'ms' : '-' }}
+                    </td>
+                    <td class="mono tabular-nums date-cell">{{ formatTime(r.createdAt) }}</td>
+                    <td v-if="isSelf">
+                      <RouterLink
+                        :to="`/database-submissions/${r.submissionId}`"
+                        class="detail-action"
+                      >
+                        详情
+                      </RouterLink>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </div>
+
+            <Pagination
+              v-if="dbTotal > pageSize"
+              :total="dbTotal"
+              :page="dbPage"
+              :size="pageSize"
+              :compact="true"
+              :disabled="dbLoading"
+              @update:page="onDbPageChange"
+            />
+          </template>
         </template>
 
         <!-- Tab 3: 客观题表格 -->
         <template v-else>
-          <div v-if="objLoading" class="block-loading muted">
-            <div class="loading-spinner"></div><p class="muted" style="margin: 0">正在加载客观题作答…</p>
+          <div v-if="objLoading" class="block-loading muted" role="status">
+            <div class="loading-spinner" aria-hidden="true"></div>
+            <p class="muted loading-caption">正在加载客观题作答…</p>
+          </div>
+          <div v-else-if="objError" class="state-banner is-error" role="alert">
+            <span>{{ objError }}</span>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm btn-inline-retry"
+              @click="loadObjSubmissions"
+            >
+              重试
+            </button>
           </div>
           <div v-else-if="objList.length === 0" class="empty-block">
             <span class="empty-text">暂无客观题作答记录</span>
+            <button
+              v-if="objStatus"
+              type="button"
+              class="btn btn-ghost btn-sm"
+              @click="objStatus = ''"
+            >
+              清除筛选
+            </button>
           </div>
-          <div v-else class="table-responsive">
-            <table class="timeline-table">
-              <thead>
-                <tr>
-                  <th>提交号</th>
-                  <th>题目内容</th>
-                  <th>题型</th>
-                  <th>作答结果</th>
-                  <th>得分</th>
-                  <th v-if="isSelf">提交答案</th>
-                  <th>作答时间</th>
-                  <th v-if="isSelf">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="r in objList" :key="r.submissionId">
-                  <td class="mono sub-id">#{{ r.submissionId }}</td>
-                  <td class="q-title-col">
-                    <RouterLink :to="`/objective/${r.questionId}`" class="q-link">
-                      {{ stripMarkdown(r.questionContent) || `客观题 #${r.questionId}` }}
-                    </RouterLink>
-                  </td>
-                  <td>
-                    <span class="badge obj-type-tag">
-                      {{ OBJECTIVE_TYPE_LABELS[r.type] ?? r.type }}
-                    </span>
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      class="status-badge"
-                      :class="[r.correct === 1 ? 'ac' : 'wa', isSelf ? 'clickable' : '']"
-                      :title="isSelf ? '点击查看作答明细' : ''"
-                      @click="isSelf ? (objSelected = r) : null"
-                    >
-                      {{ r.correct === 1 ? 'AC' : 'WA' }}
-                    </button>
-                  </td>
-                  <td class="mono score-cell">
-                    {{ r.score ?? '-' }} / {{ r.fullScore ?? '-' }}
-                  </td>
-                  <td v-if="isSelf" class="mono ans-preview">
-                    {{ r.answer || '-' }}
-                  </td>
-                  <td class="mono date-cell">{{ formatTime(r.createdAt) }}</td>
-                  <td v-if="isSelf">
-                    <button
-                      type="button"
-                      class="detail-action btn-inline"
-                      @click="objSelected = r"
-                    >
-                      查看
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-
-            <!-- 分页 -->
-            <div v-if="objTotal > pageSize" class="pagination-bar">
-              <button
-                class="btn btn-ghost btn-sm"
-                type="button"
-                :disabled="objPage <= 1"
-                @click="objPage--; loadObjSubmissions()"
-              >
-                上一页
-              </button>
-              <span class="page-indicator mono">
-                第 {{ objPage }} / {{ Math.ceil(objTotal / pageSize) }} 页 (共 {{ objTotal }} 条)
-              </span>
-              <button
-                class="btn btn-ghost btn-sm"
-                type="button"
-                :disabled="objPage >= Math.ceil(objTotal / pageSize)"
-                @click="objPage++; loadObjSubmissions()"
-              >
-                下一页
-              </button>
+          <template v-else>
+            <div class="table-responsive">
+              <table class="timeline-table">
+                <thead>
+                  <tr>
+                    <th>提交号</th>
+                    <th>题目内容</th>
+                    <th>题型</th>
+                    <th>作答结果</th>
+                    <th>得分</th>
+                    <th v-if="isSelf">提交答案</th>
+                    <th>作答时间</th>
+                    <th v-if="isSelf">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in objList" :key="r.submissionId">
+                    <td class="mono tabular-nums sub-id">#{{ r.submissionId }}</td>
+                    <td class="q-title-col">
+                      <RouterLink :to="`/objective/${r.questionId}`" class="q-link">
+                        {{ stripMarkdown(r.questionContent) || `客观题 #${r.questionId}` }}
+                      </RouterLink>
+                    </td>
+                    <td>
+                      <span
+                        class="hud-pill"
+                        :class="OBJECTIVE_TYPE_TONE_MAP[r.type] || 'tone-neutral'"
+                      >
+                        {{ OBJECTIVE_TYPE_LABELS[r.type] ?? r.type }}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        v-if="isSelf"
+                        type="button"
+                        class="status-badge clickable"
+                        :class="r.correct === 1 ? 'ac' : 'wa'"
+                        title="点击查看作答明细"
+                        @click="objSelected = r"
+                      >
+                        {{ r.correct === 1 ? 'AC' : 'WA' }}
+                      </button>
+                      <span v-else class="status-badge" :class="r.correct === 1 ? 'ac' : 'wa'">
+                        {{ r.correct === 1 ? 'AC' : 'WA' }}
+                      </span>
+                    </td>
+                    <td class="mono tabular-nums score-cell">
+                      {{ r.score ?? '-' }} / {{ r.fullScore ?? '-' }}
+                    </td>
+                    <td v-if="isSelf" class="mono ans-preview">
+                      {{ r.answer || '-' }}
+                    </td>
+                    <td class="mono tabular-nums date-cell">{{ formatTime(r.createdAt) }}</td>
+                    <td v-if="isSelf">
+                      <button
+                        type="button"
+                        class="detail-action btn-inline"
+                        @click="objSelected = r"
+                      >
+                        查看
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </div>
+
+            <Pagination
+              v-if="objTotal > pageSize"
+              :total="objTotal"
+              :page="objPage"
+              :size="pageSize"
+              :compact="true"
+              :disabled="objLoading"
+              @update:page="onObjPageChange"
+            />
+          </template>
         </template>
       </section>
     </div>
@@ -1014,27 +1292,53 @@ onMounted(() => {
     <!-- 弹窗 3: 编程题代码预览弹窗 -->
     <Teleport to="body">
       <div v-if="codeSelected" class="modal-overlay" @click.self="codeSelected = null">
-        <div class="modal-card code-view-modal" role="dialog" aria-modal="true">
+        <div
+          class="modal-card code-view-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="code-modal-title"
+        >
           <div class="modal-header">
             <div class="code-modal-title-group">
-              <span class="mono code-modal-id">#{{ codeSelected.submissionId }}</span>
-              <span class="code-modal-title">{{ codeSelected.questionTitle }}</span>
-              <span
-                class="status-badge"
-                :class="statusTone(codeSelected.status)"
-              >
+              <span class="mono tabular-nums code-modal-id">#{{ codeSelected.submissionId }}</span>
+              <h2 id="code-modal-title" class="code-modal-title">
+                {{ codeSelected.questionTitle }}
+              </h2>
+              <span class="status-badge" :class="statusTone(codeSelected.status)">
                 {{ STATUS_ABBR[codeSelected.status] ?? codeSelected.status }}
               </span>
             </div>
-            <button class="modal-close-btn" type="button" @click="codeSelected = null">✕</button>
+            <button
+              ref="codeCloseBtn"
+              class="modal-close-btn"
+              type="button"
+              aria-label="关闭"
+              @click="codeSelected = null"
+            >
+              <span aria-hidden="true">✕</span>
+            </button>
           </div>
 
           <div class="modal-body modal-code-body">
-            <div class="code-modal-meta mono">
-              <span>语言: <b>{{ LANGUAGE_LABELS[codeSelected.language] ?? codeSelected.language }}</b></span>
-              <span>得分: <b>{{ codeSelected.score ?? '-' }}</b></span>
-              <span>用时: <b>{{ codeSelected.timeUsedMs != null ? codeSelected.timeUsedMs + 'ms' : '-' }}</b></span>
-              <span>内存: <b>{{ codeSelected.memoryUsedKb != null ? codeSelected.memoryUsedKb + 'KB' : '-' }}</b></span>
+            <div class="code-modal-meta mono tabular-nums">
+              <span
+                >语言: <b>{{ formatLanguageLabel(codeSelected.language) }}</b></span
+              >
+              <span
+                >得分: <b>{{ codeSelected.score ?? '-' }}</b></span
+              >
+              <span
+                >用时:
+                <b>{{
+                  codeSelected.timeUsedMs != null ? codeSelected.timeUsedMs + 'ms' : '-'
+                }}</b></span
+              >
+              <span
+                >内存:
+                <b>{{
+                  codeSelected.memoryUsedKb != null ? codeSelected.memoryUsedKb + 'KB' : '-'
+                }}</b></span
+              >
               <span class="copy-action-span">
                 <button
                   type="button"
@@ -1054,26 +1358,45 @@ onMounted(() => {
     <!-- 弹窗 4: 数据库 SQL 预览弹窗 -->
     <Teleport to="body">
       <div v-if="dbSelected" class="modal-overlay" @click.self="dbSelected = null">
-        <div class="modal-card code-view-modal" role="dialog" aria-modal="true">
+        <div
+          class="modal-card code-view-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="db-modal-title"
+        >
           <div class="modal-header">
             <div class="code-modal-title-group">
-              <span class="mono code-modal-id">#{{ dbSelected.submissionId }}</span>
-              <span class="code-modal-title">{{ dbSelected.questionTitle }}</span>
-              <span
-                class="status-badge"
-                :class="statusTone(dbSelected.status)"
-              >
+              <span class="mono tabular-nums code-modal-id">#{{ dbSelected.submissionId }}</span>
+              <h2 id="db-modal-title" class="code-modal-title">
+                {{ dbSelected.questionTitle }}
+              </h2>
+              <span class="status-badge" :class="statusTone(dbSelected.status)">
                 {{ STATUS_ABBR[dbSelected.status] ?? dbSelected.status }}
               </span>
             </div>
-            <button class="modal-close-btn" type="button" @click="dbSelected = null">✕</button>
+            <button
+              ref="dbCloseBtn"
+              class="modal-close-btn"
+              type="button"
+              aria-label="关闭"
+              @click="dbSelected = null"
+            >
+              <span aria-hidden="true">✕</span>
+            </button>
           </div>
 
           <div class="modal-body modal-code-body">
-            <div class="code-modal-meta mono">
+            <div class="code-modal-meta mono tabular-nums">
               <span>类型: <b>SQL 数据库评测</b></span>
-              <span>得分: <b>{{ dbSelected.score ?? '-' }}</b></span>
-              <span>用时: <b>{{ dbSelected.timeUsedMs != null ? dbSelected.timeUsedMs + 'ms' : '-' }}</b></span>
+              <span
+                >得分: <b>{{ dbSelected.score ?? '-' }}</b></span
+              >
+              <span
+                >用时:
+                <b>{{
+                  dbSelected.timeUsedMs != null ? dbSelected.timeUsedMs + 'ms' : '-'
+                }}</b></span
+              >
               <span class="copy-action-span">
                 <button
                   type="button"
@@ -1093,25 +1416,46 @@ onMounted(() => {
     <!-- 弹窗 5: 客观题作答预览弹窗 -->
     <Teleport to="body">
       <div v-if="objSelected" class="modal-overlay" @click.self="objSelected = null">
-        <div class="modal-card obj-view-modal" role="dialog" aria-modal="true">
+        <div
+          class="modal-card obj-view-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="obj-modal-title"
+        >
           <div class="modal-header">
             <div class="code-modal-title-group">
-              <span class="mono code-modal-id">#{{ objSelected.submissionId }}</span>
-              <span class="badge obj-type-tag">{{ OBJECTIVE_TYPE_LABELS[objSelected.type] ?? objSelected.type }}</span>
+              <h2 id="obj-modal-title" class="mono tabular-nums code-modal-id">
+                #{{ objSelected.submissionId }}
+              </h2>
               <span
-                class="status-badge"
-                :class="objSelected.correct === 1 ? 'ac' : 'wa'"
+                class="hud-pill"
+                :class="OBJECTIVE_TYPE_TONE_MAP[objSelected.type] || 'tone-neutral'"
               >
+                {{ OBJECTIVE_TYPE_LABELS[objSelected.type] ?? objSelected.type }}
+              </span>
+              <span class="status-badge" :class="objSelected.correct === 1 ? 'ac' : 'wa'">
                 {{ objSelected.correct === 1 ? 'AC 答对' : 'WA 答错' }}
               </span>
             </div>
-            <button class="modal-close-btn" type="button" @click="objSelected = null">✕</button>
+            <button
+              ref="objCloseBtn"
+              class="modal-close-btn"
+              type="button"
+              aria-label="关闭"
+              @click="objSelected = null"
+            >
+              <span aria-hidden="true">✕</span>
+            </button>
           </div>
 
           <div class="modal-body obj-modal-body">
-            <!-- eslint-disable-next-line vue/no-v-html -- renderMarkdown sanitizes question Markdown with DOMPurify. -->
-            <div class="obj-content-box prose" v-html="renderMarkdown(objSelected.questionContent)"></div>
-            <div class="obj-answer-details mono">
+            <!-- eslint-disable vue/no-v-html -- renderMarkdown sanitizes question Markdown with DOMPurify. -->
+            <div
+              class="obj-content-box prose"
+              v-html="renderMarkdown(objSelected.questionContent)"
+            ></div>
+            <!-- eslint-enable vue/no-v-html -->
+            <div class="obj-answer-details mono tabular-nums">
               <div class="ans-row">
                 <span class="ans-label">提交答案:</span>
                 <span class="ans-val" :class="objSelected.correct === 1 ? 'ans-ac' : 'ans-wa'">
@@ -1124,7 +1468,9 @@ onMounted(() => {
               </div>
               <div class="ans-row">
                 <span class="ans-label">获得得分:</span>
-                <span class="ans-val">{{ objSelected.score ?? '-' }} / {{ objSelected.fullScore ?? '-' }} 分</span>
+                <span class="ans-val"
+                  >{{ objSelected.score ?? '-' }} / {{ objSelected.fullScore ?? '-' }} 分</span
+                >
               </div>
             </div>
           </div>
@@ -1143,39 +1489,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 24px;
-}
-
-/* Toast 提示条 */
-.toast-bar {
-  background: var(--button);
-  color: #fff;
-  padding: 12px 20px;
-  border-radius: 0;
-  font-size: 14px;
-  font-weight: 500;
-  border: 1px solid #000;
-  box-shadow: var(--shadow-md);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.toast-icon {
-  width: 16px;
-  height: 16px;
-  color: #4ade80;
-  flex-shrink: 0;
-}
-
-.toast-fade-enter-active,
-.toast-fade-leave-active {
-  transition: all 0.25s ease;
-}
-
-.toast-fade-enter-from,
-.toast-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
 }
 
 /* 1. 个人名片 Hero Card（头像占满左侧，严格直角边线分割） */
@@ -1201,20 +1514,17 @@ onMounted(() => {
   aspect-ratio: 1 / 1;
   align-self: stretch;
   flex-shrink: 0;
+  padding: 0;
+  font: inherit;
   border: none;
   border-right: 1px solid var(--line);
   background: #fbfbfb;
   position: relative;
   overflow: hidden;
-  transition: opacity 0.15s ease;
 }
 
 .hero-avatar-box.is-clickable {
   cursor: pointer;
-}
-
-.hero-avatar-box.is-clickable:hover {
-  opacity: 0.92;
 }
 
 .avatar-image {
@@ -1252,7 +1562,8 @@ onMounted(() => {
   font-weight: 600;
 }
 
-.hero-avatar-box.is-clickable:hover .avatar-hover-mask {
+.hero-avatar-box.is-clickable:hover .avatar-hover-mask,
+.hero-avatar-box.is-clickable:focus-visible .avatar-hover-mask {
   opacity: 1;
 }
 
@@ -1296,11 +1607,7 @@ onMounted(() => {
   line-height: 1.1;
 }
 
-/* 身份标签配色规范：
-   - 管理员: 紫色 (#7048e8)
-   - 教师: 绿色 (#2b8a3e)
-   - 学生: 黑色 (#1e1e1e)
-*/
+/* 身份标签配色规范：Precision Lab 高对比 AA */
 .role-badge {
   font-size: 12px;
   font-weight: 700;
@@ -1312,26 +1619,26 @@ onMounted(() => {
 }
 
 .role-badge.role-admin {
-  background: #7048e8;
+  background: var(--ink);
   color: #ffffff;
-  border: 1px solid #5f3dc4;
+  border: 1px solid var(--ink);
 }
 
 .role-badge.role-teacher {
-  background: #2b8a3e;
+  background: var(--kece-accent);
   color: #ffffff;
-  border: 1px solid #237032;
+  border: 1px solid var(--kece-accent);
 }
 
 .role-badge.role-student {
-  background: #1e1e1e;
+  background: #334155;
   color: #ffffff;
-  border: 1px solid #111111;
+  border: 1px solid #334155;
 }
 
 .user-id-badge {
   font-size: 12px;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
   background: var(--bg);
   border: 1px solid var(--line);
   padding: 2px 8px;
@@ -1407,13 +1714,12 @@ onMounted(() => {
   margin-left: -2px;
 }
 
-/* Slogan 个性签名沉浸卡 */
+/* Slogan 个性签名卡 */
 .user-slogan-box {
   margin-top: 4px;
   padding: 12px 18px;
-  background: #fafafa;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--ink);
+  background: var(--kece-surface-muted);
+  border: 1px solid var(--kece-border);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1423,7 +1729,7 @@ onMounted(() => {
 .quote-sign {
   font-size: 20px;
   font-weight: 800;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
   line-height: 1;
 }
 
@@ -1482,13 +1788,21 @@ onMounted(() => {
 
 .block-sub {
   font-size: 13px;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
 }
 
 .block-loading {
   padding: 36px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
   text-align: center;
   font-size: 14px;
+}
+
+.loading-caption {
+  margin: 0;
 }
 
 .empty-block {
@@ -1548,6 +1862,7 @@ onMounted(() => {
 }
 
 .battle-title {
+  margin: 0;
   font-size: 16px;
   font-weight: 700;
   color: var(--ink);
@@ -1596,7 +1911,7 @@ onMounted(() => {
 
 .metric-k {
   font-size: 11px;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
 }
 
 .metric-v {
@@ -1630,13 +1945,14 @@ onMounted(() => {
   font-family: inherit;
   font-size: 13px;
   color: var(--ink);
-  outline: none;
   cursor: pointer;
   border-radius: 0;
 }
 
-.status-select:focus {
-  border-color: var(--ink);
+.status-select:focus-visible {
+  border-color: var(--kece-accent);
+  outline: 2px solid var(--kece-accent);
+  outline-offset: 2px;
 }
 
 .submissions-tabs {
@@ -1658,7 +1974,10 @@ onMounted(() => {
   font-weight: 600;
   color: var(--ink-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
   border-radius: 0;
 }
 
@@ -1675,7 +1994,11 @@ onMounted(() => {
 
 .tab-count {
   font-size: 12px;
-  opacity: 0.85;
+  color: var(--ink-secondary);
+}
+
+.tab-btn.active .tab-count {
+  color: #e2e8f0;
 }
 
 .table-responsive {
@@ -1693,7 +2016,7 @@ onMounted(() => {
   padding: 10px 14px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
@@ -1723,11 +2046,11 @@ onMounted(() => {
 .q-link {
   color: var(--ink);
   font-weight: 500;
-  transition: opacity 0.15s;
+  transition: color 0.15s ease;
 }
 
 .q-link:hover {
-  opacity: 0.7;
+  color: var(--kece-accent);
   text-decoration: underline;
 }
 
@@ -1735,6 +2058,7 @@ onMounted(() => {
   display: inline-block;
   min-width: 44px;
   padding: 2px 8px;
+  border: 1px solid transparent;
   font-size: 12px;
   font-weight: 700;
   text-align: center;
@@ -1744,11 +2068,13 @@ onMounted(() => {
 
 .status-badge.clickable {
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    filter 0.15s ease;
 }
 
 .status-badge.clickable:hover {
-  opacity: 0.85;
+  border-color: var(--ink);
 }
 
 .status-badge.ac {
@@ -1758,27 +2084,20 @@ onMounted(() => {
   background: var(--danger);
 }
 .status-badge.tle {
-  background: #000;
+  background: var(--ink);
 }
 .status-badge.mle {
-  background: #f57c00;
+  background: #9a4b00;
 }
 .status-badge.re {
-  background: #9c27b0;
+  background: #9f2d2d;
 }
 .status-badge.ce,
 .status-badge.se {
-  background: #607d8b;
+  background: #475569;
 }
 .status-badge.run {
-  background: #9e9e9e;
-}
-
-.obj-type-tag {
-  font-size: 11px;
-  background: #f0f0f0;
-  color: var(--ink-secondary);
-  border: 1px solid var(--line);
+  background: #334155;
 }
 
 .score-cell,
@@ -1804,10 +2123,11 @@ onMounted(() => {
   font-size: 13px;
   color: var(--ink);
   text-decoration: underline;
+  transition: color 0.15s ease;
 }
 
 .detail-action:hover {
-  opacity: 0.7;
+  color: var(--kece-accent);
 }
 
 .btn-inline {
@@ -1816,20 +2136,6 @@ onMounted(() => {
   cursor: pointer;
   padding: 0;
   font-family: inherit;
-}
-
-.pagination-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 24px;
-  padding-top: 16px;
-}
-
-.page-indicator {
-  font-size: 13px;
-  color: var(--ink-secondary);
 }
 
 /* 弹窗通用样式 */
@@ -1887,14 +2193,18 @@ onMounted(() => {
 }
 
 .code-modal-title {
+  margin: 0;
   font-size: 15px;
   font-weight: 700;
   color: var(--ink);
 }
 
 .modal-close-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
   font-size: 16px;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
   padding: 4px;
   line-height: 1;
 }
@@ -1992,6 +2302,18 @@ onMounted(() => {
 
 .ans-wa {
   color: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar-hover-mask,
+  .github-pill,
+  .exam-battle-card,
+  .tab-btn,
+  .q-link,
+  .status-badge.clickable,
+  .detail-action {
+    transition: none !important;
+  }
 }
 
 @media (max-width: 860px) {

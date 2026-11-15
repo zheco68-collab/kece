@@ -54,7 +54,7 @@ function jump() {
 </script>
 
 <template>
-  <div v-if="total > 0" class="pagination" :class="{ compact }">
+  <nav v-if="total > 0" class="pagination" :class="{ compact }" aria-label="分页导航">
     <span v-if="!compact" class="page-total">共 {{ total }} 条</span>
     <div class="page-nav">
       <button type="button" class="btn btn-ghost btn-sm" :disabled="disabled || page <= 1" @click="go(page - 1)">
@@ -69,6 +69,8 @@ function jump() {
           :disabled="disabled"
           class="btn btn-ghost btn-sm page-num"
           :class="{ active: item === page }"
+          :aria-current="item === page ? 'page' : undefined"
+          :aria-label="`第 ${item} 页`"
           @click="go(item)"
         >
           {{ item }}
@@ -91,7 +93,7 @@ function jump() {
       />
       <button class="btn btn-ghost btn-sm" type="submit" :disabled="disabled || validJumpPage === null">跳转</button>
     </form>
-  </div>
+  </nav>
 </template>
 
 <style scoped>
@@ -102,13 +104,27 @@ function jump() {
   gap: 16px;
   flex-wrap: wrap;
   padding: 20px 0;
+  font-variant-numeric: tabular-nums;
 }
-.pagination.compact { padding: 0; gap: 12px; justify-content: space-between; }
-.compact .page-nav, .compact .page-jump { gap: 8px; }
-.compact .btn, .compact .jump-input { min-height: 40px; font-size: 14px; }
+.pagination.compact {
+  padding: 0;
+  gap: 12px;
+  justify-content: space-between;
+}
+.compact .page-nav,
+.compact .page-jump {
+  gap: 8px;
+}
+.compact .btn,
+.compact .jump-input {
+  min-height: 40px;
+  height: 40px;
+  font-size: 14px;
+}
 .page-total {
   color: var(--ink-secondary);
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
 }
 .page-nav {
   display: flex;
@@ -121,18 +137,72 @@ function jump() {
   align-items: center;
   gap: 8px;
 }
+.pagination .btn {
+  border-radius: 0px;
+  border: 1px solid var(--kece-border, #e4e7ec);
+  background: var(--surface-white, #ffffff);
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+.pagination .btn:hover:not(:disabled) {
+  opacity: 1;
+  border-color: var(--kece-accent, #137969);
+  color: var(--kece-accent-ink, #0f5f53);
+  background: var(--kece-accent-soft, #eef6f4);
+}
+.pagination .btn:disabled {
+  opacity: 1;
+  background: var(--kece-surface-muted, #f8fafc);
+  color: #5c6370;
+  border-color: var(--kece-border, #e4e7ec);
+  cursor: not-allowed;
+}
 .jump-input {
   width: 64px;
+  height: 36px;
   text-align: center;
+  border-radius: 0px;
+  border: 1px solid var(--kece-border, #e4e7ec);
+  background: var(--surface-white, #ffffff);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.jump-input:focus {
+  border-color: var(--kece-accent, #137969);
+}
+.jump-input:disabled {
+  opacity: 1;
+  background: var(--kece-surface-muted, #f8fafc);
+  color: #5c6370;
+  border-color: var(--kece-border, #e4e7ec);
+  cursor: not-allowed;
 }
 .page-num {
   min-width: 38px;
   padding: 8px 10px;
+  font-variant-numeric: tabular-nums;
 }
-.page-num.active {
-  background: var(--button);
-  border-color: var(--button);
-  color: #fff;
+.pagination .page-num.active {
+  background: var(--kece-accent, #137969);
+  border-color: var(--kece-accent, #137969);
+  color: #ffffff;
+  font-weight: 600;
+}
+.pagination .page-num.active:hover:not(:disabled) {
+  opacity: 1;
+  background: var(--kece-accent-hover, #0e6053);
+  border-color: var(--kece-accent-hover, #0e6053);
+  color: #ffffff;
+}
+.pagination .page-num.active:disabled {
+  opacity: 1;
+  background: #475569;
+  border-color: #475569;
+  color: #f8fafc;
 }
 .page-gap {
   padding: 0 2px;

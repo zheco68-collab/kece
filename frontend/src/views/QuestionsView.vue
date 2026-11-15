@@ -3,89 +3,203 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { questionApi } from '@/api/question'
 import { submissionApi } from '@/api/submission'
+import Pagination from '@/components/Pagination.vue'
+import { useBankUrlSync, type BankStatusFilter } from '@/shared/composables/useBankUrlSync'
 import { pickRandomWithUnsolvedPriority } from '@/shared/lib/randomSample'
 import { useUserStore } from '@/stores/user'
+import '@/styles/question-bank.css'
 import type { Difficulty, Question } from '@/types'
+import { DIFFICULTY_TONE_MAP, formatLanguageLabel, sortLanguages } from '@/utils/questionMeta'
 import { DIFFICULTY_LABELS as difficultyLabels } from '@/utils/submission'
 
 const router = useRouter()
 const userStore = useUserStore()
 
-const keyword = ref('')
-const difficulty = ref<Difficulty | ''>('')
-const statusFilter = ref<'ALL' | 'UNSOLVED' | 'SOLVED'>('ALL')
-const selectedTag = ref('')
+const difficultyLevels: Array<Difficulty | ''> = ['', 'EASY', 'MEDIUM', 'HARD']
+const statusOptions: ReadonlyArray<{ value: BankStatusFilter; label: string }> = [
+  { value: 'ALL', label: '全部' },
+  { value: 'UNSOLVED', label: '未解答' },
+  { value: 'SOLVED', label: '已通过' },
+]
+
+const {
+  keyword,
+  difficulty,
+  tag: selectedTag,
+  status: statusFilter,
+  page,
+  reset: resetUrlState,
+} = useBankUrlSync<Difficulty>({
+  fields: ['keyword', 'difficulty', 'tag', 'status', 'page'],
+  validDifficulties: ['EASY', 'MEDIUM', 'HARD'],
+})
+
 const allTags = ref<string[]>([])
-const showTags = ref(false)
-const page = ref(1)
+const showTags = ref(Boolean(selectedTag.value))
 const size = 10
 
 const list = ref<Question[]>([])
 const total = ref(0)
+const globalTotal = ref(0)
 const loading = ref(true)
 const randomLoading = ref(false)
 const error = ref('')
 
 const solved = ref<Set<number>>(new Set())
+const droppingIds = ref<Set<number>>(new Set())
+let listRequestId = 0
 let randomRequestId = 0
+let globalProbeInFlight = false
 let isUnmounted = false
 
-
-const difficultyLevels: Array<Difficulty | ''> = ['', 'EASY', 'MEDIUM', 'HARD']
-
-const LANGUAGE_MAP: Record<string, string> = {
-  CPP: 'C++',
-  cpp: 'C++',
-  JAVA: 'Java',
-  java: 'Java',
-  PYTHON: 'Python',
-  python: 'Python',
-  JAVASCRIPT: 'JS',
-  javascript: 'JS',
-}
-
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size)))
-
-// 解决数量与统计
-const solvedCount = computed(() => solved.value.size)
-const progressPercentage = computed(() => {
-  if (!total.value) return 0
-  return Math.min(100, Math.round((solvedCount.value / total.value) * 100))
+const keywordModel = computed({
+  get: () => keyword.value,
+  set: (value: string) => {
+    if (value === keyword.value) return
+    page.value = 1
+    keyword.value = value
+  },
 })
 
-// 展示列表（与后端分页与状态过滤对齐）
+const hasActiveFilters = computed(() =>
+  Boolean(
+    keyword.value.trim() || difficulty.value || selectedTag.value || statusFilter.value !== 'ALL',
+  ),
+)
+
+const progressTotal = computed(() => globalTotal.value || total.value)
+const solvedCount = computed(() => solved.value.size)
+const progressPercentage = computed(() => {
+  if (!progressTotal.value) return 0
+  return Math.min(100, Math.round((solvedCount.value / progressTotal.value) * 100))
+})
+
 const displayedList = computed(() => list.value)
 
-async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    const res = await questionApi.list({
-      keyword: keyword.value.trim() || undefined,
-      difficulty: difficulty.value || undefined,
-      tag: selectedTag.value || undefined,
-      userStatus: statusFilter.value === 'ALL' ? undefined : statusFilter.value,
-      page: page.value,
-      size,
-    })
-    list.value = res.list
-    total.value = res.total
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : '加载失败'
-  } finally {
-    loading.value = false
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
+function markDropping(items: readonly Question[]) {
+  if (prefersReducedMotion()) {
+    droppingIds.value = new Set()
+    return
+  }
+  droppingIds.value = new Set(items.map((item) => item.id))
+}
+
+function handleCardAnimationEnd(event: AnimationEvent, id: number) {
+  if (event.target === event.currentTarget) {
+    droppingIds.value.delete(id)
   }
 }
 
-function changePage(p: number) {
-  page.value = p
-  load()
+function getQuestionLanguages(languages?: string[] | null): string[] {
+  const source = languages && languages.length > 0 ? languages : ['cpp', 'java', 'python']
+  return sortLanguages(source)
 }
 
+function selectDifficulty(level: Difficulty | '') {
+  if (difficulty.value === level) return
+  page.value = 1
+  difficulty.value = level
+}
+
+function selectStatus(nextStatus: BankStatusFilter) {
+  if (statusFilter.value === nextStatus) return
+  page.value = 1
+  statusFilter.value = nextStatus
+}
+
+function selectTag(nextTag: string, openDrawer = false) {
+  if (openDrawer && nextTag) {
+    showTags.value = true
+  }
+  if (selectedTag.value === nextTag) return
+  page.value = 1
+  selectedTag.value = nextTag
+}
+
+function toggleTag(tagName: string) {
+  const next = selectedTag.value === tagName ? '' : tagName
+  selectTag(next, Boolean(next))
+}
+
+function resetFilters() {
+  showTags.value = false
+  resetUrlState()
+}
+
+function changePage(nextPage: number) {
+  if (nextPage === page.value) return
+  page.value = nextPage
+}
+
+async function probeGlobalTotal() {
+  if (globalTotal.value > 0 || globalProbeInFlight) return
+  globalProbeInFlight = true
+  try {
+    const probe = await questionApi.list({ page: 1, size: 1 })
+    if (!isUnmounted && probe.total > 0) {
+      globalTotal.value = probe.total
+    }
+  } catch {
+    /* 全库总量探测失败时降级使用当前 total */
+  } finally {
+    globalProbeInFlight = false
+  }
+}
+
+async function load() {
+  const reqId = ++listRequestId
+  loading.value = true
+  error.value = ''
+
+  const activeKeyword = keyword.value.trim() || undefined
+  const activeDifficulty = difficulty.value || undefined
+  const activeTag = selectedTag.value || undefined
+  const activeUserStatus = statusFilter.value === 'ALL' ? undefined : statusFilter.value
+  const isUnfiltered = !activeKeyword && !activeDifficulty && !activeTag && !activeUserStatus
+
+  try {
+    const res = await questionApi.list({
+      keyword: activeKeyword,
+      difficulty: activeDifficulty,
+      tag: activeTag,
+      userStatus: activeUserStatus,
+      page: page.value,
+      size,
+    })
+    if (isUnmounted || reqId !== listRequestId) return
+    list.value = res.list
+    total.value = res.total
+    markDropping(res.list)
+    if (isUnfiltered) {
+      globalTotal.value = res.total
+    } else if (globalTotal.value === 0) {
+      await probeGlobalTotal()
+    }
+  } catch (e) {
+    if (!isUnmounted && reqId === listRequestId) {
+      error.value = e instanceof Error ? e.message : '加载失败'
+    }
+  } finally {
+    if (!isUnmounted && reqId === listRequestId) {
+      loading.value = false
+    }
+  }
+}
 
 async function loadTags() {
   try {
-    allTags.value = await questionApi.listTags()
+    const tags = await questionApi.listTags()
+    if (!isUnmounted) {
+      allTags.value = tags
+    }
   } catch {
     /* 忽略标签加载失败 */
   }
@@ -95,7 +209,9 @@ async function loadSolved() {
   if (!userStore.isLoggedIn) return
   try {
     const ids = await submissionApi.solved()
-    solved.value = new Set(ids)
+    if (!isUnmounted) {
+      solved.value = new Set(ids)
+    }
   } catch {
     /* 未登录或加载失败时忽略，仅不显示已通过标记 */
   }
@@ -147,21 +263,37 @@ async function pickRandomQuestion() {
   }
 }
 
-watch([keyword, difficulty, statusFilter, selectedTag], () => {
-  randomRequestId++
-  randomLoading.value = false
-  page.value = 1
-  load()
+watch(selectedTag, (nextTag) => {
+  if (nextTag) {
+    showTags.value = true
+  }
 })
 
+watch(
+  [keyword, difficulty, statusFilter, selectedTag, page],
+  ([nextKeyword, nextDifficulty, nextStatus, nextTag], [prevKeyword, prevDifficulty, prevStatus, prevTag]) => {
+    if (
+      nextKeyword !== prevKeyword ||
+      nextDifficulty !== prevDifficulty ||
+      nextStatus !== prevStatus ||
+      nextTag !== prevTag
+    ) {
+      randomRequestId++
+      randomLoading.value = false
+    }
+    void load()
+  },
+)
+
 onMounted(() => {
-  load()
-  loadSolved()
-  loadTags()
+  void load()
+  void loadSolved()
+  void loadTags()
 })
 
 onBeforeUnmount(() => {
   isUnmounted = true
+  listRequestId++
   randomRequestId++
 })
 </script>
@@ -172,15 +304,13 @@ onBeforeUnmount(() => {
     <div class="page-head">
       <div class="page-head-left">
         <h1 class="page-title">算法编程</h1>
-        <p class="muted head-sub">
-          标准在线代码评测题库 · 全量测试用例实时判定与分析
-        </p>
+        <p class="muted head-sub">标准在线代码评测题库 · 全量测试用例实时判定与分析</p>
       </div>
-      <div v-if="userStore.isLoggedIn && total > 0" class="head-progress-card">
+      <div v-if="userStore.isLoggedIn && progressTotal > 0" class="head-progress-card">
         <div class="progress-info">
           <span class="progress-title">攻克进度</span>
           <span class="progress-fraction mono">
-            <strong>{{ solvedCount }}</strong> / {{ total }} 题
+            <strong>{{ solvedCount }}</strong> / {{ progressTotal }} 题
           </span>
         </div>
         <div class="progress-bar-track">
@@ -190,15 +320,19 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 综合筛选工具栏 (左右均衡，解决原右侧大面积空旷问题) -->
-    <div class="toolbar card">
+    <!-- 综合筛选工具栏 -->
+    <div class="toolbar">
       <div class="toolbar-left">
         <div class="search-wrap">
-          <svg class="search-icon" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z" />
+          <label class="sr-only" for="questions-search">搜索算法题</label>
+          <svg class="search-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path
+              d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"
+            />
           </svg>
           <input
-            v-model="keyword"
+            id="questions-search"
+            v-model="keywordModel"
             class="input search-input"
             type="search"
             placeholder="搜索题号、题目关键词…"
@@ -208,71 +342,69 @@ onBeforeUnmount(() => {
           <button
             v-for="lv in difficultyLevels"
             :key="lv || 'all'"
+            type="button"
             class="tab-btn"
-            :class="[
-              { active: difficulty === lv },
-              lv ? `tab-${lv.toLowerCase()}` : 'tab-all'
-            ]"
-            @click="difficulty = lv"
+            :class="{ active: difficulty === lv }"
+            :aria-pressed="difficulty === lv"
+            @click="selectDifficulty(lv)"
           >
             {{ lv ? difficultyLabels[lv] : '全部难度' }}
           </button>
         </div>
 
-        <!-- 算法标签展开/收起切换按钮 -->
-        <button
-          v-if="allTags.length > 0"
-          type="button"
-          class="tab-btn tag-toggle-btn"
-          :class="{
-            active: showTags,
-            'has-selected': !!selectedTag
-          }"
-          :title="showTags ? '收起算法标签栏' : '展开算法标签筛选'"
-          @click="showTags = !showTags"
-        >
-          <span>标签筛选</span>
-          <span v-if="selectedTag" class="tag-badge-indicator">#{{ selectedTag }}</span>
-          <span
-            v-if="selectedTag"
-            class="tag-clear-x"
-            title="清除当前标签筛选"
-            @click.stop="selectedTag = ''"
-          >×</span>
-          <svg
-            class="toggle-arrow"
-            :class="{ 'is-open': showTags }"
-            viewBox="0 0 16 16"
-            fill="currentColor"
+        <!-- 算法标签展开/收起按钮与独立清除按钮 -->
+        <div v-if="allTags.length > 0" class="tag-control-group">
+          <button
+            type="button"
+            class="tab-btn tag-toggle-btn"
+            :class="{
+              active: showTags,
+              'has-selected': !!selectedTag,
+            }"
+            :aria-expanded="showTags"
+            :title="showTags ? '收起算法标签栏' : '展开算法标签筛选'"
+            @click="showTags = !showTags"
           >
-            <path d="M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z" />
-          </svg>
-        </button>
+            <span>标签筛选</span>
+            <span v-if="selectedTag" class="tag-badge-indicator">#{{ selectedTag }}</span>
+            <svg
+              class="toggle-arrow"
+              :class="{ 'is-open': showTags }"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                d="M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z"
+              />
+            </svg>
+          </button>
+          <button
+            v-if="selectedTag"
+            type="button"
+            class="tag-clear-btn"
+            aria-label="清除标签筛选"
+            title="清除当前标签筛选"
+            @click="selectTag('')"
+          >
+            ×
+          </button>
+        </div>
       </div>
 
       <div class="toolbar-right">
         <!-- 做题状态快捷过滤 -->
         <div v-if="userStore.isLoggedIn" class="status-tabs">
           <button
+            v-for="opt in statusOptions"
+            :key="opt.value"
+            type="button"
             class="status-tab"
-            :class="{ active: statusFilter === 'ALL' }"
-            @click="statusFilter = 'ALL'"
+            :class="{ active: statusFilter === opt.value }"
+            :aria-pressed="statusFilter === opt.value"
+            @click="selectStatus(opt.value)"
           >
-            全部
-          </button>
-          <button
-            class="status-tab"
-            :class="{ active: statusFilter === 'UNSOLVED' }"
-            @click="statusFilter = 'UNSOLVED'"
-          >
-            未解答
-          </button>
-          <button
-            class="status-tab"
-            :class="{ active: statusFilter === 'SOLVED' }"
-            @click="statusFilter = 'SOLVED'"
-          >
-            已通过
+            {{ opt.label }}
           </button>
         </div>
 
@@ -289,7 +421,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 算法类型标签快捷过滤条（默认收起） -->
+    <!-- 算法类型标签快捷过滤条 -->
     <div v-if="showTags && allTags.length > 0" class="tag-filter-bar">
       <div class="tag-filter-chips">
         <span class="tag-filter-label mono">TAG:</span>
@@ -297,7 +429,8 @@ onBeforeUnmount(() => {
           type="button"
           class="tag-filter-chip"
           :class="{ active: !selectedTag }"
-          @click="selectedTag = ''"
+          :aria-pressed="!selectedTag"
+          @click="selectTag('')"
         >
           全部
         </button>
@@ -307,7 +440,8 @@ onBeforeUnmount(() => {
           type="button"
           class="tag-filter-chip"
           :class="{ active: selectedTag === t }"
-          @click="selectedTag = (selectedTag === t ? '' : t)"
+          :aria-pressed="selectedTag === t"
+          @click="toggleTag(t)"
         >
           #{{ t }}
         </button>
@@ -323,668 +457,163 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 列表加载与错误状态 -->
-    <p v-if="error" class="submit-error">{{ error }}</p>
-    <div v-if="loading" class="loading-box card muted">
-      <span class="loading-spin"></span>
+    <div v-if="error" class="submit-error" role="alert">
+      <span>{{ error }}</span>
+      <button type="button" class="btn btn-ghost btn-sm" @click="load">重试</button>
+    </div>
+    <div v-if="loading" class="loading-box muted">
+      <span class="loading-spin" aria-hidden="true"></span>
       <span>正在加载题目…</span>
     </div>
-    <div v-else-if="displayedList.length === 0" class="empty-box card">
+    <div v-else-if="displayedList.length === 0 && !error" class="empty-box">
       <p class="empty-title">未找到匹配的题目</p>
       <p class="muted empty-desc">尝试调整搜索关键词或重置筛选条件</p>
+      <button
+        v-if="hasActiveFilters"
+        type="button"
+        class="reset-filters-btn empty-reset-btn"
+        @click="resetFilters"
+      >
+        重置筛选
+      </button>
     </div>
 
-    <!-- 富信息单列题目卡片列表 -->
-    <div v-else :key="`${page}-${difficulty}-${statusFilter}`" class="question-list">
-      <RouterLink
+    <!-- 单列题目卡片列表 -->
+    <div v-else-if="displayedList.length > 0" class="question-list">
+      <article
         v-for="(q, index) in displayedList"
         :key="q.id"
-        :to="`/questions/${q.id}`"
-        class="question-item card"
+        class="question-item"
+        :class="{ 'is-dropping': droppingIds.has(q.id) }"
         :style="{ '--drop-index': index }"
+        @animationend="handleCardAnimationEnd($event, q.id)"
       >
         <!-- 左侧：通过状态图标 + 题号 + 标题与元数据 -->
         <div class="q-main-layout">
-          <!-- 解题状态图标 -->
           <div class="q-status-wrap">
             <span
               v-if="solved.has(q.id)"
               class="status-icon solved"
               title="已攻克 (Accepted)"
+              aria-label="已攻克"
             >
-              <svg viewBox="0 0 16 16" fill="currentColor">
-                <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05Z" />
+              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path
+                  d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05Z"
+                />
               </svg>
             </span>
-            <span v-else class="status-icon unsolved" title="尚未解答">
+            <span v-else class="status-icon unsolved" title="尚未解答" aria-label="尚未解答">
               <span class="unsolved-ring"></span>
             </span>
           </div>
 
-          <!-- 题号 (Mono) -->
           <span class="q-number mono">#{{ q.id }}</span>
 
-          <!-- 标题与次级信息 -->
           <div class="q-content">
-            <h3 class="q-title">{{ q.title }}</h3>
+            <h2 class="q-title">
+              <RouterLink :to="`/questions/${q.id}`" class="q-title-link">
+                {{ q.title }}
+              </RouterLink>
+            </h2>
             <div class="q-tags-row">
-              <!-- 时空限制 -->
               <span class="meta-tag limits mono">
                 {{ q.timeLimit ?? 1000 }}ms / {{ q.memoryLimit ?? 256 }}MB
               </span>
-              <!-- 支持语言徽标 -->
               <span
-                v-for="lang in (q.languages && q.languages.length ? q.languages : ['CPP', 'JAVA', 'PYTHON'])"
+                v-for="lang in getQuestionLanguages(q.languages)"
                 :key="lang"
                 class="meta-tag lang mono"
               >
-                {{ LANGUAGE_MAP[lang] || lang }}
+                {{ formatLanguageLabel(lang) }}
               </span>
-              <!-- 题目算法标签 -->
-              <span
-                v-for="t in q.tags"
+              <button
+                v-for="t in q.tags ?? []"
                 :key="t"
+                type="button"
                 class="meta-tag question-tag mono"
                 :class="{ 'tag-active': selectedTag === t }"
+                :aria-pressed="selectedTag === t"
                 :title="`分类标签：${t}，点击按此标签筛选`"
-                @click.stop.prevent="selectedTag = (selectedTag === t ? '' : t); showTags = true"
+                @click="toggleTag(t)"
               >
                 #{{ t }}
-              </span>
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- 右侧：难度徽章 + 快速答题按钮 -->
+        <!-- 右侧：难度胶囊 + 快速答题引导 -->
         <div class="q-right-layout">
-          <span class="difficulty-pill" :class="`pill-${q.difficulty.toLowerCase()}`">
+          <span class="hud-pill" :class="`tone-${DIFFICULTY_TONE_MAP[q.difficulty] ?? 'neutral'}`">
             {{ difficultyLabels[q.difficulty] }}
           </span>
-          <span class="action-cta">
+          <span class="action-cta" aria-hidden="true">
             <span class="cta-text">开始做题</span>
-            <svg class="cta-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+            <svg
+              class="cta-arrow"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
               <path d="M6 3l5 5-5 5" />
             </svg>
           </span>
         </div>
-      </RouterLink>
+      </article>
     </div>
 
-    <!-- 分页器 -->
-    <div v-if="total > 0" class="pagination">
-      <button class="btn btn-ghost btn-sm" :disabled="page <= 1" @click="changePage(page - 1)">
-        上一页
-      </button>
-      <span class="page-info mono">第 {{ page }} / {{ totalPages }} 页 (共 {{ total }} 题)</span>
-      <button
-        class="btn btn-ghost btn-sm"
-        :disabled="page >= totalPages"
-        @click="changePage(page + 1)"
-      >
-        下一页
-      </button>
-    </div>
+    <!-- 统一分页器 -->
+    <Pagination
+      v-if="total > size"
+      :page="page"
+      :size="size"
+      :total="total"
+      :disabled="loading"
+      @update:page="changePage"
+    />
   </div>
 </template>
 
 <style scoped>
-.questions {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 0 24px 60px;
-}
-.page-head {
-  padding-top: 36px;
-  margin-bottom: 20px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  flex-wrap: wrap;
-}
-.page-title {
-  margin: 0 0 6px;
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-}
-.head-sub {
-  margin: 0;
-  font-size: 14px;
-}
-.head-progress-card {
-  padding: 10px 16px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  border-radius: 0;
-  min-width: 220px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.progress-info {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12px;
-}
-.progress-title {
-  color: var(--ink-secondary);
-  font-weight: 500;
-}
-.progress-fraction {
-  font-size: 13px;
-  color: var(--ink);
-}
-.progress-bar-track {
-  width: 100%;
-  height: 6px;
-  background: #f0f0f0;
-  overflow: hidden;
-  border-radius: 0;
-}
-.progress-bar-fill {
-  height: 100%;
-  background: #2b8a3e;
-  transition: width 0.3s ease;
-}
-.progress-percent {
-  font-size: 11px;
-  color: var(--ink-tertiary);
-  text-align: right;
-}
-
-/* 顶部综合工具栏 */
-.toolbar {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 16px;
-  margin-bottom: 20px;
-  border-radius: 0;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  flex-wrap: wrap;
-}
-.toolbar-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  flex: 1;
-}
-.search-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 240px;
-}
-.search-icon {
-  position: absolute;
-  left: 10px;
-  width: 14px;
-  height: 14px;
-  color: var(--ink-secondary);
-  pointer-events: none;
-}
-.search-input {
-  width: 100%;
-  height: 34px;
-  padding-left: 32px;
-  font-size: 13.5px;
-  border-radius: 0;
-}
-.difficulty-tabs {
-  display: flex;
-  gap: 6px;
-}
-.tab-btn {
-  padding: 5px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  border-radius: 0;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink-secondary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.tab-btn:hover {
-  color: var(--ink);
-  border-color: var(--ink);
-}
-.tab-btn.active.tab-all {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: #fff;
-}
-.tab-btn.active.tab-easy {
-  background: #2b8a3e;
-  border-color: #2b8a3e;
-  color: #fff;
-}
-.tab-btn.active.tab-medium {
-  background: #e67700;
-  border-color: #e67700;
-  color: #fff;
-}
-.tab-btn.active.tab-hard {
-  background: #c92a2a;
-  border-color: #c92a2a;
-  color: #fff;
-}
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-}
-.status-tabs {
+.tag-control-group {
   display: inline-flex;
-  border: 1px solid var(--line);
-  background: var(--bg);
-  padding: 2px;
-}
-.status-tab {
-  padding: 4px 10px;
-  font-size: 12px;
-  border: none;
-  background: transparent;
-  color: var(--ink-secondary);
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-.status-tab.active {
-  background: var(--surface);
-  color: var(--ink);
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-.random-btn {
-  height: 32px;
-  padding: 0 12px;
-  gap: 6px;
-  font-size: 13px;
-  border-radius: 0;
-}
-.random-icon {
-  width: 13px;
-  height: 13px;
+  align-items: stretch;
 }
 
-/* 题目卡片列表 */
-.question-list {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.question-item {
-  display: flex;
+.tag-clear-btn {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 20px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  border-radius: 0;
-  text-decoration: none;
-  color: inherit;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-  /* 题目卡片入场从工具栏下方按序掉落效果 */
-  animation: cardDropIn 0.44s cubic-bezier(0.25, 1.15, 0.5, 1) backwards;
-  animation-delay: calc(var(--drop-index, 0) * 45ms);
-  will-change: transform, opacity;
-}
-.question-item:hover {
-  border-color: var(--ink);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-  transform: translateY(-2px) !important;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 36px;
+  padding: 0 8px;
+  font-size: 16px;
+  line-height: 1;
+  border: 1px solid var(--kece-accent);
+  border-left: none;
+  border-radius: 0px;
+  background: var(--kece-accent-soft);
+  color: var(--kece-accent-ink);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
-@keyframes cardDropIn {
-  0% {
-    opacity: 0;
-    transform: translateY(-38px) scale(0.985);
-  }
-  60% {
-    opacity: 1;
-    transform: translateY(3px) scale(1.002);
-  }
-  82% {
-    transform: translateY(-1.5px) scale(0.999);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+.tag-clear-btn:hover {
+  background: var(--kece-accent);
+  color: #ffffff;
+}
+
+.empty-reset-btn {
+  margin-top: 14px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .question-item {
-    animation: none !important;
-  }
-}
-.q-main-layout {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-width: 0;
-  flex: 1;
-}
-.q-status-wrap {
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.status-icon.solved {
-  color: #2b8a3e;
-  width: 20px;
-  height: 20px;
-  display: inline-flex;
-}
-.status-icon.unsolved {
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.unsolved-ring {
-  width: 12px;
-  height: 12px;
-  border: 1.5px solid #d0d0d0;
-  border-radius: 50%;
-}
-.q-number {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--ink-secondary);
-  min-width: 44px;
-  flex-shrink: 0;
-}
-.q-content {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.q-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.q-tags-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.meta-tag {
-  font-size: 11.5px;
-  padding: 1px 7px;
-  line-height: 1.4;
-  border-radius: 0;
-}
-.meta-tag.limits {
-  background: var(--bg);
-  border: 1px solid var(--line);
-  color: var(--ink-secondary);
-}
-.meta-tag.question-tag {
-  background: #1d4ed8;
-  border: 1px solid #1e40af;
-  color: #ffffff;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.meta-tag.question-tag:hover {
-  background: #2563eb;
-  border-color: #1d4ed8;
-  color: #ffffff;
-}
-.meta-tag.question-tag.tag-active {
-  background: #0f172a;
-  border-color: #0f172a;
-  color: #ffffff;
-  box-shadow: 0 0 0 1.5px #93c5fd;
-}
-
-.tag-toggle-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 10px;
-  font-size: 13px;
-  border-radius: 0;
-}
-.tag-toggle-btn.has-selected {
-  background: #1d4ed8;
-  border-color: #1e40af;
-  color: #ffffff;
-  font-weight: 600;
-}
-.tag-badge-indicator {
-  font-size: 11px;
-  padding: 1px 5px;
-  background: rgba(255, 255, 255, 0.25);
-  border-radius: 2px;
-}
-.tag-clear-x {
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 2px;
-  opacity: 0.8;
-  transition: opacity 0.15s ease;
-}
-.tag-clear-x:hover {
-  opacity: 1;
-}
-.toggle-arrow {
-  width: 9px;
-  height: 9px;
-  transition: transform 0.2s ease;
-  margin-left: 1px;
-}
-.toggle-arrow.is-open {
-  transform: rotate(180deg);
-}
-
-.tag-filter-bar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: -10px;
-  margin-bottom: 20px;
-  padding: 10px 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  animation: tagSlideDown 0.16s ease-out;
-}
-@keyframes tagSlideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.tag-filter-chips {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  flex: 1;
-}
-.btn-collapse-tags {
-  font-size: 12px;
-  color: var(--ink-tertiary);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px 6px;
-  white-space: nowrap;
-  transition: color 0.15s ease;
-}
-.btn-collapse-tags:hover {
-  color: var(--ink);
-}
-
-.tag-filter-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--ink-tertiary);
-  margin-right: 4px;
-  letter-spacing: 0.5px;
-}
-.tag-filter-chip {
-  font-size: 12px;
-  padding: 3px 10px;
-  border: 1px solid #e4e4e7;
-  background: #f4f4f5;
-  color: #3f3f46;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  border-radius: 0;
-  font-weight: 500;
-}
-.tag-filter-chip:hover {
-  background: #2563eb;
-  border-color: #1d4ed8;
-  color: #ffffff;
-}
-.tag-filter-chip.active {
-  background: #1d4ed8;
-  border-color: #1e40af;
-  color: #ffffff;
-  font-weight: 600;
-}
-
-.meta-tag.lang {
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
-  color: #3f3f46;
-  font-weight: 600;
-}
-
-/* 右侧：难度徽标与操作入口 */
-.q-right-layout {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-shrink: 0;
-}
-.difficulty-pill {
-  min-width: 52px;
-  padding: 3px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
-  border-radius: 0;
-  letter-spacing: 0.3px;
-  color: #fff;
-}
-.pill-easy {
-  background: #2b8a3e;
-  color: #fff;
-  border: 1px solid #237032;
-}
-.pill-medium {
-  background: #e67700;
-  color: #fff;
-  border: 1px solid #c96500;
-}
-.pill-hard {
-  background: #c92a2a;
-  color: #fff;
-  border: 1px solid #b02525;
-}
-.action-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-secondary);
-  transition: all 0.15s ease;
-}
-.cta-arrow {
-  width: 14px;
-  height: 14px;
-  transition: transform 0.18s ease;
-}
-.question-item:hover .action-cta {
-  color: var(--ink);
-}
-.question-item:hover .cta-arrow {
-  transform: translateX(3px);
-}
-
-/* 加载与空状态 */
-.loading-box,
-.empty-box {
-  padding: 48px 24px;
-  text-align: center;
-  border-radius: 0;
-}
-.empty-title {
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0 0 6px;
-}
-.empty-desc {
-  font-size: 13px;
-  margin: 0;
-}
-
-/* 分页 */
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  padding: 32px 0 20px;
-}
-.page-info {
-  color: var(--ink-secondary);
-  font-size: 13.5px;
-}
-
-@media (max-width: 768px) {
-  .page-head {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .toolbar-left,
-  .toolbar-right {
-    width: 100%;
-    justify-content: space-between;
-  }
-  .search-wrap {
-    width: 100%;
-  }
-  .action-cta {
-    display: none;
+  .tag-clear-btn {
+    transition: none;
   }
 }
 </style>

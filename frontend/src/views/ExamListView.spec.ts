@@ -127,4 +127,48 @@ describe('ExamListView', () => {
     expect(rankingText).not.toContain('实时考生天梯榜');
     expect(rankingText).not.toContain('自动刷新');
   });
+
+  it('supports keyboard navigation on status tablist and traps focus inside modal', async () => {
+    wrapper = mount(ExamListView, { attachTo: document.body });
+    await flushPromises();
+
+    const tabs = wrapper.findAll('[role="tab"]');
+    expect(tabs).toHaveLength(4);
+    expect(tabs[0]!.attributes('tabindex')).toBe('0');
+    expect(tabs[1]!.attributes('tabindex')).toBe('-1');
+
+    await tabs[0]!.trigger('keydown', { key: 'ArrowRight' });
+    await nextTick();
+    expect(tabs[1]!.attributes('aria-selected')).toBe('true');
+    expect(tabs[1]!.attributes('tabindex')).toBe('0');
+    expect(wrapper.findAll('.exam-card')).toHaveLength(1);
+
+    await tabs[1]!.trigger('keydown', { key: 'End' });
+    await nextTick();
+    expect(tabs[3]!.attributes('aria-selected')).toBe('true');
+
+    await tabs[3]!.trigger('keydown', { key: 'Home' });
+    await nextTick();
+    expect(tabs[0]!.attributes('aria-selected')).toBe('true');
+    expect(wrapper.findAll('.exam-card')).toHaveLength(3);
+
+    // Open schedule modal and verify body scroll lock + Tab focus trap
+    const upcomingCard = wrapper.findAll('.exam-card')[1]!;
+    await upcomingCard.get('.btn-schedule').trigger('click');
+    await nextTick();
+    expect(document.body.style.overflow).toBe('hidden');
+
+    const modalButtons =
+      document.body.querySelectorAll<HTMLButtonElement>('.schedule-modal button');
+    expect(modalButtons.length).toBeGreaterThanOrEqual(2);
+    const firstBtn = modalButtons[0]!;
+    const lastBtn = modalButtons[modalButtons.length - 1]!;
+    lastBtn.focus();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+    expect(document.activeElement).toBe(firstBtn);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await nextTick();
+    expect(document.body.style.overflow).toBe('');
+  });
 });
