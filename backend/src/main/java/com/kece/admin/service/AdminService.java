@@ -9,6 +9,7 @@ import com.kece.common.response.PageParam;
 import com.kece.common.response.PageResult;
 import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
+import com.kece.common.security.UserAuthStateService;
 import com.kece.user.entity.User;
 import com.kece.user.mapper.UserMapper;
 import java.util.Arrays;
@@ -29,6 +30,7 @@ public class AdminService {
 
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final UserAuthStateService userAuthStateService;
 
     public PageResult<AdminUserVO> listUsers(
             String keyword, String role, Integer status, int page, int size) {
@@ -81,6 +83,11 @@ public class AdminService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "系统至少保留一名管理员");
         }
         userMapper.updateStatus(id, status);
+        if (status == 0) {
+            userAuthStateService.incrementTokenVersionAndEvict(id);
+        } else {
+            userAuthStateService.evictCache(id);
+        }
         return toVO(getByIdOrThrow(id));
     }
 
@@ -91,6 +98,7 @@ public class AdminService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "不能重置自己的密码");
         }
         userMapper.updatePassword(id, passwordEncoder.encode(request.getNewPassword()));
+        userAuthStateService.incrementTokenVersionAndEvict(id);
     }
 
     /** 校验并去重角色列表：每项 trim 后必须是系统角色，任一违反抛参数错误。 */
@@ -122,6 +130,7 @@ public class AdminService {
                 .id(user.getId())
                 .username(user.getUsername())
                 .email(user.getEmail())
+                .avatarUrl(user.getAvatarUrl())
                 .roles(parseRoles(user.getRoles()))
                 .status(user.getStatus())
                 .createdAt(user.getCreatedAt())

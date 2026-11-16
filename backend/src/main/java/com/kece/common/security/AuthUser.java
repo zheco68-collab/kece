@@ -12,6 +12,11 @@ public class AuthUser {
     private final Long id;
     private final String username;
     private final Set<String> roles;
+    private final int tokenVersion;
+
+    public AuthUser(Long id, String username, Set<String> roles) {
+        this(id, username, roles, 0);
+    }
 
     public boolean hasRole(Role role) {
         return roles != null && roles.contains(role.name());

@@ -239,6 +239,10 @@ function isProfileActive(): boolean {
   return route.path === '/profile' || route.path.startsWith('/profile/')
 }
 
+function isSettingsActive(): boolean {
+  return route.path === '/account/settings' || route.path.startsWith('/account/settings/')
+}
+
 function isAdminActive(): boolean {
   return route.path === '/admin' || route.path.startsWith('/admin/')
 }
@@ -718,6 +722,22 @@ defineExpose({
         <span v-if="!isCollapsed" class="nav-label">个人主页</span>
       </RouterLink>
 
+      <!-- 9. 账户设置 -->
+      <RouterLink
+        to="/account/settings"
+        class="nav-item"
+        :class="{ active: isSettingsActive() }"
+        :title="isCollapsed ? '账户设置' : undefined"
+      >
+        <span class="nav-icon-wrap" aria-hidden="true">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </span>
+        <span v-if="!isCollapsed" class="nav-label">账户设置</span>
+      </RouterLink>
+
       <!-- 方案 C 特权管理控制台入口 (ADMINISTRATION) -->
       <!-- 核心鉴权安全：必须使用 v-if 严格节点级条件渲染，未登录游客与普通学生在 DOM 树中绝对不可渲染 -->
       <div
@@ -794,31 +814,46 @@ defineExpose({
             </span>
           </div>
 
-          <button
-            v-if="!isCollapsed"
-            type="button"
-            class="logout-btn mono"
-            title="退出登录"
-            @click="handleLogout"
-          >
-            退出
-          </button>
+          <div class="user-footer-actions" :class="{ 'is-collapsed': isCollapsed }">
+            <RouterLink
+              to="/account/settings"
+              class="footer-icon-btn"
+              :class="{ active: isSettingsActive() }"
+              title="账户设置"
+              aria-label="账户设置"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </RouterLink>
 
-          <!-- 折叠态：紧凑退出小图标 -->
-          <button
-            v-else
-            type="button"
-            class="logout-icon-btn"
-            title="退出登录"
-            aria-label="退出登录"
-            @click="handleLogout"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-          </button>
+            <button
+              v-if="!isCollapsed"
+              type="button"
+              class="logout-btn mono"
+              title="退出登录"
+              @click="handleLogout"
+            >
+              退出
+            </button>
+
+            <!-- 折叠态：紧凑退出小图标 -->
+            <button
+              v-else
+              type="button"
+              class="logout-icon-btn"
+              title="退出登录"
+              aria-label="退出登录"
+              @click="handleLogout"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </button>
+          </div>
         </div>
       </template>
 
@@ -1391,6 +1426,44 @@ defineExpose({
   border: 1px solid #111111;
 }
 
+.user-footer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.user-footer-actions.is-collapsed {
+  flex-direction: column;
+}
+
+.footer-icon-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: #ffffff;
+  border: 1px solid var(--line, #ced4da);
+  border-radius: 0;
+  color: #555555;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.footer-icon-btn:hover,
+.footer-icon-btn.active {
+  background: var(--kece-accent-soft, #eef6f4);
+  color: var(--kece-accent-ink, #0f5f53);
+  border-color: var(--kece-accent, #137969);
+}
+
+.footer-icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
 .logout-btn {
   padding: 4px 8px;
   font-size: 12px;
@@ -1492,6 +1565,7 @@ defineExpose({
   .admin-arrow-icon,
   .user-avatar-link,
   .user-name,
+  .footer-icon-btn,
   .logout-btn,
   .logout-icon-btn,
   .auth-action-btn,

@@ -37,6 +37,7 @@ describe('AdminUsersView', () => {
           id: 1,
           username: 'admin',
           email: 'admin@kece.edu',
+          avatarUrl: '/api/v1/uploads/avatars/avatar_1_123.png',
           roles: ['ADMIN'],
           status: 1,
           createdAt: '2026-10-01T08:00:00Z',
@@ -45,6 +46,7 @@ describe('AdminUsersView', () => {
           id: 2,
           username: 'teacher1',
           email: 'teacher1@kece.edu',
+          avatarUrl: null,
           roles: ['TEACHER'],
           status: 1,
           createdAt: '2026-10-02T09:00:00Z',
@@ -137,5 +139,38 @@ describe('AdminUsersView', () => {
     drawer.querySelector<HTMLButtonElement>('.reset-pwd-btn')!.click();
     await flushPromises();
     expect(adminApiMock.resetUserPassword).toHaveBeenCalledWith(2, 'newpass123');
+  });
+
+  it('renders avatar image in user table and drawer with initial fallback on missing or broken image', async () => {
+    wrapper = mount(AdminUsersView, { attachTo: document.body });
+    await flushPromises();
+
+    const rows = wrapper.findAll('tbody tr');
+    expect(rows).toHaveLength(2);
+
+    const firstImg = rows[0]!.find('.user-avatar img.user-avatar-img');
+    expect(firstImg.exists()).toBe(true);
+    expect(firstImg.attributes('src')).toBe('/api/v1/uploads/avatars/avatar_1_123.png');
+
+    expect(rows[1]!.find('.user-avatar img').exists()).toBe(false);
+    expect(rows[1]!.find('.user-avatar').text()).toBe('T');
+
+    // Open drawer for user 1: shows large avatar img
+    await rows[0]!.find('.manage-btn').trigger('click');
+    await nextTick();
+
+    const drawerImg = document.body.querySelector<HTMLImageElement>(
+      '.manage-drawer .user-avatar.lg img.user-avatar-img',
+    );
+    expect(drawerImg).not.toBeNull();
+    expect(drawerImg?.getAttribute('src')).toBe('/api/v1/uploads/avatars/avatar_1_123.png');
+
+    // Broken image falls back gracefully to initial letter in both row & drawer
+    await firstImg.trigger('error');
+    await nextTick();
+    expect(rows[0]!.find('.user-avatar img').exists()).toBe(false);
+    expect(rows[0]!.find('.user-avatar').text()).toBe('A');
+    expect(document.body.querySelector('.manage-drawer .user-avatar.lg img')).toBeNull();
+    expect(document.body.querySelector('.manage-drawer .user-avatar.lg')?.textContent).toBe('A');
   });
 });

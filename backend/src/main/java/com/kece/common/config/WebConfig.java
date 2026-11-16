@@ -2,6 +2,7 @@ package com.kece.common.config;
 
 import com.kece.common.security.AuthInterceptor;
 import com.kece.common.security.JwtUtil;
+import com.kece.common.security.UserAuthStateService;
 import com.kece.judging.control.JudgeClaimReturnValueHandler;
 import com.kece.judging.control.JudgeMachineInterceptor;
 import java.nio.file.Paths;
@@ -23,12 +24,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebConfig implements WebMvcConfigurer {
 
     private final JwtUtil jwtUtil;
+    private final UserAuthStateService userAuthStateService;
     private final JudgeMachineInterceptor machineInterceptor;
     private final List<HttpMessageConverter<?>> messageConverters;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new AuthInterceptor(jwtUtil))
+        registry.addInterceptor(new AuthInterceptor(jwtUtil, userAuthStateService))
                 .addPathPatterns("/**")
                 .excludePathPatterns("/internal/judgers/**");
         registry.addInterceptor(machineInterceptor).addPathPatterns("/internal/judgers/**");

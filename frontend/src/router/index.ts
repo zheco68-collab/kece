@@ -215,6 +215,12 @@ const router = createRouter({
           meta: { title: '个人主页', requiresAuth: true },
         },
         {
+          path: 'account/settings',
+          name: 'account-settings',
+          component: () => import('@/views/AccountSettingsView.vue'),
+          meta: { title: '账户设置', requiresAuth: true },
+        },
+        {
           path: 'announcements',
           name: 'announcements',
           component: () => import('@/views/AnnouncementsBoardView.vue'),

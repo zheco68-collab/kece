@@ -6,10 +6,7 @@ import { submissionApi } from '@/api/submission';
 import { databaseApi } from '@/api/database';
 import { objectiveApi } from '@/api/objective';
 import HeatmapCalendar from '@/components/HeatmapCalendar.vue';
-import EditProfileModal from '@/components/EditProfileModal.vue';
-import ChangePasswordModal from '@/components/ChangePasswordModal.vue';
 import Pagination from '@/components/Pagination.vue';
-import { useToast } from '@/composables/useToast';
 import { useUserStore } from '@/stores/user';
 import { renderMarkdown } from '@/utils/markdown';
 import { copyToClipboard } from '@/utils/clipboard';
@@ -30,7 +27,6 @@ import { solutionApi, type SolutionListItem } from '@/api/solution';
 
 const route = useRoute();
 const userStore = useUserStore();
-const toast = useToast();
 
 // 目标用户 ID 解析：若路由传了 /profile/:id 则为该用户的 id，否则为本人
 const targetUserId = computed<number | undefined>(() => {
@@ -65,7 +61,7 @@ const examsLoading = ref(true);
 const examsError = ref('');
 
 // ---- 提交记录整合模块 ----
-type TabKey = 'code' | 'database' | 'objective' | 'solutions';
+type TabKey = 'code' | 'database' | 'objective';
 const activeTab = ref<TabKey>('code');
 const tabsRef = ref<HTMLElement | null>(null);
 const pageSize = 10;
@@ -130,9 +126,11 @@ const objStatusFilters: Array<{ value: SubmissionStatus | ''; label: string }> =
 ];
 
 // 弹窗与反馈
-const editModalVisible = ref(false);
-const passwordModalVisible = ref(false);
 const copyTip = ref(false);
+
+function isSafeHttpUrl(url: string | null | undefined): boolean {
+  return Boolean(url && /^https?:\/\//i.test(url.trim()));
+}
 const codeCloseBtn = ref<HTMLButtonElement | null>(null);
 const dbCloseBtn = ref<HTMLButtonElement | null>(null);
 const objCloseBtn = ref<HTMLButtonElement | null>(null);
@@ -320,25 +318,28 @@ async function loadObjSubmissions() {
 }
 
 async function loadSolutions() {
-  if (!isSelf.value) return;
+  if (!isSelf.value && !targetUserId.value) return;
   solutionLoading.value = true;
   solutionError.value = '';
   try {
-    const result = await solutionApi.listMine({ page: solutionPage.value, size: pageSize });
+    const result = isSelf.value
+      ? await solutionApi.listMine({ page: solutionPage.value, size: pageSize })
+      : await solutionApi.listByAuthor(targetUserId.value!, {
+          page: solutionPage.value,
+          size: pageSize,
+        });
     solutionList.value = Array.isArray(result?.list) ? result.list : [];
     solutionTotal.value = result?.total ?? 0;
   } catch (err: unknown) {
     solutionList.value = [];
     solutionTotal.value = 0;
-    solutionError.value = err instanceof Error ? err.message : '我的题解加载失败';
+    solutionError.value = err instanceof Error ? err.message : '题解记录加载失败';
   } finally {
     solutionLoading.value = false;
   }
 }
 
-const availableTabs = computed<TabKey[]>(() =>
-  isSelf.value ? ['code', 'solutions', 'database', 'objective'] : ['code', 'database', 'objective'],
-);
+const availableTabs: TabKey[] = ['code', 'database', 'objective'];
 
 function switchTab(t: TabKey) {
   if (activeTab.value === t) return;
@@ -346,12 +347,10 @@ function switchTab(t: TabKey) {
   if (t === 'code' && codeList.value.length === 0 && !codeLoading.value) loadCodeSubmissions();
   if (t === 'database' && dbList.value.length === 0 && !dbLoading.value) loadDbSubmissions();
   if (t === 'objective' && objList.value.length === 0 && !objLoading.value) loadObjSubmissions();
-  if (t === 'solutions' && solutionList.value.length === 0 && !solutionLoading.value)
-    loadSolutions();
 }
 
 function onTabKeydown(e: KeyboardEvent) {
-  const tabs = availableTabs.value;
+  const tabs = availableTabs;
   const currentIdx = tabs.indexOf(activeTab.value);
   if (currentIdx === -1) return;
   let nextIdx = -1;
@@ -425,32 +424,17 @@ watch(objStatus, () => {
   loadObjSubmissions();
 });
 
-function onProfileUpdated(data: { bio: string; githubUrl: string; avatarUrl: string | null }) {
-  if (profile.value) {
-    profile.value.bio = data.bio;
-    profile.value.githubUrl = data.githubUrl;
-    if (data.avatarUrl) {
-      profile.value.avatarUrl = data.avatarUrl;
-    }
-  }
-  toast.success('个人资料已成功更新');
-}
-
-function onPasswordChanged() {
-  toast.success('密码修改成功，请妥善保管新密码');
-}
-
 function applyTabFromRoute() {
   const tab = route.query.tab;
   if (tab === 'database') activeTab.value = 'database';
   else if (tab === 'objective') activeTab.value = 'objective';
-  else if (tab === 'solutions' && isSelf.value) activeTab.value = 'solutions';
   else if (tab === 'code') activeTab.value = 'code';
 
   if (tab) {
     if (scrollTimer) clearTimeout(scrollTimer);
+    const targetSectionId = tab === 'solutions' ? 'solutions-section' : 'submissions-section';
     scrollTimer = setTimeout(() => {
-      const el = document.getElementById('submissions-section');
+      const el = document.getElementById(targetSectionId);
       if (el) {
         const reduced =
           typeof window !== 'undefined' &&
@@ -519,41 +503,8 @@ onBeforeUnmount(() => {
 
       <section v-else class="card hero-profile-card">
         <div class="hero-main-layout">
-          <!-- 方形大头像：自适应正方形，直角边线分割；本人可点击编辑 -->
-          <button
-            v-if="isSelf"
-            type="button"
-            class="hero-avatar-box is-clickable"
-            title="点击修改头像与资料"
-            aria-label="更换头像与编辑个人资料"
-            @click="editModalVisible = true"
-          >
-            <img
-              v-if="profile?.avatarUrl"
-              :src="profile.avatarUrl"
-              class="avatar-image"
-              :alt="profile?.username ? `${profile.username} 的头像` : '用户头像'"
-            />
-            <div v-else class="avatar-placeholder-large mono" aria-hidden="true">
-              {{ profile?.username?.charAt(0).toUpperCase() || 'U' }}
-            </div>
-            <div class="avatar-hover-mask" aria-hidden="true">
-              <svg
-                class="mask-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"
-                />
-                <circle cx="12" cy="13" r="4" />
-              </svg>
-              <span>更换头像</span>
-            </div>
-          </button>
-          <div v-else class="hero-avatar-box" :title="profile?.username || ''">
+          <!-- 方形大头像：自适应正方形，直角边线分割 -->
+          <div class="hero-avatar-box" :title="profile?.username || ''">
             <img
               v-if="profile?.avatarUrl"
               :src="profile.avatarUrl"
@@ -576,34 +527,6 @@ onBeforeUnmount(() => {
                 <span class="user-id-badge mono tabular-nums">UID: {{ profile?.id }}</span>
                 <span v-if="!isSelf" class="visitor-badge">访客视角</span>
               </div>
-
-              <!-- 本人视角：编辑资料与修改密码操作 -->
-              <div v-if="isSelf" class="hero-actions-group">
-                <button
-                  class="btn btn-primary btn-sm action-btn"
-                  type="button"
-                  @click="editModalVisible = true"
-                >
-                  <svg class="btn-svg" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                    <path
-                      d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM9.75 4.81l-6.9 6.9-.64 2.241 2.242-.64 6.9-6.9-1.602-1.602Z"
-                    />
-                  </svg>
-                  编辑资料
-                </button>
-                <button
-                  class="btn btn-ghost btn-sm action-btn"
-                  type="button"
-                  @click="passwordModalVisible = true"
-                >
-                  <svg class="btn-svg" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                    <path
-                      d="M4 4a4 4 0 0 1 8 0v2h.25c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-5.5C2 6.784 2.784 6 3.75 6H4V4Zm1.5 2h5V4a2.5 2.5 0 0 0-5 0v2ZM3.75 7.5a.25.25 0 0 0-.25.25v5.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-5.5a.25.25 0 0 0-.25-.25h-8.5Z"
-                    />
-                  </svg>
-                  修改密码
-                </button>
-              </div>
             </div>
 
             <!-- 元信息标签栏 (Email, 加入时间, GitHub) -->
@@ -625,8 +548,8 @@ onBeforeUnmount(() => {
                 加入于 {{ formatDate(profile?.createdAt || null) }}
               </span>
               <a
-                v-if="profile?.githubUrl"
-                :href="profile.githubUrl"
+                v-if="isSafeHttpUrl(profile?.githubUrl)"
+                :href="profile!.githubUrl!"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="meta-pill github-pill"
@@ -792,9 +715,7 @@ onBeforeUnmount(() => {
                     ? codeTotal
                     : activeTab === 'database'
                       ? dbTotal
-                      : activeTab === 'objective'
-                        ? objTotal
-                        : solutionTotal
+                      : objTotal
                 }}
                 条
               </span>
@@ -836,7 +757,7 @@ onBeforeUnmount(() => {
           ref="tabsRef"
           class="submissions-tabs"
           role="tablist"
-          aria-label="提交与题解分类"
+          aria-label="提交记录分类"
           @keydown="onTabKeydown"
         >
           <button
@@ -851,20 +772,6 @@ onBeforeUnmount(() => {
           >
             <span>编程题提交</span>
             <span class="tab-count mono tabular-nums">{{ codeTotal }}</span>
-          </button>
-          <button
-            v-if="isSelf"
-            id="profile-tab-solutions"
-            type="button"
-            role="tab"
-            :aria-selected="activeTab === 'solutions'"
-            :tabindex="activeTab === 'solutions' ? 0 : -1"
-            class="tab-btn"
-            :class="{ active: activeTab === 'solutions' }"
-            @click="switchTab('solutions')"
-          >
-            <span>我的题解</span>
-            <span class="tab-count mono tabular-nums">{{ solutionTotal }}</span>
           </button>
           <button
             id="profile-tab-database"
@@ -894,81 +801,8 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <!-- Tab 0: 我的题解 -->
-        <template v-if="activeTab === 'solutions'">
-          <div v-if="solutionLoading" class="block-loading muted" role="status">
-            <div class="loading-spinner" aria-hidden="true"></div>
-            <p class="muted loading-caption">正在加载我的题解…</p>
-          </div>
-          <div v-else-if="solutionError" class="state-banner is-error" role="alert">
-            <span>{{ solutionError }}</span>
-            <button
-              type="button"
-              class="btn btn-ghost btn-sm btn-inline-retry"
-              @click="loadSolutions"
-            >
-              重试
-            </button>
-          </div>
-          <div v-else-if="solutionList.length === 0" class="empty-block">
-            <span class="empty-text">还没有发布题解</span>
-          </div>
-          <template v-else>
-            <div class="table-responsive">
-              <table class="timeline-table">
-                <thead>
-                  <tr>
-                    <th>题解标题</th>
-                    <th>关联题目</th>
-                    <th>状态</th>
-                    <th>最后更新</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="item in solutionList" :key="item.id">
-                    <td class="q-title-col">
-                      <RouterLink :to="`/solutions/${item.id}`" class="q-link">
-                        {{ item.title }}
-                      </RouterLink>
-                    </td>
-                    <td>
-                      {{ item.questionType === 'DB' ? 'DB' : '算法' }} #{{ item.questionId }} ·
-                      {{ item.questionTitle }}
-                    </td>
-                    <td>
-                      <span
-                        class="hud-pill"
-                        :class="item.status === 'PUBLISHED' ? 'tone-success' : 'tone-neutral'"
-                      >
-                        {{ item.status === 'PUBLISHED' ? '公开' : '已隐藏' }}
-                      </span>
-                    </td>
-                    <td class="mono tabular-nums date-cell">{{ formatTime(item.updatedAt) }}</td>
-                    <td>
-                      <RouterLink :to="`/solutions/${item.id}/edit`" class="detail-action">
-                        编辑
-                      </RouterLink>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <Pagination
-              v-if="solutionTotal > pageSize"
-              :total="solutionTotal"
-              :page="solutionPage"
-              :size="pageSize"
-              :compact="true"
-              :disabled="solutionLoading"
-              @update:page="onSolutionPageChange"
-            />
-          </template>
-        </template>
-
         <!-- Tab 1: 编程题表格 -->
-        <template v-else-if="activeTab === 'code'">
+        <template v-if="activeTab === 'code'">
           <div v-if="codeLoading" class="block-loading muted" role="status">
             <div class="loading-spinner" aria-hidden="true"></div>
             <p class="muted loading-caption">正在加载编程题提交…</p>
@@ -1269,25 +1103,115 @@ onBeforeUnmount(() => {
           </template>
         </template>
       </section>
+
+      <!-- 5. 题解档案（独立展示：本人可看公开/隐藏并编辑，访客仅见公开题解） -->
+      <section id="solutions-section" class="card profile-block-card">
+        <div class="block-header">
+          <div class="block-title-box">
+            <div class="block-title-row">
+              <h2 class="block-title">
+                {{ isSelf ? '我的题解' : (profile?.username || '用户') + ' 的题解' }}
+              </h2>
+              <span class="block-counter mono tabular-nums">{{ solutionTotal }} 篇</span>
+            </div>
+            <span class="block-sub">
+              {{
+                isSelf
+                  ? '公开发布与受控状态的算法、数据库题解文章记录'
+                  : '该用户公开发布的算法与数据库题解文章'
+              }}
+            </span>
+          </div>
+        </div>
+
+        <div v-if="solutionLoading" class="block-loading muted" role="status">
+          <div class="loading-spinner" aria-hidden="true"></div>
+          <p class="muted loading-caption">正在加载题解列表…</p>
+        </div>
+
+        <div v-else-if="solutionError" class="state-banner is-error" role="alert">
+          <span>{{ solutionError }}</span>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm btn-inline-retry"
+            @click="loadSolutions"
+          >
+            重试
+          </button>
+        </div>
+
+        <div v-else-if="solutionList.length === 0" class="empty-block">
+          <span class="empty-text">{{ isSelf ? '还没有发布题解' : '暂无公开题解' }}</span>
+        </div>
+
+        <template v-else>
+          <div class="table-responsive">
+            <table class="timeline-table">
+              <thead>
+                <tr>
+                  <th>题解标题</th>
+                  <th>关联题目</th>
+                  <th v-if="isSelf">状态</th>
+                  <th>最后更新</th>
+                  <th v-if="isSelf">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in solutionList" :key="item.id">
+                  <td class="q-title-col">
+                    <RouterLink :to="`/solutions/${item.id}`" class="q-link">
+                      {{ item.title }}
+                    </RouterLink>
+                  </td>
+                  <td>
+                    <RouterLink
+                      v-if="item.questionPublic"
+                      :to="
+                        item.questionType === 'DB'
+                          ? `/database/${item.questionId}`
+                          : `/questions/${item.questionId}`
+                      "
+                      class="q-link"
+                    >
+                      {{ item.questionType === 'DB' ? 'DB' : '算法' }} #{{ item.questionId }} ·
+                      {{ item.questionTitle }}
+                    </RouterLink>
+                    <span v-else>
+                      {{ item.questionType === 'DB' ? 'DB' : '算法' }} #{{ item.questionId }} ·
+                      {{ item.questionTitle }}
+                    </span>
+                  </td>
+                  <td v-if="isSelf">
+                    <span
+                      class="hud-pill"
+                      :class="item.status === 'PUBLISHED' ? 'tone-success' : 'tone-neutral'"
+                    >
+                      {{ item.status === 'PUBLISHED' ? '公开' : '已隐藏' }}
+                    </span>
+                  </td>
+                  <td class="mono tabular-nums date-cell">{{ formatTime(item.updatedAt) }}</td>
+                  <td v-if="isSelf">
+                    <RouterLink :to="`/solutions/${item.id}/edit`" class="detail-action">
+                      编辑
+                    </RouterLink>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <Pagination
+            v-if="solutionTotal > pageSize"
+            :total="solutionTotal"
+            :page="solutionPage"
+            :size="pageSize"
+            :compact="true"
+            :disabled="solutionLoading"
+            @update:page="onSolutionPageChange"
+          />
+        </template>
+      </section>
     </div>
-
-    <!-- 弹窗 1: 编辑资料 -->
-    <EditProfileModal
-      :visible="editModalVisible"
-      :username="profile?.username || ''"
-      :initial-bio="profile?.bio || null"
-      :initial-github-url="profile?.githubUrl || null"
-      :initial-avatar-url="profile?.avatarUrl || null"
-      @close="editModalVisible = false"
-      @updated="onProfileUpdated"
-    />
-
-    <!-- 弹窗 2: 修改密码 -->
-    <ChangePasswordModal
-      :visible="passwordModalVisible"
-      @close="passwordModalVisible = false"
-      @success="onPasswordChanged"
-    />
 
     <!-- 弹窗 3: 编程题代码预览弹窗 -->
     <Teleport to="body">
@@ -1491,11 +1415,12 @@ onBeforeUnmount(() => {
   gap: 24px;
 }
 
-/* 1. 个人名片 Hero Card（头像占满左侧，严格直角边线分割） */
+/* 1. 个人名片 Hero Card（Paper White + 2px 青绿顶线，头像占满左侧） */
 .hero-profile-card {
   padding: 0;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--surface-white, #ffffff);
+  border: 1px solid var(--kece-border, #e4e7ec);
+  border-top: 2px solid var(--kece-accent, #137969);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
@@ -1503,34 +1428,30 @@ onBeforeUnmount(() => {
 .hero-main-layout {
   display: flex;
   align-items: stretch;
-  min-height: 180px;
+  min-height: 216px;
 }
 
-/* 方形头像占满左侧 (宽高自适应正方形，右侧直角边线分割) */
+/* 方形头像占满左侧，object-fit: cover 完整居中裁切 */
 .hero-avatar-box {
-  width: auto;
-  min-width: 180px;
-  max-width: 240px;
-  aspect-ratio: 1 / 1;
-  align-self: stretch;
+  position: relative;
+  width: 216px;
+  min-height: 216px;
   flex-shrink: 0;
   padding: 0;
   font: inherit;
   border: none;
-  border-right: 1px solid var(--line);
-  background: #fbfbfb;
-  position: relative;
+  border-right: 1px solid var(--kece-border, #e4e7ec);
+  background: var(--kece-surface-muted, #f8fafc);
   overflow: hidden;
 }
 
-.hero-avatar-box.is-clickable {
-  cursor: pointer;
-}
-
 .avatar-image {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
   display: block;
 }
 
@@ -1543,33 +1464,7 @@ onBeforeUnmount(() => {
   font-size: 64px;
   font-weight: 800;
   color: var(--ink-secondary);
-  background: #f4f4f5;
-}
-
-.avatar-hover-mask {
-  position: absolute;
-  inset: 0;
-  background: rgba(17, 17, 17, 0.72);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.hero-avatar-box.is-clickable:hover .avatar-hover-mask,
-.hero-avatar-box.is-clickable:focus-visible .avatar-hover-mask {
-  opacity: 1;
-}
-
-.mask-icon {
-  width: 22px;
-  height: 22px;
+  background: var(--kece-surface-muted, #f8fafc);
 }
 
 /* 右侧核心信息栏 */
@@ -1639,8 +1534,8 @@ onBeforeUnmount(() => {
 .user-id-badge {
   font-size: 12px;
   color: var(--ink-secondary);
-  background: var(--bg);
-  border: 1px solid var(--line);
+  background: var(--kece-surface-muted, #f8fafc);
+  border: 1px solid var(--kece-border, #e4e7ec);
   padding: 2px 8px;
 }
 
@@ -1652,29 +1547,12 @@ onBeforeUnmount(() => {
   padding: 2px 8px;
 }
 
-.hero-actions-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.btn-svg {
-  width: 14px;
-  height: 14px;
-}
-
 /* 元数据标签行 */
 .user-meta-pills {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
   font-size: 13px;
 }
 
@@ -1682,20 +1560,22 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 10px;
-  background: var(--bg);
-  border: 1px solid var(--line);
+  padding: 4px 10px;
+  background: var(--kece-surface-muted, #f8fafc);
+  border: 1px solid var(--kece-border, #e4e7ec);
   color: var(--ink-secondary);
 }
 
 .pill-svg {
   width: 13px;
   height: 13px;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
   flex-shrink: 0;
 }
 
 .github-pill {
+  background: var(--surface-white, #ffffff);
+  border-color: var(--line, #ced4da);
   color: var(--ink);
   text-decoration: none;
   font-weight: 500;
@@ -1703,8 +1583,9 @@ onBeforeUnmount(() => {
 }
 
 .github-pill:hover {
-  border-color: var(--ink);
-  background: #fff;
+  border-color: var(--kece-accent, #137969);
+  color: var(--kece-accent-ink, #0f5f53);
+  background: var(--kece-accent-soft, #eef6f4);
 }
 
 .ext-arrow {
@@ -1718,8 +1599,9 @@ onBeforeUnmount(() => {
 .user-slogan-box {
   margin-top: 4px;
   padding: 12px 18px;
-  background: var(--kece-surface-muted);
-  border: 1px solid var(--kece-border);
+  background: var(--kece-surface-muted, #f8fafc);
+  border: 1px solid var(--kece-border, #e4e7ec);
+  border-left: 3px solid var(--kece-accent, #137969);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1729,7 +1611,7 @@ onBeforeUnmount(() => {
 .quote-sign {
   font-size: 20px;
   font-weight: 800;
-  color: var(--ink-secondary);
+  color: var(--kece-accent-ink, #0f5f53);
   line-height: 1;
 }
 
@@ -1744,8 +1626,8 @@ onBeforeUnmount(() => {
 /* 通用分区卡片 */
 .profile-block-card {
   padding: 24px;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--surface-white, #ffffff);
+  border: 1px solid var(--kece-border, #e4e7ec);
 }
 
 .block-header {
@@ -1755,7 +1637,7 @@ onBeforeUnmount(() => {
   gap: 16px;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--kece-border, #e4e7ec);
 }
 
 .block-title-box {
@@ -1781,8 +1663,8 @@ onBeforeUnmount(() => {
   font-size: 11px;
   font-weight: 600;
   padding: 1px 7px;
-  background: var(--bg);
-  border: 1px solid var(--line);
+  background: var(--kece-surface-muted, #f8fafc);
+  border: 1px solid var(--kece-border, #e4e7ec);
   color: var(--ink-secondary);
 }
 
@@ -1812,13 +1694,13 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
 }
 
 .empty-svg {
   width: 36px;
   height: 36px;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
 }
 
 .empty-text {
@@ -1834,8 +1716,8 @@ onBeforeUnmount(() => {
 
 .exam-battle-card {
   padding: 20px;
-  border: 1px solid var(--line);
-  background: #fbfbfb;
+  border: 1px solid var(--kece-border, #e4e7ec);
+  background: var(--kece-surface-muted, #f8fafc);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1941,7 +1823,7 @@ onBeforeUnmount(() => {
   height: 36px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--surface-white, #ffffff);
   font-family: inherit;
   font-size: 13px;
   color: var(--ink);
@@ -1959,7 +1841,7 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 8px;
   margin-bottom: 20px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--kece-border, #e4e7ec);
   padding-bottom: 12px;
 }
 
@@ -2305,7 +2187,6 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .avatar-hover-mask,
   .github-pill,
   .exam-battle-card,
   .tab-btn,
@@ -2322,13 +2203,11 @@ onBeforeUnmount(() => {
     align-items: stretch;
   }
   .hero-avatar-box {
-    width: 100%;
-    min-width: unset;
-    max-width: unset;
-    height: 180px;
-    aspect-ratio: auto;
-    border-right: none;
-    border-bottom: 1px solid var(--line);
+    width: 128px;
+    height: 128px;
+    min-height: 128px;
+    margin: 24px auto 0;
+    border: 1px solid var(--kece-border, #e4e7ec);
   }
   .hero-info-column {
     padding: 20px 16px;

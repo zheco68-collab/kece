@@ -21,6 +21,9 @@ public class User {
     /** 状态：1 启用 0 禁用。 */
     private Integer status;
 
+    /** JWT 令牌版本号，改密/换绑邮箱/后台重置时递增。 */
+    private Integer tokenVersion;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

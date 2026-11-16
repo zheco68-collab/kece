@@ -13,6 +13,7 @@ public class AdminUserVO {
     private Long id;
     private String username;
     private String email;
+    private String avatarUrl;
     private List<String> roles;
     private Integer status;
     private LocalDateTime createdAt;

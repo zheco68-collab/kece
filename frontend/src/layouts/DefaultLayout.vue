@@ -33,6 +33,7 @@ const currentSection = computed(() => {
   if (path.startsWith('/database')) return 'DATABASE'
   if (path.startsWith('/objective')) return 'OBJECTIVE'
   if (path.startsWith('/announcements')) return 'ANNOUNCEMENTS'
+  if (path.startsWith('/account/settings')) return 'ACCOUNT // SETTINGS'
   if (path.startsWith('/profile')) return 'PROFILE'
   if (route.meta?.title) return String(route.meta.title).toUpperCase()
   return String(route.name || 'PORTAL').toUpperCase()

@@ -44,6 +44,7 @@ class SolutionIntegrationTest extends AbstractIntegrationTest {
                         .andReturn();
         assertThat(code(published)).isEqualTo(200);
         long solutionId = data(published).path("id").asLong();
+        long authorId = data(published).path("authorId").asLong();
         assertThat(data(published).path("status").asText()).isEqualTo("PUBLISHED");
         assertThat(data(published).path("version").asLong()).isEqualTo(1L);
 
@@ -120,6 +121,15 @@ class SolutionIntegrationTest extends AbstractIntegrationTest {
                         .andReturn();
         assertThat(code(hiddenPublic)).isEqualTo(4004);
 
+        MvcResult authorPublicWhileHidden =
+                mockMvc.perform(
+                                get("/solutions/author?userId=" + authorId)
+                                        .header("Authorization", "Bearer " + adminToken))
+                        .andExpect(status().isOk())
+                        .andReturn();
+        assertThat(code(authorPublicWhileHidden)).isEqualTo(200);
+        assertThat(data(authorPublicWhileHidden).path("total").asLong()).isZero();
+
         MvcResult authorEditAfterHidden =
                 mockMvc.perform(
                                 put("/solutions/" + solutionId)
@@ -159,6 +169,15 @@ class SolutionIntegrationTest extends AbstractIntegrationTest {
                         .andReturn();
         assertThat(code(visibleAgain)).isEqualTo(200);
         assertThat(data(visibleAgain).path("title").asText()).isEqualTo("仍然隐藏");
+
+        MvcResult authorPublicRestored =
+                mockMvc.perform(get("/solutions/author?userId=" + authorId))
+                        .andExpect(status().isOk())
+                        .andReturn();
+        assertThat(code(authorPublicRestored)).isEqualTo(200);
+        assertThat(data(authorPublicRestored).path("total").asLong()).isEqualTo(1L);
+        assertThat(data(authorPublicRestored).path("list").get(0).path("id").asLong())
+                .isEqualTo(solutionId);
     }
 
     @Test

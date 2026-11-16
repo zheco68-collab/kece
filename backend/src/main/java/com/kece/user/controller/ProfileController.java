@@ -2,6 +2,7 @@ package com.kece.user.controller;
 
 import com.kece.common.response.ApiResponse;
 import com.kece.common.security.RequireRole;
+import com.kece.user.dto.ChangeEmailRequest;
 import com.kece.user.dto.ChangePasswordRequest;
 import com.kece.user.dto.HeatmapVO;
 import com.kece.user.dto.UpdateProfileRequest;
@@ -61,6 +62,14 @@ public class ProfileController {
     @PutMapping("/password")
     public ApiResponse<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
         profileService.changePassword(request);
+        return ApiResponse.success();
+    }
+
+    @Operation(summary = "凭当前密码换绑登录邮箱")
+    @RequireRole
+    @PutMapping("/email")
+    public ApiResponse<Void> changeEmail(@Valid @RequestBody ChangeEmailRequest request) {
+        profileService.changeEmail(request);
         return ApiResponse.success();
     }
 

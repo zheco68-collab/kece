@@ -78,6 +78,39 @@ describe('AppSidebar.vue', () => {
     expect(text).toContain('排名')
     expect(text).toContain('公告栏')
     expect(text).toContain('个人主页')
+    expect(text).toContain('账户设置')
+
+    const settingsLink = wrapper.findAll('a').find((el) => el.attributes('href') === '/account/settings')
+    expect(settingsLink).toBeDefined()
+  })
+
+  it('activates 账户设置 main nav item on /account/settings route', () => {
+    currentRoutePath = '/account/settings'
+    const wrapper = mount(AppSidebar)
+    const settingsLink = wrapper.findAll('.nav-item').find((el) => el.attributes('href') === '/account/settings')
+    expect(settingsLink?.classes()).toContain('active')
+  })
+
+  it('renders quick settings link inside footer user card in expanded and collapsed states', async () => {
+    const userStore = useUserStore()
+    userStore.setAuth({
+      token: 'mock-token',
+      refreshToken: 'mock-refresh',
+      user: {
+        id: 27,
+        username: 'zheco68',
+        email: 'zheco@kece.edu',
+        roles: ['USER'],
+      },
+    })
+
+    const expandedWrapper = mount(AppSidebar)
+    const footerSettingsExpanded = expandedWrapper.find('.sidebar-footer a[href="/account/settings"]')
+    expect(footerSettingsExpanded.exists()).toBe(true)
+
+    await expandedWrapper.find('.collapse-toggle-btn').trigger('click')
+    const footerSettingsCollapsed = expandedWrapper.find('.sidebar-footer a[href="/account/settings"]')
+    expect(footerSettingsCollapsed.exists()).toBe(true)
   })
 
   it('supports expanded and collapsed toggling with localStorage persistence', async () => {

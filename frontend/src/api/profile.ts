@@ -12,6 +12,7 @@ export interface UserProfile {
 }
 
 export interface UpdateProfilePayload {
+  username?: string
   bio?: string
   githubUrl?: string
 }
@@ -19,6 +20,11 @@ export interface UpdateProfilePayload {
 export interface ChangePasswordPayload {
   oldPassword: string
   newPassword: string
+}
+
+export interface ChangeEmailPayload {
+  currentPassword: string
+  newEmail: string
 }
 
 export interface HeatmapDay {
@@ -64,6 +70,9 @@ export const profileApi = {
 
   changePassword: (data: ChangePasswordPayload): Promise<void> =>
     http.put('/users/password', data),
+
+  changeEmail: (data: ChangeEmailPayload): Promise<void> =>
+    http.put('/users/email', data),
 
   getHeatmap: (userId?: number): Promise<HeatmapData> =>
     http.get('/users/heatmap', { params: userId ? { userId } : undefined }),

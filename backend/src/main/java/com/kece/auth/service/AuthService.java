@@ -8,6 +8,7 @@ import com.kece.common.exception.BusinessException;
 import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthUser;
 import com.kece.common.security.JwtUtil;
+import com.kece.common.security.UserAuthStateService;
 import com.kece.user.entity.User;
 import com.kece.user.mapper.UserMapper;
 import io.jsonwebtoken.Claims;
@@ -28,6 +29,7 @@ public class AuthService {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final UserAuthStateService userAuthStateService;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -118,10 +120,17 @@ public class AuthService {
             }
             Claims claims = jwtUtil.parse(refreshToken);
             Long userId = Long.valueOf(claims.getSubject());
+            int tokenVersion = jwtUtil.extractTokenVersion(claims);
             User user = userMapper.findById(userId);
-            if (user == null || user.getStatus() == null || user.getStatus() != 1) {
-                throw new BusinessException(ResultCode.UNAUTHORIZED, "用户不存在或已禁用");
+            int currentVersion =
+                    user != null && user.getTokenVersion() != null ? user.getTokenVersion() : 0;
+            if (user == null
+                    || user.getStatus() == null
+                    || user.getStatus() != 1
+                    || currentVersion != tokenVersion) {
+                throw new BusinessException(ResultCode.UNAUTHORIZED, "登录凭证已失效，请重新登录");
             }
+            userAuthStateService.evictCache(userId);
             return buildAuthResponse(user);
         } catch (BusinessException e) {
             throw e;
@@ -140,8 +149,11 @@ public class AuthService {
 
     private AuthResponse buildAuthResponse(User user) {
         List<String> roles = parseRoles(user.getRoles());
-        String token = jwtUtil.generateAccessToken(user.getId(), user.getUsername(), roles);
-        String refreshToken = jwtUtil.generateRefreshToken(user.getId(), user.getUsername());
+        int tokenVersion = user.getTokenVersion() != null ? user.getTokenVersion() : 0;
+        String token =
+                jwtUtil.generateAccessToken(user.getId(), user.getUsername(), roles, tokenVersion);
+        String refreshToken =
+                jwtUtil.generateRefreshToken(user.getId(), user.getUsername(), tokenVersion);
         return AuthResponse.builder()
                 .token(token)
                 .refreshToken(refreshToken)

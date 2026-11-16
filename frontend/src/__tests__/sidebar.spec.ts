@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { systemApi } from '@/api/system'
 import AppSidebar from '@/components/AppSidebar.vue'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import AdminLayout from '@/layouts/AdminLayout.vue'
 import router from '@/router'
 import { useUserStore } from '@/stores/user'
 
@@ -56,6 +57,7 @@ describe('AppSidebar.vue 侧边栏与方案 C 鉴权测试 (frontend/src/__tests
     expect(links).toContain('/rankings')
     expect(links).toContain('/announcements')
     expect(links).toContain('/profile')
+    expect(links).toContain('/account/settings')
   })
 
   it('2. 未登录游客视角：方案 C 控制台 DOM 节点绝对不存在，展示登录注册入口', () => {
@@ -440,5 +442,79 @@ describe('路由守卫 Fail-Secure 404 防嗅探与鉴权加固测试', () => {
 
     await router.push('/admin/users')
     expect(router.currentRoute.value.name).toBe('admin-users')
+  })
+
+  it('未登录用户访问 /account/settings 重定向至登录页，登录后可直达并更新顶栏面包屑', async () => {
+    const userStore = useUserStore()
+    userStore.clearAuth()
+
+    await router.push('/account/settings')
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe('/account/settings')
+
+    userStore.setAuth({
+      token: 'token',
+      refreshToken: 'refresh',
+      user: {
+        id: 27,
+        username: 'zheco68',
+        email: 'zheco@kece.edu',
+        roles: ['USER'],
+      },
+    })
+    vi.spyOn(systemApi, 'getClusterSummary').mockResolvedValue({
+      asOf: Date.now(),
+      freshness: 'FRESH',
+      readyPools: 2,
+      totalPools: 2,
+      pools: [],
+    })
+
+    await router.push('/account/settings')
+    expect(router.currentRoute.value.name).toBe('account-settings')
+
+    const layoutWrapper = mount(DefaultLayout, {
+      global: {
+        plugins: [router],
+        stubs: {
+          RouterView: true,
+          ConfirmModal: true,
+          ToastHost: true,
+        },
+      },
+    })
+    await flushPromises()
+    expect(layoutWrapper.find('.bc-current').text()).toBe('ACCOUNT // SETTINGS')
+    layoutWrapper.unmount()
+  })
+
+  it('AdminLayout 底部用户区包含跳转 /account/settings 的快捷入口', async () => {
+    const userStore = useUserStore()
+    userStore.setAuth({
+      token: 'token',
+      refreshToken: 'refresh',
+      user: {
+        id: 1,
+        username: 'admin',
+        email: 'admin@kece.edu',
+        roles: ['ADMIN'],
+      },
+    })
+    await router.push('/admin/overview')
+
+    const adminWrapper = mount(AdminLayout, {
+      global: {
+        plugins: [router],
+        stubs: {
+          RouterView: true,
+          ConfirmModal: true,
+          ToastHost: true,
+        },
+      },
+    })
+    await flushPromises()
+    const settingsEntry = adminWrapper.find('.sidebar-footer a[href="/account/settings"]')
+    expect(settingsEntry.exists()).toBe(true)
+    adminWrapper.unmount()
   })
 })

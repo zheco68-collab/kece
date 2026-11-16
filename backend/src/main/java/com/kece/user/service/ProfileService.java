@@ -3,12 +3,14 @@ package com.kece.user.service;
 import com.kece.common.exception.BusinessException;
 import com.kece.common.response.ResultCode;
 import com.kece.common.security.AuthContextHolder;
+import com.kece.common.security.UserAuthStateService;
 import com.kece.exam.dto.ExamRankVO;
 import com.kece.exam.entity.Exam;
 import com.kece.exam.entity.ExamSubmission;
 import com.kece.exam.mapper.ExamMapper;
 import com.kece.exam.mapper.ExamSubmissionMapper;
 import com.kece.exam.service.ExamRankService;
+import com.kece.user.dto.ChangeEmailRequest;
 import com.kece.user.dto.ChangePasswordRequest;
 import com.kece.user.dto.HeatmapDayVO;
 import com.kece.user.dto.HeatmapVO;
@@ -49,6 +51,7 @@ public class ProfileService {
     private static final Set<String> ALLOWED_AVATAR_EXTS =
             Set.of(".png", ".jpg", ".jpeg", ".webp", ".gif");
     private static final long MAX_AVATAR_BYTES = 5 * 1024 * 1024; // 5MB
+    private static final String USERNAME_REGEX = "^[\\u4e00-\\u9fa5a-zA-Z0-9_-]{3,32}$";
 
     private final UserMapper userMapper;
     private final ExamMapper examMapper;
@@ -56,6 +59,7 @@ public class ProfileService {
     private final ExamRankService examRankService;
     private final PasswordEncoder passwordEncoder;
     private final UserDailyAcService userDailyAcService;
+    private final UserAuthStateService userAuthStateService;
 
     /** 获取用户资料（传 null 默认获取本人）。 */
     public UserProfileVO getProfile(Long targetUserId) {
@@ -67,11 +71,41 @@ public class ProfileService {
         return toProfileVO(user);
     }
 
-    /** 更新个性签名与 GitHub 社交链接。 */
+    /** 更新用户名、个性签名与 GitHub 社交链接。 */
     @Transactional
     public UserProfileVO updateProfile(UpdateProfileRequest request) {
         Long userId = requireUserId();
-        userMapper.updateProfile(userId, request.getBio(), request.getGithubUrl());
+        User current = userMapper.findById(userId);
+        if (current == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
+        }
+
+        String bio = request.getBio() != null ? request.getBio().trim() : current.getBio();
+        String githubUrl =
+                request.getGithubUrl() != null
+                        ? request.getGithubUrl().trim()
+                        : current.getGithubUrl();
+        if (githubUrl != null && !githubUrl.isEmpty() && !githubUrl.matches("(?i)^https?://.+")) {
+            throw new BusinessException(
+                    ResultCode.PARAM_ERROR, "GitHub 链接必须以 http:// 或 https:// 开头");
+        }
+
+        if (request.getUsername() != null) {
+            String nextUsername = request.getUsername().trim();
+            if (!nextUsername.matches(USERNAME_REGEX)) {
+                throw new BusinessException(
+                        ResultCode.PARAM_ERROR, "用户名须为 3~32 位，仅支持中英文、数字、下划线和连字符，不能包含 @ 或空白");
+            }
+            if (!nextUsername.equals(current.getUsername())) {
+                User existing = userMapper.findByUsername(nextUsername);
+                if (existing != null && !existing.getId().equals(userId)) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "用户名已被占用");
+                }
+                userMapper.updateUsername(userId, nextUsername);
+            }
+        }
+
+        userMapper.updateProfile(userId, bio, githubUrl);
         User user = userMapper.findById(userId);
         return toProfileVO(user);
     }
@@ -145,6 +179,31 @@ public class ProfileService {
         }
         String newHash = passwordEncoder.encode(request.getNewPassword());
         userMapper.updatePassword(userId, newHash);
+        userAuthStateService.incrementTokenVersionAndEvict(userId);
+    }
+
+    /** 凭当前密码换绑登录邮箱并使全端历史令牌失效。 */
+    @Transactional
+    public void changeEmail(ChangeEmailRequest request) {
+        Long userId = requireUserId();
+        User current = userMapper.findById(userId);
+        if (current == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
+        }
+        if (!passwordEncoder.matches(request.getCurrentPassword(), current.getPasswordHash())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "当前登录密码错误");
+        }
+        String nextEmail = request.getNewEmail().trim().toLowerCase();
+        if (current.getEmail() != null
+                && nextEmail.equals(current.getEmail().trim().toLowerCase())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "新邮箱不能与当前绑定邮箱相同");
+        }
+        User existing = userMapper.findByEmail(nextEmail);
+        if (existing != null && !existing.getId().equals(userId)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "该邮箱已被其他账号绑定");
+        }
+        userMapper.updateEmail(userId, nextEmail);
+        userAuthStateService.incrementTokenVersionAndEvict(userId);
     }
 
     /** 近 365 天每日 AC 活跃打卡热力图统计（查询预聚合表 user_daily_ac，毫秒级响应）。 */

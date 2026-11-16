@@ -39,8 +39,16 @@ public interface UserMapper {
 
     int updatePassword(@Param("id") Long id, @Param("passwordHash") String passwordHash);
 
+    int incrementTokenVersion(@Param("id") Long id);
+
+    User findAuthStateById(@Param("id") Long id);
+
     int updateProfile(
             @Param("id") Long id, @Param("bio") String bio, @Param("githubUrl") String githubUrl);
+
+    int updateUsername(@Param("id") Long id, @Param("username") String username);
+
+    int updateEmail(@Param("id") Long id, @Param("email") String email);
 
     int updateAvatar(@Param("id") Long id, @Param("avatarUrl") String avatarUrl);
 }

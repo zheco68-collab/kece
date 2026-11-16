@@ -187,6 +187,19 @@ public class SolutionService {
     }
 
     @Transactional(readOnly = true)
+    public PageResult<SolutionListItemVO> listPublicByAuthor(Long authorId, int page, int size) {
+        validatePositiveId(authorId, "用户 ID 不合法");
+        PageParam safePage = safePage(page, size);
+        List<Solution> list =
+                solutionMapper.findPublicByAuthorPage(authorId, safePage.offset(), safePage.size());
+        return new PageResult<>(
+                toListItems(list),
+                solutionMapper.countPublicByAuthor(authorId),
+                safePage.page(),
+                safePage.size());
+    }
+
+    @Transactional(readOnly = true)
     public PageResult<SolutionListItemVO> listAdmin(
             String keyword,
             Long questionId,
@@ -429,8 +442,12 @@ public class SolutionService {
     }
 
     private void validateQuestionId(Long questionId) {
-        if (questionId == null || questionId <= 0) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "题目 ID 不合法");
+        validatePositiveId(questionId, "题目 ID 不合法");
+    }
+
+    private void validatePositiveId(Long id, String message) {
+        if (id == null || id <= 0) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, message);
         }
     }
 

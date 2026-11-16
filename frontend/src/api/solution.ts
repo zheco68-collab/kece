@@ -85,6 +85,12 @@ export const solutionApi = {
     return http.get<PageResult<SolutionListItem>>('/me/solutions', { params })
   },
 
+  listByAuthor(userId: number, params?: { page?: number; size?: number }) {
+    return http.get<PageResult<SolutionListItem>>('/solutions/author', {
+      params: { userId, ...params },
+    })
+  },
+
   listAdmin(params?: AdminSolutionListParams) {
     return http.get<PageResult<SolutionListItem>>('/admin/solutions', { params })
   },

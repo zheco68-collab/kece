@@ -227,8 +227,8 @@ function onCellMouseLeave() {
 <style scoped>
 .heatmap-wrapper {
   padding: 24px;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--surface-white, #ffffff);
+  border: 1px solid var(--kece-border, #e4e7ec);
   border-radius: 0;
 }
 
@@ -240,7 +240,7 @@ function onCellMouseLeave() {
   gap: 16px;
   margin-bottom: 24px;
   padding-bottom: 18px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--kece-border, #e4e7ec);
 }
 
 .heatmap-title-group {
@@ -267,14 +267,14 @@ function onCellMouseLeave() {
   font-size: 11px;
   font-weight: 600;
   padding: 1px 7px;
-  background: var(--bg);
-  border: 1px solid var(--line);
+  background: var(--kece-surface-muted, #f8fafc);
+  border: 1px solid var(--kece-border, #e4e7ec);
   color: var(--ink-secondary);
 }
 
 .heatmap-sub {
   font-size: 13px;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
 }
 
 .heatmap-stats {
@@ -289,14 +289,14 @@ function onCellMouseLeave() {
   flex-direction: column;
   justify-content: center;
   padding: 8px 16px;
-  background: var(--bg);
-  border: 1px solid var(--line);
+  background: var(--kece-surface-muted, #f8fafc);
+  border: 1px solid var(--kece-border, #e4e7ec);
   min-width: 105px;
 }
 
 .stat-label {
   font-size: 11px;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
   margin-bottom: 2px;
 }
 
@@ -351,7 +351,7 @@ function onCellMouseLeave() {
   height: 12px;
   line-height: 12px;
   font-size: 10px;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
   text-align: center;
 }
 
@@ -448,7 +448,7 @@ function onCellMouseLeave() {
 
 .legend-text {
   font-size: 11px;
-  color: var(--ink-tertiary);
+  color: var(--ink-secondary);
   margin: 0 4px;
 }
 

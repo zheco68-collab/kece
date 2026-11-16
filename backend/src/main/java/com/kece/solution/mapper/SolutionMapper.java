@@ -30,6 +30,11 @@ public interface SolutionMapper {
 
     long countMine(@Param("authorId") Long authorId);
 
+    List<Solution> findPublicByAuthorPage(
+            @Param("authorId") Long authorId, @Param("offset") int offset, @Param("size") int size);
+
+    long countPublicByAuthor(@Param("authorId") Long authorId);
+
     List<Solution> findAdminPage(
             @Param("keyword") String keyword,
             @Param("questionId") Long questionId,

@@ -19,9 +19,15 @@ public class AuthInterceptor implements HandlerInterceptor {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtUtil jwtUtil;
+    private final UserAuthStateService authStateService;
 
     public AuthInterceptor(JwtUtil jwtUtil) {
+        this(jwtUtil, null);
+    }
+
+    public AuthInterceptor(JwtUtil jwtUtil, UserAuthStateService authStateService) {
         this.jwtUtil = jwtUtil;
+        this.authStateService = authStateService;
     }
 
     @Override
@@ -39,7 +45,12 @@ public class AuthInterceptor implements HandlerInterceptor {
 
         if (token != null && !token.isBlank()) {
             try {
-                AuthContextHolder.set(jwtUtil.parseToAuthUser(token.trim()));
+                AuthUser parsed = jwtUtil.parseToAuthUser(token.trim());
+                if (authStateService == null
+                        || authStateService.isTokenValid(
+                                parsed.getId(), parsed.getTokenVersion())) {
+                    AuthContextHolder.set(parsed);
+                }
             } catch (JwtException | IllegalArgumentException ignored) {
                 // 令牌无效或过期：按未认证处理，由下方权限校验决定是否放行
             }

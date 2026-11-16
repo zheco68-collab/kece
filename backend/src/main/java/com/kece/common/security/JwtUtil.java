@@ -23,6 +23,7 @@ public class JwtUtil {
     private static final String CLAIM_ROLES = "roles";
     private static final String CLAIM_USERNAME = "username";
     private static final String CLAIM_TYPE = "type";
+    private static final String CLAIM_TOKEN_VERSION = "tv";
 
     private final JwtProperties properties;
     private final SecretKey key;
@@ -32,27 +33,40 @@ public class JwtUtil {
         this.key = Keys.hmacShaKeyFor(properties.getSecret().getBytes(StandardCharsets.UTF_8));
     }
 
-    /** 生成访问令牌，携带 userId（sub）、username 与 roles。 */
+    /** 生成访问令牌，携带 userId（sub）、username、roles 与默认版本号 0。 */
     public String generateAccessToken(Long userId, String username, Collection<String> roles) {
+        return generateAccessToken(userId, username, roles, 0);
+    }
+
+    /** 生成访问令牌，携带 userId（sub）、username、roles 与 tokenVersion。 */
+    public String generateAccessToken(
+            Long userId, String username, Collection<String> roles, int tokenVersion) {
         Date now = new Date();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .claim(CLAIM_USERNAME, username)
                 .claim(CLAIM_ROLES, roles)
                 .claim(CLAIM_TYPE, TYPE_ACCESS)
+                .claim(CLAIM_TOKEN_VERSION, tokenVersion)
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + properties.getExpiration()))
                 .signWith(key)
                 .compact();
     }
 
-    /** 生成刷新令牌，仅携带 userId 与 username。 */
+    /** 生成刷新令牌，携带 userId、username 与默认版本号 0。 */
     public String generateRefreshToken(Long userId, String username) {
+        return generateRefreshToken(userId, username, 0);
+    }
+
+    /** 生成刷新令牌，携带 userId、username 与 tokenVersion。 */
+    public String generateRefreshToken(Long userId, String username, int tokenVersion) {
         Date now = new Date();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .claim(CLAIM_USERNAME, username)
                 .claim(CLAIM_TYPE, TYPE_REFRESH)
+                .claim(CLAIM_TOKEN_VERSION, tokenVersion)
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + properties.getRefreshExpiration()))
                 .signWith(key)
@@ -73,7 +87,14 @@ public class JwtUtil {
         Long id = Long.valueOf(claims.getSubject());
         String username = claims.get(CLAIM_USERNAME, String.class);
         Set<String> roles = toRoleSet(claims.get(CLAIM_ROLES, List.class));
-        return new AuthUser(id, username, roles);
+        int tokenVersion = extractTokenVersion(claims);
+        return new AuthUser(id, username, roles, tokenVersion);
+    }
+
+    /** 从 JWT Claims 中提取令牌版本号（缺省按 0 处理）。 */
+    public int extractTokenVersion(Claims claims) {
+        Number tv = claims.get(CLAIM_TOKEN_VERSION, Number.class);
+        return tv != null ? tv.intValue() : 0;
     }
 
     /** 判断令牌是否为刷新令牌（不校验过期，仅判断类型）。 */

@@ -42,6 +42,15 @@ public class SolutionController {
                 solutionService.listPublic(questionType, questionId, page, size));
     }
 
+    @Operation(summary = "分页读取指定用户的公开题解")
+    @GetMapping("/author")
+    public ApiResponse<PageResult<SolutionListItemVO>> listByAuthor(
+            @RequestParam Long userId,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(solutionService.listPublicByAuthor(userId, page, size));
+    }
+
     @Operation(summary = "读取题解全文")
     @GetMapping("/{id}")
     public ApiResponse<SolutionDetailVO> detail(@PathVariable Long id) {

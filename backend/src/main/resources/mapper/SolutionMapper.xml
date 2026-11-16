@@ -52,11 +52,16 @@
         WHERE s.author_id = #{authorId} AND s.client_request_id = #{clientRequestId}
     </select>
 
+    <sql id="publicBaseCondition">
+        s.deleted_at IS NULL
+          AND s.status = 'PUBLISHED'
+          AND <include refid="publicQuestionCondition"/>
+    </sql>
+
     <select id="findPublicPage" resultMap="SolutionMap">
         SELECT <include refid="baseColumns"/> FROM `solution` s
         <include refid="questionJoins"/>
-        WHERE s.deleted_at IS NULL AND s.status = 'PUBLISHED'
-          AND <include refid="publicQuestionCondition"/>
+        WHERE <include refid="publicBaseCondition"/>
           AND s.question_type = #{questionType} AND s.question_id = #{questionId}
         ORDER BY s.created_at DESC, s.id DESC
         LIMIT #{offset}, #{size}
@@ -65,9 +70,24 @@
     <select id="countPublic" resultType="long">
         SELECT COUNT(*) FROM `solution` s
         <include refid="questionJoins"/>
-        WHERE s.deleted_at IS NULL AND s.status = 'PUBLISHED'
-          AND <include refid="publicQuestionCondition"/>
+        WHERE <include refid="publicBaseCondition"/>
           AND s.question_type = #{questionType} AND s.question_id = #{questionId}
+    </select>
+
+    <select id="findPublicByAuthorPage" resultMap="SolutionMap">
+        SELECT <include refid="baseColumns"/> FROM `solution` s
+        <include refid="questionJoins"/>
+        WHERE <include refid="publicBaseCondition"/>
+          AND s.author_id = #{authorId}
+        ORDER BY s.created_at DESC, s.id DESC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <select id="countPublicByAuthor" resultType="long">
+        SELECT COUNT(*) FROM `solution` s
+        <include refid="questionJoins"/>
+        WHERE <include refid="publicBaseCondition"/>
+          AND s.author_id = #{authorId}
     </select>
 
     <select id="findMinePage" resultMap="SolutionMap">

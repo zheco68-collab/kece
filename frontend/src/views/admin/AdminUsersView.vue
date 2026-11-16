@@ -26,6 +26,7 @@ const rows = ref<AdminUser[]>([]);
 const total = ref(0);
 const loading = ref(false);
 const loadError = ref('');
+const brokenAvatarKeys = ref(new Set<string>());
 
 const ROLE_LABELS: Record<string, string> = {
   USER: '用户',
@@ -61,6 +62,7 @@ const hasActiveFilters = computed(
 async function load() {
   loading.value = true;
   loadError.value = '';
+  brokenAvatarKeys.value.clear();
   try {
     const res = await adminApi.listUsers({
       keyword: keyword.value.trim() || undefined,
@@ -129,6 +131,20 @@ function roleClass(role: string): string {
 
 function userInitial(username: string): string {
   return (username.trim()[0] ?? '?').toUpperCase();
+}
+
+function avatarKey(user: AdminUser): string {
+  return `${user.id}:${user.avatarUrl ?? ''}`;
+}
+
+function canShowAvatar(user: AdminUser): boolean {
+  const url = user.avatarUrl?.trim();
+  if (!url || !/^(\/|https?:\/\/)/i.test(url)) return false;
+  return !brokenAvatarKeys.value.has(avatarKey(user));
+}
+
+function onAvatarError(user: AdminUser) {
+  brokenAvatarKeys.value.add(avatarKey(user));
 }
 
 function formatTime(iso: string): string {
@@ -344,7 +360,16 @@ onBeforeUnmount(() => {
     <DataTable :columns="columns" :rows="rows" :loading="loading" empty-text="暂无符合条件的用户">
       <template #cell-user="{ row }">
         <div class="user-cell">
-          <span class="user-avatar" aria-hidden="true">{{ userInitial(row.username) }}</span>
+          <span class="user-avatar" aria-hidden="true">
+            <img
+              v-if="canShowAvatar(row)"
+              :src="row.avatarUrl!"
+              alt=""
+              class="user-avatar-img"
+              @error="onAvatarError(row)"
+            />
+            <span v-else>{{ userInitial(row.username) }}</span>
+          </span>
           <div class="user-info">
             <div class="user-title-row">
               <span class="user-name">{{ row.username }}</span>
@@ -401,7 +426,16 @@ onBeforeUnmount(() => {
         >
           <div class="drawer-header">
             <div class="drawer-user-head">
-              <span class="user-avatar lg" aria-hidden="true">{{ userInitial(managedUser.username) }}</span>
+              <span class="user-avatar lg" aria-hidden="true">
+                <img
+                  v-if="canShowAvatar(managedUser)"
+                  :src="managedUser.avatarUrl!"
+                  alt=""
+                  class="user-avatar-img"
+                  @error="onAvatarError(managedUser)"
+                />
+                <span v-else>{{ userInitial(managedUser.username) }}</span>
+              </span>
               <div class="drawer-title-block">
                 <div class="drawer-title-row">
                   <h2 id="user-drawer-title" class="drawer-title">{{ managedUser.username }}</h2>
@@ -664,6 +698,7 @@ onBeforeUnmount(() => {
 }
 
 .user-avatar {
+  position: relative;
   width: 32px;
   height: 32px;
   display: inline-flex;
@@ -676,6 +711,17 @@ onBeforeUnmount(() => {
   font-weight: 700;
   flex-shrink: 0;
   border-radius: 0;
+  overflow: hidden;
+}
+
+.user-avatar-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
 }
 
 .user-avatar.lg {
