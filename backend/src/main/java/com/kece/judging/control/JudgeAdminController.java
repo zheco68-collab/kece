@@ -29,6 +29,7 @@ public class JudgeAdminController {
     private final JudgeRouteService routeService;
     private final JudgeReconciliationService reconciliationService;
     private final JudgeConnections connections;
+
     @Value("${kece.judging.legacy-admin-enrollment-enabled:false}")
     private boolean legacyAdminEnrollmentEnabled;
 

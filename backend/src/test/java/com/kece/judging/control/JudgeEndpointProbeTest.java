@@ -20,11 +20,16 @@ class JudgeEndpointProbeTest {
         assertThat(probe.approvedEndpoint("https://NODE.example:443/"))
                 .isEqualTo("https://node.example");
         assertThat(probe.approvedEndpoint("")).isNull();
-        for (String endpoint : new String[] {
-            "http://node.example", "https://node.example:444", "https://node.example/debug",
-            "https://node.example/?url=example", "https://user@node.example",
-            "https://node.example.other", "https://node.example#fragment"
-        }) {
+        for (String endpoint :
+                new String[] {
+                    "http://node.example",
+                    "https://node.example:444",
+                    "https://node.example/debug",
+                    "https://node.example/?url=example",
+                    "https://user@node.example",
+                    "https://node.example.other",
+                    "https://node.example#fragment"
+                }) {
             assertThatThrownBy(() -> probe.approvedEndpoint(endpoint))
                     .isInstanceOf(BusinessException.class);
         }
@@ -55,7 +60,9 @@ class JudgeEndpointProbeTest {
         assertThat(JudgeEndpointProbe.matchesNode(response, node)).isTrue();
         assertThat(JudgeEndpointProbe.matchesNode(response.deepCopy().put("nodeId", "43"), node))
                 .isFalse();
-        assertThat(JudgeEndpointProbe.matchesNode(response.deepCopy().put("runtimeVersion", "3.13"), node))
+        assertThat(
+                        JudgeEndpointProbe.matchesNode(
+                                response.deepCopy().put("runtimeVersion", "3.13"), node))
                 .isFalse();
         assertThat(JudgeEndpointProbe.matchesNode(response.deepCopy().put("healthy", false), node))
                 .isFalse();

@@ -35,7 +35,10 @@ public class JudgeConnections {
     private final JdbcTemplate db;
     private final TransactionTemplate transaction;
     private final JudgeDiscoveryClient discovery;
-    @Value("${kece.judging.new-host-slots:2}") private int newHostSlots;
+
+    @Value("${kece.judging.new-host-slots:2}")
+    private int newHostSlots;
+
     private final ThreadPoolExecutor probes =
             new ThreadPoolExecutor(0, 4, 30, TimeUnit.SECONDS, new SynchronousQueue<>());
 
@@ -55,7 +58,13 @@ public class JudgeConnections {
             LocalDateTime createdAt,
             LocalDateTime updatedAt) {}
 
-    private record NodeBinding(boolean valid, boolean revoked, long generation, long revision, String state, String credential) {}
+    private record NodeBinding(
+            boolean valid,
+            boolean revoked,
+            long generation,
+            long revision,
+            String state,
+            String credential) {}
 
     public ConnectionView request(String rawUrl, String suppliedKey) {
         Long actorId = AuthContextHolder.currentUserId();
@@ -95,7 +104,12 @@ public class JudgeConnections {
                                             "SELECT status FROM judge_node_connection WHERE id=?",
                                             String.class,
                                             active);
-                        if (List.of("REQUESTED", "DISCOVERING", "WAITING_BIND", "WAITING_HEARTBEAT", "CHECKING")
+                            if (List.of(
+                                            "REQUESTED",
+                                            "DISCOVERING",
+                                            "WAITING_BIND",
+                                            "WAITING_HEARTBEAT",
+                                            "CHECKING")
                                     .contains(status)) {
                                 return get(active);
                             }
@@ -255,17 +269,27 @@ public class JudgeConnections {
     }
 
     private void fenceClaimedNode(long connectionId) {
-        List<String[]> rows = db.query("SELECT node_id,credential_digest FROM judge_node_connection WHERE id=?",
-                (r, row) -> new String[] {r.getString(1), r.getString(2)}, connectionId);
+        List<String[]> rows =
+                db.query(
+                        "SELECT node_id,credential_digest FROM judge_node_connection WHERE id=?",
+                        (r, row) -> new String[] {r.getString(1), r.getString(2)},
+                        connectionId);
         if (rows.isEmpty() || rows.get(0)[1] == null) {
             return;
         }
         long nodeId = Long.parseLong(rows.get(0)[0]);
-        int changed = db.update("UPDATE judge_node SET credential_hash=NULL,state='DISABLED',healthy=FALSE,verified=FALSE,revision=revision+1,session_epoch=session_epoch+1 WHERE id=? AND credential_hash=? AND state IN ('PENDING_VERIFICATION','DRAINING','DISABLED')",
-                nodeId, rows.get(0)[1]);
+        int changed =
+                db.update(
+                        "UPDATE judge_node SET credential_hash=NULL,state='DISABLED',healthy=FALSE,verified=FALSE,revision=revision+1,session_epoch=session_epoch+1 WHERE id=? AND credential_hash=? AND state IN ('PENDING_VERIFICATION','DRAINING','DISABLED')",
+                        nodeId,
+                        rows.get(0)[1]);
         if (changed == 1) {
-            db.update("UPDATE judge_node_identity SET revoked_at=UTC_TIMESTAMP(6),binding_generation=binding_generation+1 WHERE node_id=?", nodeId);
-            db.update("UPDATE judge_node_check SET state='EXPIRED' WHERE node_id=? AND state IN ('QUEUED','RUNNING')", nodeId);
+            db.update(
+                    "UPDATE judge_node_identity SET revoked_at=UTC_TIMESTAMP(6),binding_generation=binding_generation+1 WHERE node_id=?",
+                    nodeId);
+            db.update(
+                    "UPDATE judge_node_check SET state='EXPIRED' WHERE node_id=? AND state IN ('QUEUED','RUNNING')",
+                    nodeId);
         }
     }
 
@@ -302,8 +326,12 @@ public class JudgeConnections {
                             Long.class,
                             found.hostId());
         }
-        boolean retiredHost = Boolean.TRUE.equals(db.queryForObject(
-                "SELECT retired_at IS NOT NULL FROM judge_host_group WHERE id=? FOR UPDATE", Boolean.class, host));
+        boolean retiredHost =
+                Boolean.TRUE.equals(
+                        db.queryForObject(
+                                "SELECT retired_at IS NOT NULL FROM judge_host_group WHERE id=? FOR UPDATE",
+                                Boolean.class,
+                                host));
         Long node =
                 db.query(
                         "SELECT node_id FROM judge_node_identity WHERE instance_id=?",
@@ -372,25 +400,37 @@ public class JudgeConnections {
         long expectedRevision = binding.revision();
         if (retiredHost) {
             // Reopen the archived host only after the original node key has been verified.
-            db.update("UPDATE judge_host_group SET retired_at=NULL,revision=revision+1 WHERE id=?", hostId);
+            db.update(
+                    "UPDATE judge_host_group SET retired_at=NULL,revision=revision+1 WHERE id=?",
+                    hostId);
         }
-        if (Boolean.TRUE.equals(db.queryForObject(
-                "SELECT retired_at IS NOT NULL FROM judge_node WHERE id=?", Boolean.class, nodeId))) {
-            if (!binding.revoked() || binding.credential() != null || !"DISABLED".equals(binding.state())
+        if (Boolean.TRUE.equals(
+                db.queryForObject(
+                        "SELECT retired_at IS NOT NULL FROM judge_node WHERE id=?",
+                        Boolean.class,
+                        nodeId))) {
+            if (!binding.revoked()
+                    || binding.credential() != null
+                    || !"DISABLED".equals(binding.state())
                     || !"UNBOUND".equals(found.bindingState())) {
                 throw new BusinessException(ResultCode.CONFLICT, "已删除节点尚未准备好重新接入");
             }
-            // Identity and public key were verified above; preserve the old node ID and audit history.
-            db.update("UPDATE judge_node SET retired_at=NULL,revision=revision+1 WHERE id=?", nodeId);
+            // Identity and public key were verified above; preserve the old node ID and audit
+            // history.
+            db.update(
+                    "UPDATE judge_node SET retired_at=NULL,revision=revision+1 WHERE id=?", nodeId);
             expectedRevision++;
         }
         if (binding.revoked()) {
-            if (binding.credential() != null || !"DISABLED".equals(binding.state())
+            if (binding.credential() != null
+                    || !"DISABLED".equals(binding.state())
                     || !"UNBOUND".equals(found.bindingState())) {
                 throw new BusinessException(ResultCode.CONFLICT, "已撤销节点尚未准备好重新接入");
             }
             db.update("UPDATE judge_node_identity SET revoked_at=NULL WHERE node_id=?", nodeId);
-            db.update("UPDATE judge_node SET state='PENDING_VERIFICATION',revision=revision+1 WHERE id=?", nodeId);
+            db.update(
+                    "UPDATE judge_node SET state='PENDING_VERIFICATION',revision=revision+1 WHERE id=?",
+                    nodeId);
             expectedRevision++;
         }
         if (binding.credential() != null && !"BOUND".equals(found.bindingState())) {

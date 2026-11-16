@@ -829,10 +829,7 @@ public class LessonPracticeService {
         return PRACTICE_SUB_CTX_PREFIX + questionType.trim().toUpperCase() + ":" + submissionId;
     }
 
-    /**
-     * 持久结算事件触发的判题完成回调。处理连续提交和乱序完成，保护已记录的最高分源码快照
-     * bestSubmissionId 与首次达成时间 bestAchievedAt。
-     */
+    /** 持久结算事件触发的判题完成回调。处理连续提交和乱序完成，保护已记录的最高分源码快照 bestSubmissionId 与首次达成时间 bestAchievedAt。 */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void onPracticalJudgeCompleted(String questionType, Long submissionId) {
         if (submissionId == null || questionType == null) {

@@ -26,7 +26,9 @@ public class JudgeMachineController {
     private final JudgeMaintenance maintenance;
     private final JudgeClaims claims;
     private final ObjectMapper json;
-    @Value("${kece.judging.legacy-admin-enrollment-enabled:false}") private boolean legacyEnrollmentEnabled;
+
+    @Value("${kece.judging.legacy-admin-enrollment-enabled:false}")
+    private boolean legacyEnrollmentEnabled;
 
     record JoinRequest(String enrollmentCode, String bootId, int protocolVersion) {}
 
@@ -62,9 +64,7 @@ public class JudgeMachineController {
         if (confirmation == null) {
             return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
         }
-        return ResponseEntity.ok()
-                .cacheControl(CacheControl.noStore())
-                .body(confirmation);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(confirmation);
     }
 
     @PostMapping("/session")
@@ -127,8 +127,7 @@ public class JudgeMachineController {
         return read(request, type, MAX_REQUEST);
     }
 
-    private <T> T read(HttpServletRequest request, Class<T> type, int maxBytes)
-            throws IOException {
+    private <T> T read(HttpServletRequest request, Class<T> type, int maxBytes) throws IOException {
         if (request.getContentLengthLong() > maxBytes) {
             throw new JudgeProtocolException(413, "BODY_TOO_LARGE");
         }

@@ -54,7 +54,8 @@ public class JudgeClaims {
             String pool,
             String runtimeSpec) {}
 
-    private record Identity(long nodeId, byte[] key, String fingerprint, long generation, boolean revoked) {}
+    private record Identity(
+            long nodeId, byte[] key, String fingerprint, long generation, boolean revoked) {}
 
     private record Approval(
             long id,
@@ -229,12 +230,13 @@ public class JudgeClaims {
             byte[] key = Base64.getUrlDecoder().decode(envelope.publicKey());
             byte[] signatureBytes = Base64.getUrlDecoder().decode(envelope.signature());
             byte[] payloadBytes = Base64.getUrlDecoder().decode(envelope.payload());
-            if (key.length > 128 || signatureBytes.length != 64 || payloadBytes.length > 16 * 1024) {
+            if (key.length > 128
+                    || signatureBytes.length != 64
+                    || payloadBytes.length > 16 * 1024) {
                 throw invalid();
             }
             var publicKey =
-                    KeyFactory.getInstance("Ed25519")
-                            .generatePublic(new X509EncodedKeySpec(key));
+                    KeyFactory.getInstance("Ed25519").generatePublic(new X509EncodedKeySpec(key));
             var signature = Signature.getInstance("Ed25519");
             signature.initVerify(publicKey);
             signature.update(
@@ -245,8 +247,7 @@ public class JudgeClaims {
             }
             Payload payload = json.readValue(payloadBytes, Payload.class);
             String fingerprint =
-                    HexFormat.of()
-                            .formatHex(MessageDigest.getInstance("SHA-256").digest(key));
+                    HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(key));
             long now = System.currentTimeMillis();
             if (payload.protocolVersion() != 1
                     || !UUID.matcher(payload.controlPlaneId()).matches()

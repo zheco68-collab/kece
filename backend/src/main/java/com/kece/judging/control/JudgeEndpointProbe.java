@@ -84,10 +84,12 @@ class JudgeEndpointProbe {
         String host = URI.create(endpoint).getHost();
         Future<?> pending;
         try {
-            pending = probes.submit(() -> {
-                probe(request, host, node);
-                return null;
-            });
+            pending =
+                    probes.submit(
+                            () -> {
+                                probe(request, host, node);
+                                return null;
+                            });
         } catch (RejectedExecutionException e) {
             throw new BusinessException(ResultCode.CONFLICT, "节点探测繁忙，请稍后重试");
         }
@@ -112,60 +114,72 @@ class JudgeEndpointProbe {
             throw new IOException("Node host resolved outside approved networks");
         }
         // Resolve once, validate every answer and pin the actual connection to those answers.
-        DnsResolver pinned = new DnsResolver() {
-            @Override
-            public InetAddress[] resolve(String name) throws UnknownHostException {
-                if (!host.equalsIgnoreCase(name)) {
-                    throw new UnknownHostException(name);
-                }
-                return addresses.clone();
-            }
+        DnsResolver pinned =
+                new DnsResolver() {
+                    @Override
+                    public InetAddress[] resolve(String name) throws UnknownHostException {
+                        if (!host.equalsIgnoreCase(name)) {
+                            throw new UnknownHostException(name);
+                        }
+                        return addresses.clone();
+                    }
 
-            @Override
-            public String resolveCanonicalHostname(String name) throws UnknownHostException {
-                if (!host.equalsIgnoreCase(name)) {
-                    throw new UnknownHostException(name);
-                }
-                return host;
-            }
-        };
-        try (var client = HttpClients.custom()
-                .setConnectionManager(PoolingHttpClientConnectionManagerBuilder.create()
-                        .useSystemProperties()
-                        .setDnsResolver(pinned)
-                        .setConnectionFactory(ManagedHttpClientConnectionFactory.builder()
-                                .http1Config(Http1Config.custom()
-                                        .setMaxHeaderCount(32)
-                                        .setMaxLineLength(4096)
+                    @Override
+                    public String resolveCanonicalHostname(String name)
+                            throws UnknownHostException {
+                        if (!host.equalsIgnoreCase(name)) {
+                            throw new UnknownHostException(name);
+                        }
+                        return host;
+                    }
+                };
+        try (var client =
+                HttpClients.custom()
+                        .setConnectionManager(
+                                PoolingHttpClientConnectionManagerBuilder.create()
+                                        .useSystemProperties()
+                                        .setDnsResolver(pinned)
+                                        .setConnectionFactory(
+                                                ManagedHttpClientConnectionFactory.builder()
+                                                        .http1Config(
+                                                                Http1Config.custom()
+                                                                        .setMaxHeaderCount(32)
+                                                                        .setMaxLineLength(4096)
+                                                                        .build())
+                                                        .build())
+                                        .setDefaultConnectionConfig(
+                                                ConnectionConfig.custom()
+                                                        .setConnectTimeout(IO_TIMEOUT)
+                                                        .setSocketTimeout(IO_TIMEOUT)
+                                                        .build())
                                         .build())
-                                .build())
-                        .setDefaultConnectionConfig(ConnectionConfig.custom()
-                                .setConnectTimeout(IO_TIMEOUT)
-                                .setSocketTimeout(IO_TIMEOUT)
-                                .build())
-                        .build())
-                .setDefaultRequestConfig(RequestConfig.custom().setResponseTimeout(IO_TIMEOUT).build())
-                .disableRedirectHandling()
-                .disableAutomaticRetries()
-                .disableContentCompression()
-                .disableCookieManagement()
-                .build()) {
-            client.execute(request, response -> {
-                var entity = response.getEntity();
-                if (response.getCode() != 200 || entity == null || entity.getContentLength() > MAX_BODY) {
-                    request.cancel();
-                    throw new IOException("Unexpected node probe response");
-                }
-                byte[] body = entity.getContent().readNBytes(MAX_BODY + 1);
-                if (body.length > MAX_BODY) {
-                    request.cancel();
-                    throw new IOException("Node probe response too large");
-                }
-                if (!matchesNode(json.readTree(body), node)) {
-                    throw new IOException("Node probe identity mismatch");
-                }
-                return null;
-            });
+                        .setDefaultRequestConfig(
+                                RequestConfig.custom().setResponseTimeout(IO_TIMEOUT).build())
+                        .disableRedirectHandling()
+                        .disableAutomaticRetries()
+                        .disableContentCompression()
+                        .disableCookieManagement()
+                        .build()) {
+            client.execute(
+                    request,
+                    response -> {
+                        var entity = response.getEntity();
+                        if (response.getCode() != 200
+                                || entity == null
+                                || entity.getContentLength() > MAX_BODY) {
+                            request.cancel();
+                            throw new IOException("Unexpected node probe response");
+                        }
+                        byte[] body = entity.getContent().readNBytes(MAX_BODY + 1);
+                        if (body.length > MAX_BODY) {
+                            request.cancel();
+                            throw new IOException("Node probe response too large");
+                        }
+                        if (!matchesNode(json.readTree(body), node)) {
+                            throw new IOException("Node probe identity mismatch");
+                        }
+                        return null;
+                    });
         }
     }
 
@@ -187,7 +201,8 @@ class JudgeEndpointProbe {
                 && !address.isLoopbackAddress()
                 && !address.isLinkLocalAddress()
                 && !address.isMulticastAddress()
-                && allowedNetworks.stream().anyMatch(network -> network.contains(address.getAddress()));
+                && allowedNetworks.stream()
+                        .anyMatch(network -> network.contains(address.getAddress()));
     }
 
     private static List<String> values(String csv) {
@@ -221,7 +236,8 @@ class JudgeEndpointProbe {
             int bits = prefix % Byte.SIZE;
             return Arrays.equals(address, 0, fullBytes, other, 0, fullBytes)
                     && (bits == 0
-                            || ((address[fullBytes] ^ other[fullBytes]) & (0xff00 >> bits) & 0xff) == 0);
+                            || ((address[fullBytes] ^ other[fullBytes]) & (0xff00 >> bits) & 0xff)
+                                    == 0);
         }
     }
 
